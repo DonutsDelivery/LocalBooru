@@ -28,3 +28,13 @@ notes:
     supersedes: null
     author: Booru Node Maintainers
     created_at: 2026-10-07T10:28:53.361Z
+  - _ulid: 01M4AZFG6EE5DTZMN9338FGDEK
+    content: User expanded positional association to above/below combined with left/right, clarifying
+      relative ordering rather than a literal grid. Extend position metadata with left_of/above
+      character relationships; bounded unique-assignment matching against bbox centers rejects
+      ambiguity, contradictions, count mismatch or exhausted proof budget before
+      encoding/refinement. Keep legacy string-order compatibility. Workers cover runtime,
+      enhancer/UI and adapter in isolated branches.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T10:45:20.718Z

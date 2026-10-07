@@ -1310,9 +1310,9 @@ features:
           - create-multiple-face-prompts
         title: Per-character face prompts
         type: requirement
-        description: Create retains distinct facial descriptions for several characters and applies them to
-          corresponding visible faces in left-to-right order. Enhancement preserves identity and
-          spatial associations instead of merging subjects.
+        description: Create retains distinct facial descriptions for several visible characters and applies
+          each to its corresponding detected face. Spatial association supports left/right and
+          above/below relationships in uneven arrangements without requiring a fixed grid.
         status:
           maturity: draft
           implementation: in_progress
@@ -1325,14 +1325,15 @@ features:
           - given: The image brief describes several visible characters and their positions or supplies ordered
               facial descriptions
             id: ac-character-prompts
-            then: The run exposes a separate face-only description for each intended character, preserves
-              identity and facial facts, and orders descriptions from left to right without merging
-              subjects.
+            then: The run exposes separate face-only descriptions preserving each character identity and facial
+              facts, with relative horizontal and vertical relationships inferred only where the
+              brief supports them, without merging subjects.
             when: Per-run enhancement prepares the image and face descriptions
           - given: A generated image has several detected faces and corresponding ordered facial descriptions
             id: ac-spatial-matching
-            then: Detected faces are ordered by horizontal position with deterministic handling of equal
-              positions, and each face receives only its corresponding description and conditioning.
+            then: Detected face coordinates are matched uniquely to horizontal and vertical ordering
+              relationships, without requiring rows or columns. Each matched face receives only its
+              own description and conditioning. Ambiguous associations stop before refinement.
             when: Face detail runs
           - given: Face detections and intended descriptions cannot be matched unambiguously
             id: ac-mismatch
