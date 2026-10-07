@@ -8,3 +8,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T23:56:34.895Z
+  - _ulid: 01M49TJKGRQ1JVV9TSYSGB3Q6X
+    content: User clarified compare actual output prompts only, not generated images. Candidate list
+      from screenshot expanded to four GGUF models; skip Krea2 Engineer. Installed Ollama0.17.7
+      fails architectureqwen35; downloaded verified current official llama.cpp b11457 CUDA12.8
+      binaries and dependencies outside repo, reusing downloadedQwenweights. No system service
+      alteration required; user explicitly authorizes updating/replacing runtime if needed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T00:00:25.112Z
