@@ -25,6 +25,15 @@ class RealInferenceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.enhancer.close()
 
+    # AC: @create-managed-prompt-enhancer ac-infer-empty-face
+    async def test_visible_portrait_derives_face_without_separate_facial_brief(self):
+        result = await self.enhancer.infer('qwen', 'A front-facing portrait of one adult dancer. No makeup.', '', seed=73)
+        self.assertIn('dancer', result['main_prompt'].lower())
+        self.assertIn('dancer', result['face_prompt'].lower())
+        self.assertTrue(result['face_prompt'].strip())
+        for invented in ('smiling', 'eyes closed', 'green eyes', 'beard'):
+            self.assertNotIn(invented, result['face_prompt'].lower())
+
     # AC: @create-managed-prompt-enhancer ac-enhance-preview
     async def test_sparse_scene_gains_rendering_detail_without_invented_subjects(self):
         result = await self.enhancer.infer('qwen', 'A wooden cabin.', '')
