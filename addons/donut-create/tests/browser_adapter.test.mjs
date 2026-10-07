@@ -25,7 +25,7 @@ function nodeAt(workflow, wanted) {
   }
 }
 
-function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 'synthetic-device-a', livePrompts = false, failFace = false} = {}) {
+function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 'synthetic-device-a', livePrompts = false, failFace = false, failFaceUpgrade = false} = {}) {
   const timers = [], events = new Map(), elements = new Map();
   function element(tag) {
     const result = {
@@ -44,7 +44,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
   const models = Object.fromEntries([...new Set(catalog.models.map(model => model.folder))].map(folder => [folder,catalog.models.filter(model => model.folder === folder).map(model => model.filename)]));
   function liveNodes() {
     if (!livePrompts) return current.nodes;
-    const nodes = [1126, 1178].map(id => ({ id, type: 'DF_Text_Box', widgets: [{ name: 'Text',
+    const nodes = [1126, 1178].filter(id => nodeAt(current, id)).map(id => ({ id, type: 'DF_Text_Box', widgets: [{ name: 'Text',
       get value() { return nodeAt(current, id).widgets_values[0]; },
       set value(value) { nodeAt(current, id).widgets_values[0] = value; },
       callback() { if (id === 1178 && failFace) throw new Error('Synthetic face callback failure'); },
@@ -54,7 +54,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
   const app = {
     canvas:{draw() {}}, registerExtension() {},
     graph:{get _nodes() { return liveNodes(); },serialize() { return copy(current); }},
-    async loadGraphData(data) { current = copy(data || stock); loaded.push(copy(current)); },
+    async loadGraphData(data) { current = copy(data || stock); loaded.push(copy(current)); if (failFaceUpgrade && nodeAt(current,1180)) return false; },
     async graphToPrompt() {
       const face = nodeAt(current,1125)?.widgets_values?.[0] || '';
       const scene = nodeAt(current,1126)?.widgets_values?.[0] || '';
@@ -273,5 +273,136 @@ test('failed face mutation rolls back both fields', async () => {
   assert.equal(response.ok,false);
   assert.equal(nodeAt(env.current(),1126).widgets_values[0],original.prompt.value);
   assert.equal(nodeAt(env.current(),1178).widgets_values[0],original.facePrompt.value);
+  assert.equal(env.queued.length,0);
+});
+
+// Equivalent public v5 structure before the face-only branch was introduced.
+function legacyFaceRecipe() {
+  const workflow = copy(preset);
+  delete workflow.extra.donut_workflow.controls_revision;
+  const sources = workflow.definitions.subgraphs.find(graph => graph.id === nodeAt(workflow,1138).type);
+  const body = workflow.definitions.subgraphs.find(graph => graph.id === nodeAt(workflow,1014).type);
+  const removed = new Set([1178,1179,1180]);
+  sources.nodes = sources.nodes.filter(node => !removed.has(node.id));
+  body.nodes = body.nodes.filter(node => !removed.has(node.id));
+  sources.links = sources.links.filter(edge => !removed.has(edge.origin_id) && !removed.has(edge.target_id));
+  body.links = body.links.filter(edge => !removed.has(edge.target_id));
+  for (const edge of body.links.filter(edge => edge.origin_id === 1180)) {
+    edge.origin_id = 996; edge.origin_slot = edge.type === 'STRING' ? 1 : 4;
+    nodeAt(workflow,996).outputs[edge.origin_slot].links.push(edge.id);
+  }
+  const removedLinks = new Set([1115413,1115414,1115415,1115417,1115418,1115419,1115420,1115421,1115422,1115423,1115424,1115425]);
+  for (const graph of [sources,body]) {
+    for (const node of graph.nodes) for (const output of node.outputs || []) output.links = (output.links || []).filter(id => !removedLinks.has(id));
+    for (const port of [...graph.inputs,...graph.outputs]) port.linkIds = (port.linkIds || []).filter(id => !removedLinks.has(id));
+  }
+  sources.outputs = sources.outputs.filter(port => port.name !== 'face_instruction');
+  const faceSlot = body.inputs.findIndex(port => port.name === 'face_instruction');
+  body.inputs.splice(faceSlot,1);
+  for (const edge of body.links) if (edge.origin_id === -10 && edge.origin_slot > faceSlot) edge.origin_slot--;
+  nodeAt(workflow,1138).outputs = nodeAt(workflow,1138).outputs.filter(port => port.name !== 'face_instruction');
+  nodeAt(workflow,1014).inputs = nodeAt(workflow,1014).inputs.filter(port => port.name !== 'face_instruction');
+  workflow.links = workflow.links.filter(edge => edge[0] !== 1115416);
+  for (const group of nodeAt(workflow,1140).properties.donut_app_controls.groups) group.controls = group.controls.filter(control => control.path.at(-1) !== 1178);
+  nodeAt(workflow,1126).widgets_values[0] = 'A synthetic owl on a branch.';
+  nodeAt(workflow,1125).widgets_values[0] = 'Soft blue light, ink illustration.';
+  nodeAt(workflow,984).mode = 0;
+  return workflow;
+}
+
+function faceInstruction(workflow) {
+  const body = workflow.definitions.subgraphs.find(graph => graph.id === nodeAt(workflow,1014).type);
+  const sources = workflow.definitions.subgraphs.find(graph => graph.id === nodeAt(workflow,1138).type);
+  const target = body.links.find(edge => edge.target_id === 984 && nodeAt(workflow,984).inputs[edge.target_slot].name === 'edit_prompt');
+  assert.equal(target.origin_id,1180);
+  const positive = body.links.find(edge => edge.target_id === 1118 && nodeAt(workflow,1118).inputs[edge.target_slot].name === 'conditioning_in_2');
+  assert.equal(positive.origin_id,1180); assert.equal(positive.origin_slot,3);
+  const context = body.links.find(edge => edge.target_id === 1180 && edge.target_slot === 1);
+  assert.equal(context.origin_id,996); assert.equal(context.origin_slot,0);
+  const face = body.links.find(edge => edge.target_id === 1180 && edge.target_slot === 2);
+  assert.equal(body.inputs[face.origin_slot].name,'face_instruction');
+  const root = workflow.links.find(edge => edge[3] === 1014 && nodeAt(workflow,1014).inputs[edge[4]].name === 'face_instruction');
+  assert.equal(root[1],1138);
+  assert.equal(nodeAt(workflow,1138).outputs[root[2]].name,'face_instruction');
+  const output = sources.outputs.find(port => port.name === 'face_instruction');
+  const expansion = sources.links.find(edge => edge.id === output.linkIds[0]);
+  assert.equal(expansion.origin_id,1179);
+  const text = sources.links.find(edge => edge.target_id === 1179 && edge.target_slot === 2);
+  return nodeAt(workflow,text.origin_id).widgets_values[0];
+}
+
+// AC: @create-managed-prompt-enhancer ac-apply-routing
+// AC: @donut-create-plugin ac-workflow-state
+test('legacy face detail gains an editable, wired face prompt without replacing the recipe or generating',async()=>{
+  const working = legacyFaceRecipe(), before = copy(working);
+  nodeAt(working,1137).widgets_values[0] = 8675309;
+  const env = fixture({initial:working,livePrompts:true}); await env.boot();
+  assert.ok(nodeAt(env.current(),1178),'Face prompt must be added to the existing recipe');
+  assert.equal(faceInstruction(env.current()),'');
+  for (const id of [1126,1125,1137,1014,984]) assert.deepEqual(nodeAt(env.current(),id).widgets_values,nodeAt(working,id).widgets_values);
+  assert.equal(nodeAt(env.current(),984).mode,0);
+  assert.equal(env.current().nodes.length,before.nodes.length);
+  assert.equal(env.queued.length,0);
+  const replies = [], parent = {postMessage:value=>replies.push(value)}; env.context.parent = parent;
+  async function action(action,payload) {
+    env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'legacy-'+replies.length,action,payload}});
+    await env.settle(); return replies.at(-1);
+  }
+  const snapshot = (await action('snapshot')).snapshot;
+  assert.equal(snapshot.fields.facePrompt.available,true);
+  const response = await action('enhance-prompts',{fields:{prompt:'A synthetic owl gazes left.',facePrompt:'The owl gazes left.'},expected:{prompt:snapshot.fields.prompt.value,facePrompt:''}});
+  assert.equal(response.ok,true);
+  assert.equal(faceInstruction(env.current()),'The owl gazes left.');
+  assert.equal(nodeAt(env.current(),1125).widgets_values[0],nodeAt(working,1125).widgets_values[0]);
+  const reopened = fixture({initial:env.current(),livePrompts:true}); await reopened.boot();
+  assert.equal(reopened.loaded.length,0,'Upgrade must be idempotent');
+  assert.equal(faceInstruction(reopened.current()),'The owl gazes left.');
+  assert.equal(env.queued.length,0);
+});
+
+// AC: @donut-create-plugin ac-workflow-state
+test('explicitly loading an older recipe also upgrades only its missing face path',async()=>{
+  const env = fixture({livePrompts:true}); await env.boot();
+  const working = legacyFaceRecipe();
+  await env.app.loadGraphData(working);
+  assert.equal(faceInstruction(env.current()),'');
+  assert.equal(nodeAt(env.current(),1126).widgets_values[0],nodeAt(working,1126).widgets_values[0]);
+  assert.equal(env.queued.length,0);
+});
+
+// AC: @donut-create-plugin ac-workflow-state
+test('custom face wiring is preserved instead of being silently replaced',async()=>{
+  const working = legacyFaceRecipe();
+  const body = working.definitions.subgraphs.find(graph => graph.id === nodeAt(working,1014).type);
+  body.links.find(edge => edge.target_id === 984 && edge.target_slot === 11).origin_id = 777;
+  const env = fixture({initial:working}); await env.boot();
+  assert.deepEqual(env.current(),working);
+  assert.equal(env.loaded.length,0);
+  assert.equal(env.queued.length,0);
+});
+
+// AC: @donut-create-plugin ac-workflow-state
+test('failed face-path load restores the complete original recipe',async()=>{
+  const working = legacyFaceRecipe();
+  const env = fixture({initial:working,failFaceUpgrade:true}); await env.boot();
+  assert.deepEqual(env.current(),working);
+  assert.match(env.notice(),/face prompt could not be added/);
+  assert.equal(env.queued.length,0);
+});
+
+// AC: @donut-create-plugin ac-workflow-state
+test('face upgrade allocates fresh links and preserves unrelated custom nodes and settings',async()=>{
+  const working = legacyFaceRecipe();
+  working.nodes.push({id:8000,type:'SyntheticCustomNode',widgets_values:['Keep this setting'],inputs:[],outputs:[]});
+  working.last_link_id = 2000000;
+  const env = fixture({initial:working}); await env.boot();
+  const upgraded = env.current();
+  assert.deepEqual(nodeAt(upgraded,8000),nodeAt(working,8000));
+  const graphs = [upgraded,...upgraded.definitions.subgraphs];
+  const oldLinks = new Set([working,...working.definitions.subgraphs].flatMap(graph => graph.links.map(edge => Array.isArray(edge) ? edge[0] : edge.id)));
+  const added = graphs.flatMap(graph => graph.links.map(edge => Array.isArray(edge) ? edge[0] : edge.id)).filter(id => !oldLinks.has(id));
+  assert.equal(new Set(added).size,added.length);
+  assert.ok(added.every(id => id > 2000000));
+  assert.equal(faceInstruction(upgraded),'');
   assert.equal(env.queued.length,0);
 });

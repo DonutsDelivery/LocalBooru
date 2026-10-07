@@ -506,7 +506,7 @@ export default function SimpleCreateControls({
           {sessionId && <CreatePromptEnhancer
             sessionId={sessionId} imageBrief={value(activeTab === 'edit' ? 'editPrompt' : 'prompt')} faceBrief={value('facePrompt')} disabled={locked || !available(activeTab === 'edit' ? 'editPrompt' : 'prompt') || !available('facePrompt')}
             unavailableReason={connected && (!available(activeTab === 'edit' ? 'editPrompt' : 'prompt') || !available('facePrompt'))
-              ? 'This workflow does not expose both prompt controls. Load an updated v5 preset or expose the image and face prompts in Advanced before enhancing.' : ''}
+              ? 'This custom workflow does not expose both prompt controls. Expose the image and face prompts in Advanced before enhancing.' : ''}
             onPauseInstant={() => onRunInstantChange?.(false)} onApply={async (result, originals) => {
               const key = activeTab === 'edit' ? 'editPrompt' : 'prompt'
               const latest = field => draftRef.current[field] ?? (field === key ? draftRef.current[key === 'prompt' ? 'editPrompt' : 'prompt'] : undefined) ?? fields[field]?.value ?? ''

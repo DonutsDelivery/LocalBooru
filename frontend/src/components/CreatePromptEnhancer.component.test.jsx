@@ -88,9 +88,26 @@ test.each([false, true])('model settings stay accessible when an older workflow 
   await waitFor(() => expect(screen.getByRole('button', { name: setupName }).disabled).toBe(false))
   expect(screen.getByLabelText('Enhancer model')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Enhance prompts' }).disabled).toBe(true)
-  expect(screen.getByText(/This workflow does not expose both prompt controls/)).toBeTruthy()
+  expect(screen.getByText(/This custom workflow does not expose both prompt controls/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: setupName }))
   await waitFor(() => expect(startEnhancer).toHaveBeenCalledWith('synthetic', { kind: 'install', model: 'minicpm' }))
   expect(onPatch).not.toHaveBeenCalled()
+  expect(onGenerate).not.toHaveBeenCalled()
+})
+
+// AC: @create-managed-prompt-enhancer ac-enhance-preview
+test('Face detail on exposes the face prompt and passes the written draft to enhancement', async () => {
+  startEnhancer.mockResolvedValue({ ...idle, job: { id: 'face-on', state: 'complete', kind: 'enhance', result: { main_prompt: 'A synthetic owl.', face_prompt: 'The owl closes its eyes.' } } })
+  const onPatch = vi.fn().mockResolvedValue(undefined), onGenerate = vi.fn()
+  render(<SimpleCreateControls sessionId="synthetic" activeTab="create" connected snapshot={{ fields: {
+    prompt: { kind: 'text', value: 'A synthetic owl.' }, facePrompt: { kind: 'text', value: '' },
+    faceDetail: { kind: 'boolean', value: true },
+  } }} onPatch={onPatch} onGenerate={onGenerate} />)
+  fireEvent.change(screen.getByLabelText('Describe only the face'), { target: { value: 'The owl closes its eyes.' } })
+  fireEvent.click(screen.getByText('Prompt enhancer'))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Enhance prompts' }).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: 'Enhance prompts' }))
+  await screen.findByText('Review enhanced prompts')
+  expect(startEnhancer).toHaveBeenCalledWith('synthetic', { kind: 'enhance', model: 'minicpm', image_brief: 'A synthetic owl.', face_brief: 'The owl closes its eyes.' })
   expect(onGenerate).not.toHaveBeenCalled()
 })
