@@ -93,6 +93,7 @@ export default function CreatePromptEnhancer({ sessionId, config, disabled, unav
     <summary>Prompt enhancer</summary>
     {open && <div>
       <p className="create-control-note">Runs locally before every image run when enabled. Uses your image and face briefs with that run’s seed; your original inputs stay unchanged. Ask it to invent or vary details within your brief. Downloads once, then works offline.</p>
+      <p className="create-control-note">Leave the face brief blank to derive one identifiable visible face from Describe your image. A supplied face brief takes priority; scenes with hidden or ambiguous faces keep the face prompt empty.</p>
       <label className="create-field">Enhancer model<select value={model} disabled={working || !onConfigure} onChange={event => configure({ enabled, model: event.target.value })}>
         {(status?.models || [{ id: 'minicpm', name: 'MiniCPM5-2B · loading…' }]).map(item => <option key={item.id} value={item.id}>{modelRoles[item.id] ? `${modelRoles[item.id]} · ` : ''}{item.name}{item.size ? ` · ${item.quantization} · ${formatCreateBytes(item.size)}` : ''}</option>)}
       </select></label>

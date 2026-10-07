@@ -126,6 +126,74 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             process.terminate.assert_called_once()
         self.assertIsNone(self.enhancer.process)
 
+    # AC: @donut-create-plugin ac-face-prompt-routing
+    # AC: @create-managed-prompt-enhancer ac-infer-empty-face
+    async def test_scene_derived_face_pair_survives_owned_inference_with_empty_face_brief(self):
+        # Synthetic model responses verify transport and parsing, not real-model
+        # obedience to the face-selection policy. No model is downloaded here.
+        fixtures = [
+            ('A front-facing portrait of one adult dancer. No makeup.', '',
+             "The adult dancer's face, facing the viewer, without makeup."),
+            ('One adult musician seated beside a piano.', '',
+             "The adult musician's face."),
+            ('A front-facing portrait of one owl.', ' \t ',
+             "The owl's face, facing the viewer."),
+            ('One adult pilot smiles, looking left, beside a red aircraft. Trigger SYNTH_PILOT.', '',
+             'The adult pilot smiles, looking left.'),
+            ('One adult pilot faces the viewer; one mechanic faces away with their face hidden.', '',
+             "The adult pilot's face, facing the viewer."),
+            ('One adult dancer faces the viewer. Choose the dancer\'s expression; keep their eyes closed.', '',
+             'The adult dancer smiles, facing the viewer with eyes closed.'),
+            ('Two adult dancers face the viewer; neither is the main subject.', '', ''),
+            ('One adult dancer seen from behind, face entirely hidden.', '', ''),
+            ('A wooden cabin, with no people or animals.', '', ''),
+            ('One adult pilot seen from behind, face entirely hidden.', "The pilot's face.",
+             "The pilot's face."),
+            ('Two adult dancers face the viewer; neither is the main subject.', "The older dancer's face.",
+             "The older dancer's face."),
+            ('One adult pilot in a front-facing portrait.',
+             'The pilot looks right, eyes closed, mouth closed.',
+             'The pilot looks right, eyes closed, mouth closed.'),
+        ]
+        client_type = httpx.AsyncClient
+        for image, face, expected_face in fixtures:
+            with self.subTest(image=image, face=face):
+                # The face override is consistent in both generated fields.
+                scene = image.replace("Choose the dancer's expression; keep their eyes closed.", 'The dancer smiles with eyes closed.')
+                output = {'main_prompt': scene + (' ' + face if face else ''), 'face_prompt': expected_face}
+                process = unittest.mock.Mock(returncode=None)
+                process.wait = AsyncMock(return_value=0)
+                completion_requests = []
+                def respond(request):
+                    self.assertEqual(request.url.host, '127.0.0.1')
+                    data = {} if request.method == 'GET' else json.loads(request.content)
+                    if request.url.path == '/health':
+                        return httpx.Response(200, json={})
+                    if request.url.path == '/apply-template':
+                        return httpx.Response(200, json={'prompt': 'synthetic formatted chat'})
+                    if request.url.path == '/tokenize':
+                        return httpx.Response(200, json={'tokens': [1] * 20})
+                    self.assertEqual(request.url.path, '/v1/chat/completions')
+                    self.assertEqual(data['messages'], messages(image, face))
+                    self.assertEqual(json.loads(data['messages'][1]['content']), {'image_brief': image, 'face_brief': face})
+                    self.assertEqual(data['seed'], 73)
+                    completion_requests.append(data)
+                    return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(output)}}]})
+                def client(**options):
+                    options['transport'] = httpx.MockTransport(respond)
+                    return client_type(**options)
+                with patch.object(self.enhancer, 'ready', return_value=True), patch.object(module, '_read_json', return_value={'server': 'llama-server'}), patch.object(module.asyncio, 'create_subprocess_exec', new=AsyncMock(return_value=process)), patch.object(module.httpx, 'AsyncClient', side_effect=client):
+                    self.enhancer.start('owner', 'enhance', 'qwen', image, face, seed=73)
+                    await self.enhancer.task
+                job = self.enhancer.status('owner')['job']
+                self.assertEqual(job['state'], 'complete')
+                self.assertEqual(job['result'], output)
+                self.assertEqual(job['seed'], 73)
+                self.assertEqual(len(completion_requests), 1)
+                self.assertNotIn('job', self.enhancer.status('other'))
+                process.terminate.assert_called_once()
+                self.assertIsNone(self.enhancer.process)
+
     # AC: @create-managed-prompt-enhancer ac-owned-private
     async def test_immediate_cancel_before_task_starts(self):
         with patch.object(self.enhancer, 'ready', return_value=True), patch.object(self.enhancer, 'infer', new=AsyncMock()) as infer:

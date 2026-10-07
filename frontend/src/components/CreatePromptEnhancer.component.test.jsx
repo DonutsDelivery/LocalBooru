@@ -7,6 +7,14 @@ vi.mock('../services/donutCreate', () => ({ getEnhancerStatus: vi.fn(), startEnh
 const idle = { models: [{ id: 'minicpm', name: 'MiniCPM5-2B', ready: true }, { id: 'qwen', name: 'Qwen3.5-4B', ready: true }], supported: true, busy: false }
 beforeEach(() => { vi.clearAllMocks(); getEnhancerStatus.mockResolvedValue(idle); cancelEnhancer.mockResolvedValue(idle) })
 afterEach(cleanup)
+// AC: @create-managed-prompt-enhancer ac-infer-empty-face
+test('explains how an empty face brief derives a visible face while preserving overrides', async () => {
+  render(<CreatePromptEnhancer sessionId="synthetic" config={{enabled:true,model:'minicpm'}} onConfigure={vi.fn()} />)
+  fireEvent.click(screen.getByText('Prompt enhancer'))
+  expect(await screen.findByText(/Leave the face brief blank to derive one identifiable visible face from Describe your image/)).toBeTruthy()
+  expect(screen.getByText(/A supplied face brief takes priority; scenes with hidden or ambiguous faces keep the face prompt empty/)).toBeTruthy()
+  expect(startEnhancer).not.toHaveBeenCalled()
+})
 // AC: @create-managed-prompt-enhancer ac-per-run-seed
 test('enables once without enhancing or applying either source input', async () => {
   const onConfigure = vi.fn().mockResolvedValue(undefined)
