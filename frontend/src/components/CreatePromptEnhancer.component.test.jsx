@@ -77,12 +77,12 @@ test('unmount cancels only the operation started by this enhancer panel', async 
 test.each([false, true])('model settings stay accessible when an older workflow lacks the face prompt control (ready=%s)', async ready => {
   getEnhancerStatus.mockResolvedValue({ ...idle, models: [{ ...idle.models[0], ready }] })
   startEnhancer.mockResolvedValue({ ...idle, job: { id: 'setup', kind: 'install', state: 'complete' } })
-  const onPatch = vi.fn(), onGenerate = vi.fn(), onLoadUpdatedV5 = vi.fn()
+  const onPatch = vi.fn(), onGenerate = vi.fn()
   render(<SimpleCreateControls sessionId="synthetic" activeTab="create" connected snapshot={{ fields: {
     prompt: { kind: 'text', value: 'A synthetic owl.' },
     facePrompt: { kind: 'text', value: null, available: false },
     faceDetail: { kind: 'boolean', value: true },
-  } }} onPatch={onPatch} onGenerate={onGenerate} onLoadUpdatedV5={onLoadUpdatedV5} />)
+  } }} onPatch={onPatch} onGenerate={onGenerate} />)
   fireEvent.click(screen.getByText('Prompt enhancer'))
   const setupName = ready ? 'Repair / verify model' : 'Download model'
   await waitFor(() => expect(screen.getByRole('button', { name: setupName }).disabled).toBe(false))
@@ -91,9 +91,6 @@ test.each([false, true])('model settings stay accessible when an older workflow 
   expect(screen.getByText(/This workflow does not expose both prompt controls/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: setupName }))
   await waitFor(() => expect(startEnhancer).toHaveBeenCalledWith('synthetic', { kind: 'install', model: 'minicpm' }))
-  expect(onLoadUpdatedV5).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: 'Load latest v5 preset (replaces recipe)' }))
-  expect(onLoadUpdatedV5).toHaveBeenCalledTimes(1)
   expect(onPatch).not.toHaveBeenCalled()
   expect(onGenerate).not.toHaveBeenCalled()
 })

@@ -122,32 +122,6 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('Donut Create studio', () => {
-  // AC: @create-managed-prompt-enhancer ac-managed-models
-  test('offers explicit preset recovery with face detail on and no update banner', async () => {
-    session.jobs = []
-    session.outputs = []
-    const snapshot = { ready: true, workflowUpgradeAvailable: false, fields: {
-      prompt: { kind: 'text', value: 'A synthetic clockwork owl.', available: true },
-      facePrompt: { kind: 'text', value: null, available: false },
-      faceDetail: { kind: 'boolean', value: true, available: true },
-    } }
-    const upgraded = { ...snapshot, fields: { ...snapshot.fields,
-      facePrompt: { kind: 'text', value: '', available: true },
-    } }
-    bridgeFixture.current = { dispose: vi.fn(), request: vi.fn(async action => action === 'load-preset' ? upgraded : snapshot) }
-    render(<CreateStudioHost />)
-    openStudio()
-    fireEvent.click(await screen.findByText('Prompt enhancer'))
-    const load = await screen.findByRole('button', { name: 'Load latest v5 preset (replaces recipe)' })
-    await waitFor(() => expect(load.disabled).toBe(false))
-    expect(screen.queryByText('Updated v5 controls are available')).toBeNull()
-    expect(bridgeFixture.current.request.mock.calls.some(([action]) => action === 'load-preset')).toBe(false)
-    fireEvent.click(load)
-    await waitFor(() => expect(bridgeFixture.current.request.mock.calls.some(([action]) => action === 'load-preset')).toBe(true))
-    await screen.findByLabelText('Describe only the face')
-    expect(bridgeFixture.current.request.mock.calls.some(([action]) => action === 'generate')).toBe(false)
-  })
-
   test('shows a centered studio loading state until the pending session is ready', async () => {
     const pendingSession = deferred()
     api.apiClient.post.mockImplementation(async url => url === `${CREATE_API}/sessions`
