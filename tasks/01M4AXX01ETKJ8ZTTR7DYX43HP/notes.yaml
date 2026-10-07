@@ -11,3 +11,20 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T10:21:54.756Z
+  - _ulid: 01M4AYHBZHPJ8TGE0BM3EWS7QQ
+    content: "Runtime subtask in isolated feat/create-multi-face-runtime: added DMCFaceDetailer
+      preserving original six outputs and single/empty-plan delegation; strict shared 16-record
+      schema with spatial or ordinal positions; all batch detections validated before
+      encoding/sampling, no max_faces truncation, stable x/y/detection ordering. Independent CLIP
+      encodes reuse only seed-variance metadata and apply idempotent Fusion taps; each pass uses a
+      request-local fixed-segment detector on the evolving image and its own edit_prompt. Multi
+      identity editing/references, wildcard replacements and hooks explicitly rejected pending a
+      safe identity map. Owned source registration is embedded and activated only in the managed
+      receipt-owned runtime; staged first activation, atomic one-file updates with checksum
+      recovery, and startup conflicts surface in setup status. Ten synthetic Python
+      runtime/installer tests pass, including count mismatches, batches, crop progression,
+      settings/seeds, legacy delegation, mask batch dimension, pipe contract and interrupted
+      activation. Root owns adapter/enhancer/UI integration and final task submission."
+    supersedes: null
+    author: Booru Node Maintainers
+    created_at: 2026-10-07T10:28:53.361Z
