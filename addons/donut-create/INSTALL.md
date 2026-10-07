@@ -92,6 +92,8 @@ Model weights retain their publishers' terms:
 and [Qwen GGUF](https://huggingface.co/HauhauCS/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive).
 They are downloaded on request and are not bundled or relicensed by DMC.
 
+## Image backend setup
+
 Desktop addon installation uses an existing Python **3.12** when available,
 including standard Homebrew/python.org locations on macOS. Otherwise DMC
 downloads a pinned, SHA-256 verified Python 3.12 runtime into its own application
