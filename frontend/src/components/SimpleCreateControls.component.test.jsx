@@ -280,6 +280,8 @@ test.each(['create', 'edit'])('keeps %s generation failures beside Generate outs
   const alert = await screen.findByRole('alert')
   expect(alert.closest('.create-generate-footer')).toBeTruthy()
   expect(controls.contains(alert)).toBe(false)
+  expect(alert.tabIndex).toBe(0)
+  alert.focus(); expect(document.activeElement).toBe(alert)
   expect(controls.scrollTop).toBe(400)
   expect(screen.getByLabelText('Describe your image').value).toBe('Synthetic owl.')
   view.rerender(<SimpleCreateControls {...initial} error="" />)

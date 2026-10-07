@@ -583,7 +583,7 @@ export default function SimpleCreateControls({
         {feature('faceDetail', 'Face detail', <>{numberField('faceDenoise')}{numberField('maxFaces')}</>)}
       </div>
       <footer className="create-generate-footer">
-        {(inputError || error) && <div className="create-message error create-generation-error" role="alert">{inputError || error}</div>}
+        {(inputError || error) && <div className="create-message error create-generation-error" role="alert" tabIndex={0}>{inputError || error}</div>}
         {jobsContent}
         <label className="create-instant-toggle"><input type="checkbox" checked={runInstant === true} disabled={locked || sliding || !!busy || (editing && !hasReference('referenceA'))} onChange={event => onRunInstantChange?.(event.target.checked)} />Run Instant</label>
         <button type="submit" className="create-primary create-generate" disabled={locked || sliding || (!!busy && busy !== 'patch') || (editing && !hasReference('referenceA'))}>
