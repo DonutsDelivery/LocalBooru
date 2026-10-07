@@ -696,6 +696,7 @@
   let latestRun = {revision: 0, workflow: null}, loadedRunRevision = 0, loadedRecipe = null;
   let presetControlsRevision = null;
   let outputDestination = 'preview';
+  let pendingEnhancement = null, queueInFlight = false, compilingEnhancement = false, lastEnhancement = null, queueCancellationRevision = 0;
   let nodeInfo = {}, loraNames = [], lastQueuedPromptIds = [];
   const uploadedReferences = new Set();
   const uploadedMasks = new Map();
@@ -722,7 +723,7 @@
     catch (error) { showError(new Error('The saved draft could not be read. Load the setup preset to start a new draft.')); return null; }
   }
   function saveDraft() {
-    if (!initialized || loading || !app?.graph) return;
+    if (!initialized || loading || compilingEnhancement || !app?.graph) return;
     try {
       const value = JSON.stringify(app.graph.serialize());
       if (value === lastSaved) return;
@@ -932,6 +933,8 @@
         workflow = (app.rootGraph || app.graph).serialize();
       }
       loadedRecipe = recipe(workflow);
+      const run = workflow.extra?.dmc_prompt_enhancement;
+      lastEnhancement = validEnhancementRun(run) ? {...run} : null;
       await checkCapabilities(); await refreshFieldCatalogs(); lastError = ''; notice('Draft is saved locally for this backend.');
     }
     catch (error) { showError(error); }
@@ -1094,7 +1097,7 @@
   const referenceFields = new Set(['referenceA', 'referenceB', 'guidanceReferenceA', 'guidanceReferenceB']);
   const cropReferences = {cropA: 'referenceA', cropB: 'referenceB', guidanceCropA: 'guidanceReferenceA', guidanceCropB: 'guidanceReferenceB'};
   const channel = 'donut-create-basic-v1';
-  const actions = new Set(['snapshot', 'patch', 'enhance-prompts', 'generate', 'upload-reference', 'upload-mask', 'load-preset', 'load-latest', 'load-workflow', 'drop-file']);
+  const actions = new Set(['snapshot', 'patch', 'enhance-prompts', 'enhancer-config', 'cancel-generation', 'generate', 'upload-reference', 'upload-mask', 'load-preset', 'load-latest', 'load-workflow', 'drop-file']);
   const referencePattern = /^donutref:[a-f0-9]{64}$/;
   const maskPattern = /^donutmask:[a-f0-9]{64}$/;
   const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -1103,7 +1106,7 @@
   const recipe = workflow => {
     let normalized = workflow;
     if (object(workflow?.extra)) {
-      const extra = {...workflow.extra}; delete extra.dmc_output_destination;
+      const extra = {...workflow.extra}; delete extra.dmc_output_destination; delete extra.dmc_prompt_enhancement;
       if (object(extra.ds) && ('scale' in extra.ds || 'offset' in extra.ds)) delete extra.ds;
       normalized = {...workflow, extra};
     }
@@ -1346,12 +1349,143 @@
     return {ready: Boolean(ready && initialized && !loading),
       fields: Object.fromEntries(Object.keys(basicFields).map(key => [key, descriptor(key, current[key])])),
       lastQueuedPromptIds: [...lastQueuedPromptIds],
+      enhancer: {...enhancerConfig(), ...(lastEnhancement ? {lastRun: lastEnhancement} : {})},
       // Missing optional controls do not prove an update, especially in custom graphs.
       workflowUpgradeAvailable: Boolean(ready && initialized && !loading
         && Number.isSafeInteger(loadedControlsRevision) && loadedControlsRevision >= 0
         && Number.isSafeInteger(presetControlsRevision) && presetControlsRevision > loadedControlsRevision),
       latestRunRevision: latestRun.revision, latestAvailable: latestRun.revision > loadedRunRevision,
       ...(lastError ? {error: lastError} : {})};
+  }
+  function validEnhancementRun(run) {
+    return object(run) && Number.isSafeInteger(run.seed) && run.seed >= 0 && ['qwen', 'minicpm'].includes(run.model)
+      && typeof run.main_prompt === 'string' && run.main_prompt.trim() && run.main_prompt.length <= 16000
+      && typeof run.face_prompt === 'string' && run.face_prompt.length <= 8000;
+  }
+  function enhancerConfig() {
+    const value = (app?.rootGraph || app?.graph)?.extra?.dmc_prompt_enhancer;
+    return value === undefined ? {enabled: false, model: 'qwen'} : {...value};
+  }
+  function validateEnhancerConfig(value) {
+    if (!object(value) || Object.keys(value).length !== 2 || typeof value.enabled !== 'boolean'
+      || !['qwen', 'minicpm'].includes(value.model)) throw new Error('Choose a valid per-run enhancer configuration.');
+  }
+  function configureEnhancer(value) {
+    requireEditor(); validateEnhancerConfig(value);
+    const graph = app.rootGraph || app.graph;
+    const changed = canonical(enhancerConfig()) !== canonical(value);
+    if (changed) { graph.extra = {...graph.extra, dmc_prompt_enhancer: {...value}}; saveDraft(); }
+    return changed;
+  }
+  async function cancelOwnedEnhancement(token) {
+    if (!token?.id || token.cancelSent) return;
+    token.cancelSent = true;
+    try { await api.fetchApi('/dmc/enhancer/cancel', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: token.id})}); }
+    catch { /* The cancelled transaction remains invalid even if disconnected. */ }
+  }
+  function cancelGeneration(message = 'The image run was cancelled before submission.') {
+    queueCancellationRevision++;
+    const token = pendingEnhancement;
+    if (!token || token.cancelled) return;
+    token.cancelled = new Error(message); token.reject(token.cancelled);
+    void cancelOwnedEnhancement(token);
+  }
+  function executionSeed(output) {
+    const samplers = Object.values(output || {}).filter(node => node.class_type === 'DonutSampler');
+    if (samplers.length !== 1) throw new Error('Enhance every run needs one supported primary Donut sampler.');
+    function resolve(value, seen = new Set()) {
+      if (Number.isSafeInteger(value) && value >= 0) return value;
+      if (!Array.isArray(value) || value.length !== 2 || seen.has(String(value[0]))) throw new Error('The actual image seed cannot be resolved safely for enhancement.');
+      const node = output[value[0]], slot = value[1]; seen.add(String(value[0]));
+      // Pinned ComfyUI SeedNode is an identity; DonutSeedPlan base output
+      // is sampler_seed. Other seed computations fail closed rather than guess.
+      if (node?.class_type === 'SeedNode' && slot === 0) return resolve(node.inputs?.seed, seen);
+      if (node?.class_type === 'DonutSeedPlan' && slot === 1) return resolve(node.inputs?.sampler_seed, seen);
+      throw new Error('This workflow uses an unsupported execution seed binding.');
+    }
+    return resolve(samplers[0].inputs?.seed);
+  }
+  async function enhanceRun(compiled) {
+    const settings = enhancerConfig(); validateEnhancerConfig(settings);
+    if (!settings.enabled) return compiled;
+    requireEditor();
+    const current = bindings(), scene = current.editing?.widget.value ? current.editPrompt : current.prompt, face = current.facePrompt;
+    if (!scene || !face || scene.widget === face.widget || typeof scene.widget.value !== 'string' || typeof face.widget.value !== 'string'
+      || !scene.widget.value.trim() || scene.widget.value.length > 16000 || face.widget.value.length > 8000) {
+      throw new Error('Enhance every run needs bound scene and face prompt controls and a main brief.');
+    }
+    const imageBrief = scene.widget.value, faceBrief = face.widget.value, seed = executionSeed(compiled.output);
+    const graph = app.rootGraph || app.graph, authored = recipe(graph.serialize());
+    let reject;
+    const cancelled = new Promise((_, fail) => { reject = fail; });
+    const token = {reject, cancelled: null, id: null}; pendingEnhancement = token;
+    const timeout = setTimeout(() => cancelGeneration('The prompt enhancer timed out. Retry this image run.'), 9 * 60 * 1000);
+    const valid = () => {
+      if (token.cancelled) throw token.cancelled;
+      if (graph !== (app.rootGraph || app.graph) || recipe(graph.serialize()) !== authored) throw new Error('The workflow changed while enhancing. Run again with the current draft.');
+    };
+    async function request(options, starting = false) {
+      const operation = (async () => {
+        const response = await api.fetchApi('/dmc/enhancer', options);
+        if (!response.ok) throw new Error('The local prompt enhancer is unavailable. Retry or repair its installation.');
+        const status = await response.json();
+        if (starting && typeof status?.job?.id === 'string' && status.job.kind === 'enhance') {
+          token.id = status.job.id;
+          if (token.cancelled) void cancelOwnedEnhancement(token);
+        }
+        return status;
+      })();
+      return Promise.race([operation, cancelled]);
+    }
+    try {
+      const availability = await request(); valid();
+      if (!availability.models?.some(model => model.id === settings.model && model.ready) || availability.busy) throw new Error('The selected prompt enhancer is not ready or is busy. Install it or wait before running.');
+      let status = await request({method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({kind: 'enhance', model: settings.model, image_brief: imageBrief, face_brief: faceBrief, seed})}, true);
+      while (true) {
+        valid();
+        const job = status.job;
+        if (!token.id || job?.id !== token.id || job.kind !== 'enhance' || job.model !== settings.model || job.seed !== seed) throw new Error('The enhancer returned an unexpected run. Retry this image run.');
+        if (job.state === 'complete') break;
+        if (job.state !== 'running') throw new Error(job.state === 'cancelled' ? 'The prompt enhancement was cancelled.' : 'The prompt enhancement failed. Retry this image run.');
+        await Promise.race([new Promise(resolve => setTimeout(resolve, 500)), cancelled]);
+        status = await request();
+      }
+      const result = status.job.result;
+      if (!object(result) || typeof result.main_prompt !== 'string' || !result.main_prompt.trim() || result.main_prompt.length > 16000
+        || typeof result.face_prompt !== 'string' || result.face_prompt.length > 8000) throw new Error('The enhancer returned incomplete prompts. Retry this image run.');
+      const updates = [{binding: scene, source: imageBrief, generated: result.main_prompt}, {binding: face, source: faceBrief, generated: result.face_prompt}];
+      let enhanced;
+      compilingEnhancement = true;
+      try {
+        for (const update of updates) update.binding.widget.value = update.generated;
+        enhanced = await Promise.race([app.graphToPrompt(graph), cancelled]);
+      } finally {
+        for (const update of updates) if (update.binding.widget.value === update.generated) update.binding.widget.value = update.source;
+        compilingEnhancement = false;
+      }
+      valid();
+      // Recompilation must change only the bound text input leaves. In particular,
+      // it cannot rerun seed hooks or silently compile a different execution graph.
+      const restored = JSON.parse(JSON.stringify(enhanced.output));
+      for (const {binding, source, generated} of updates) {
+        let bound = false;
+        for (const [id, node] of Object.entries(restored)) {
+          if (node.class_type === binding.node.type && compiled.output[id]?.inputs?.[binding.widget.name] === source
+            && node.inputs?.[binding.widget.name] === generated) {
+            node.inputs[binding.widget.name] = source; bound = true;
+          }
+        }
+        if (!bound) throw new Error('This prompt control cannot be compiled safely for per-run enhancement.');
+      }
+      if (canonical(restored) !== canonical(compiled.output) || executionSeed(enhanced.output) !== seed) throw new Error('The execution prompt changed while enhancing. Retry with supported prompt and seed controls.');
+      const run = {seed, model: settings.model, main_prompt: result.main_prompt, face_prompt: result.face_prompt};
+      token.run = run;
+      return {...compiled, output: enhanced.output, workflow: {...compiled.workflow,
+        extra: {...compiled.workflow?.extra, dmc_prompt_enhancement: run}}};
+    } catch (error) {
+      void cancelOwnedEnhancement(token); throw error;
+    } finally { clearTimeout(timeout); }
   }
   function requireEditor() {
     if (!ready || !initialized || loading || !app?.graph) throw new Error('The ComfyUI editor is still loading.');
@@ -1757,6 +1891,8 @@
     }
     if (event.origin !== parentOrigin) return;
     const reply = value => event.source.postMessage({channel, sessionId: config.sessionId, requestId: message.requestId, ...value}, event.origin);
+    // Stop must bypass the bridge queue while generate awaits enhancement.
+    if (message.action === 'cancel-generation') { cancelGeneration(); reply({ok: true, snapshot: snapshot()}); return; }
     bridgeQueue = bridgeQueue.then(async () => {
       try {
         if (['snapshot', 'generate'].includes(message.action) && message.payload?.outputDestination !== undefined) {
@@ -1774,6 +1910,7 @@
             else notice('A newer run is available in this workspace. Load it from the basic controls to replace this draft.');
           }
         }
+        else if (message.action === 'enhancer-config') mutationChanged = configureEnhancer(message.payload);
         else if (message.action === 'patch') mutationChanged = await applyPatch(message.payload);
         else if (message.action === 'enhance-prompts') {
           const {fields, expected} = message.payload || {};
@@ -1846,9 +1983,15 @@
     };
     const originalQueue = api.queuePrompt.bind(api);
     api.queuePrompt = async function (...args) {
-      const attempt = queueAttempt;
+      const attempt = queueAttempt, cancellationRevision = queueCancellationRevision;
+      if (queueInFlight) throw new Error('An image submission is already in progress.');
+      queueInFlight = true;
       try {
         await checkCapabilities(args[1]); saveDraft();
+        if (cancellationRevision !== queueCancellationRevision) throw new Error('The image run was cancelled before submission.');
+        args[1] = await enhanceRun(args[1]);
+        if (cancellationRevision !== queueCancellationRevision) throw new Error('The image run was cancelled before submission.');
+        if (pendingEnhancement?.cancelled) throw pendingEnhancement.cancelled;
         // Attach per-run storage intent without changing the editable graph.
         if (object(args[1]?.workflow)) args[1] = {...args[1], workflow: {...args[1].workflow,
           extra: {...args[1].workflow.extra, dmc_output_destination: outputDestination}}};
@@ -1856,6 +1999,7 @@
         if (result?.error || result?.node_errors && Object.keys(result.node_errors).length) throw new Error(result.error?.message || 'The backend rejected this workflow. Check the Advanced editor for node errors.');
         if (attempt && result?.prompt_id) attempt.accepted++;
         if (result?.prompt_id) {
+          if (pendingEnhancement?.run) lastEnhancement = pendingEnhancement.run;
           lastQueuedPromptIds = [...new Set([...lastQueuedPromptIds, result.prompt_id])].slice(-128);
           try {
             const revision = result.dmc_workflow_revision;
@@ -1876,6 +2020,7 @@
         }
         return result;
       } catch (error) { if (attempt) attempt.error = error; showError(error); throw error; }
+      finally { pendingEnhancement = null; queueInFlight = false; }
     };
     app.registerExtension({
       name: 'DonutCreate.Studio',
@@ -1901,7 +2046,7 @@
       }
     }, 200);
     setInterval(saveDraft, 1500);
-    window.addEventListener('pagehide', saveDraft);
+    window.addEventListener('pagehide', () => { cancelGeneration(); saveDraft(); });
     document.addEventListener('visibilitychange', () => { if (document.hidden) saveDraft(); });
     notice('Loading the v5 editor…');
   }

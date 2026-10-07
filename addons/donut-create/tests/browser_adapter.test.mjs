@@ -87,6 +87,8 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
           return live;
         }
         if (subgraph) return live;
+        if (node.type === 'DonutEditStudio') return {...node, widgets: node.properties.donut_widget_order.map((name,index)=>({name,
+          get value() {return node.widgets_values[index];},set value(value) {node.widgets_values[index]=value;}}))};
         if (node.type !== 'DF_Text_Box') return node;
         return { ...node, widgets: [{ name: 'Text',
           get value() { return node.widgets_values[0]; },
@@ -101,10 +103,10 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
   }
   const app = {
     canvas:{draw() {}}, registerExtension() {},
-    graph:{get _nodes() { return liveNodes(); },serialize() { return copy(current); }},
+    graph:{get extra() { return current.extra; }, set extra(value) { current.extra=value; },get _nodes() { return liveNodes(); },serialize() { return copy(current); }},
     async loadGraphData(data) { current = copy(data || stock); cachedLive=null; loaded.push(copy(current)); if (failFaceUpgrade && nodeAt(current,1180)) return false; },
     async graphToPrompt() {
-      const face = nodeAt(current,1125)?.widgets_values?.[0] || '';
+      const face = nodeAt(current,1178)?.widgets_values?.[0] || '';
       const scene = nodeAt(current,1126)?.widgets_values?.[0] || '';
       const negative = nodeAt(current,1127)?.widgets_values?.[0] || '';
       const primary = nodeAt(current,1122)?.widgets_values?.[0];
@@ -115,7 +117,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
         'expanded:face':{class_type:'DonutText',inputs:{text:['text:face',0]}},
         'expanded:scene':{class_type:'DonutText',inputs:{text:['text:scene',0]}},
         'condition':{class_type:'DonutPromptConditioning',inputs:{face:['expanded:face',0],scene:['expanded:scene',0],negative:['text:negative',0]}},
-        'sample':{class_type:'DonutSampler',inputs:{positive:['condition',3],negative:['condition',5],seed:nodeAt(current,1137)?.widgets_values?.[0] || 42}},
+        'sample':{class_type:'DonutSampler',inputs:{positive:['condition',3],negative:['condition',5],seed:nodeAt(current,1137)?.widgets_values?.[0] ?? 42}},
       };
       if (primary) output.model={class_type:'UNETLoader',inputs:{unet_name:primary}};
       return {output,workflow:copy(current)};
@@ -131,14 +133,14 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
     async queuePrompt(...args) { queued.push(copy(args)); return {prompt_id:'synthetic-prompt-id'}; },
   };
   const context = vm.createContext({
-    URL,JSON,Map,Set,Date,Promise,performance:{now:()=>0},
+    URL,JSON,Map,Set,Date,Promise,AbortController,performance:{now:()=>0},
     console:{log() {},warn() {},error() {}}, document,app,LiteGraph:{NODE_TITLE_HEIGHT:30,registered_node_types:{DonutWorkflowPanel:function () {}}},
     location:{origin:'http://synthetic.test',host:'synthetic.test',pathname:'/api/create/studio/synthetic-session/',href:'http://synthetic.test/api/create/studio/synthetic-session/'},
     __DMC_CREATE__:{prefix:'/api/create/studio/synthetic-session/',sessionId:'synthetic-session',backendKey:backend,profile:'workflow'},
-    __fixtureApi:api, __fixtureStock:stock,
+    __fixtureApi:api, __fixtureStock:stock, __fixtureTimers:timers,
     localStorage:{getItem:key=>store.get(key) || null,setItem:(key,value)=>store.set(key,String(value))},
     setInterval(fn, delay) { const timer={fn,delay,active:true}; timers.push(timer); return timer; },clearInterval(timer) { timer.active=false; },
-    setTimeout(fn, delay) { const timer={fn,delay,active:true}; timers.push(timer); return timer; },requestAnimationFrame() {},
+    setTimeout(fn, delay) { const timer={fn,delay,active:true}; timers.push(timer); return timer; },clearTimeout(timer) { timer.active=false; },requestAnimationFrame() {},
     addEventListener(name,fn) { events.set(name,fn); },
     fetch:async url=>{ fetched.push(String(url)); return {ok:new URL(url).pathname.endsWith('/workflow.json'),json:async()=>copy(preset)}; },
   });
@@ -168,6 +170,9 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
     nodeAt(current,control.path.at(-1)).widgets_values[0]=value;
   }
   return {app,api,loaded,queued,fetched,models,store,context,events,boot,settle,editPrompt,
+    editSeed:value=>{nodeAt(current,1137).widgets_values[0]=value;},
+    editFace:value=>{nodeAt(current,1178).widgets_values[0]=value;},
+    editMode:value=>{nodeAt(current,881).widgets_values[0]=value;nodeAt(current,881).widgets_values[1]=value?'donutref:'+'a'.repeat(64):'';},
     current:()=>copy(current),notice:()=>elements.get('donut-create-status')?.querySelector('.message')?.textContent};
 }
 
@@ -672,4 +677,214 @@ test('explicit Advanced Decensor edits after selecting a preset win over queued 
   await env.settle();
   assert.equal(widget('uncensorfix_controls').value,'Fusion + UncensorFix weights');
   assert.equal(widget('uncensorfix_strength').value,0.42);
+});
+
+async function enhancerFixture(options = {}) {
+  const env=fixture({livePrompts:true, ...options}); await env.boot();
+  const replies=[], parent={postMessage:value=>replies.push(value)}; env.context.parent=parent;
+  env.action=async (action,payload)=>{
+    env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'run-'+replies.length,action,payload}});
+    await env.settle(); return replies.at(-1);
+  };
+  env.requests=[]; env.cancels=[];
+  const fetch=env.api.fetchApi;
+  env.api.fetchApi=async (route,options)=>{
+    if (route==='/dmc/enhancer/cancel') {env.cancels.push(JSON.parse(options.body)); return {ok:true,json:async()=>({})};}
+    if (route!=='/dmc/enhancer') return fetch(route,options);
+    let job;
+    if (options?.method==='POST') {
+      const request=JSON.parse(options.body); env.requests.push(request);
+      if (env.onEnhance) await env.onEnhance(request);
+      job={id:'owned-'+env.requests.length,kind:'enhance',model:request.model,seed:request.seed,state:'complete',
+        result:{main_prompt:'Scene for '+request.seed,face_prompt:'Face for '+request.seed}};
+      if (env.jobChange) job=env.jobChange(job);
+      env.job=job;
+    }
+    return {ok:true,json:async()=>({supported:true,busy:false,models:[{id:'qwen',ready:true}],job:env.job})};
+  };
+  await env.action('snapshot');
+  return env;
+}
+
+// AC: @create-managed-prompt-enhancer ac-per-run-seed
+test('per-run enhancer configuration persists without queuing and rejects malformed configuration',async()=>{
+  const env=await enhancerFixture();
+  assert.equal((await env.action('snapshot')).snapshot.enhancer.enabled,false);
+  assert.equal((await env.action('enhancer-config',{enabled:true,model:'qwen'})).snapshot.mutationChanged,true);
+  assert.deepEqual(env.current().extra.dmc_prompt_enhancer,{enabled:true,model:'qwen'});
+  assert.equal(env.queued.length,0);
+  const invalid=await env.action('enhancer-config',{enabled:'true',model:'qwen'});
+  assert.equal(invalid.ok,false);
+  assert.equal((await env.action('enhancer-config',{enabled:true,model:'qwen'})).snapshot.mutationChanged,false);
+});
+
+// AC: @create-managed-prompt-enhancer ac-per-run-seed
+test('Basic, Edit, Run Instant and Advanced each enhance original briefs with compiled execution seed',async()=>{
+  const env=await enhancerFixture();
+  await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  env.editPrompt('Original synthetic scene');env.editFace('Original synthetic face');
+  const before=env.current();
+  env.app.queuePrompt=async ()=>env.api.queuePrompt(0,await env.app.graphToPrompt());
+  // Basic, Edit and Run Instant share the host generate bridge; Advanced invokes the API directly.
+  for (const mode of ['Basic','Edit','Run Instant','Advanced']) {
+    env.editMode(mode==='Edit');
+    if (mode==='Advanced') await env.api.queuePrompt(0,await env.app.graphToPrompt());
+    else assert.equal((await env.action('generate')).ok,true,mode);
+  }
+  env.editMode(false);
+  assert.equal(env.requests.length,4);
+  assert.ok(env.requests.every(request=>request.face_brief==='Original synthetic face'));
+  assert.ok(env.requests.every(request=>request.image_brief==='Original synthetic scene'));
+  assert.deepEqual(env.current(),before);
+  for (let i=0;i<4;i++) {
+    const compiled=env.queued[i][1], request=env.requests[i];
+    assert.equal(compiled.output.sample.inputs.seed,request.seed);
+    assert.equal(compiled.output['text:scene'].inputs.Text,'Scene for '+request.seed);
+    assert.equal(compiled.output['text:face'].inputs.Text,'Face for '+request.seed);
+    assert.equal(nodeAt(compiled.workflow,1126).widgets_values[0],'Original synthetic scene');
+    assert.equal(compiled.workflow.extra.dmc_prompt_enhancement.seed,request.seed);
+  }
+  assert.equal((await env.action('snapshot')).snapshot.enhancer.lastRun.main_prompt,'Scene for '+env.requests[0].seed);
+  const changed=await env.app.graphToPrompt(); changed.output.sample.inputs.seed=0;
+  // Simulate an authoritative compiled seed that differs from the displayed seed, as custom beforeQueued hooks can do.
+  const compile=env.app.graphToPrompt;
+  env.app.graphToPrompt=async ()=>{const value=await compile();value.output.sample.inputs.seed=0;return value;};
+  await env.api.queuePrompt(0,changed);
+  assert.equal(env.requests.at(-1).seed,0);
+  assert.equal(env.queued.at(-1)[1].output.sample.inputs.seed,0);
+  assert.notEqual(env.queued.at(-1)[1].output['text:scene'].inputs.Text,env.queued[0][1].output['text:scene'].inputs.Text);
+  assert.deepEqual(env.current(),before);
+});
+
+// AC: @create-managed-prompt-enhancer ac-per-run-seed
+// AC: @create-managed-prompt-enhancer ac-owned-private
+test('per-run failures, malformed output and compilation errors restore source and submit nothing',async()=>{
+  for (const failure of ['malformed','compile','seed','unavailable']) {
+    const env=await enhancerFixture(); await env.action('enhancer-config',{enabled:true,model:'qwen'});
+    const compiled=await env.app.graphToPrompt(), before=env.current();
+    if (failure==='malformed') env.jobChange=job=>({...job,result:{main_prompt:'',face_prompt:''}});
+    if (failure==='compile') env.app.graphToPrompt=async ()=>{throw new Error('Synthetic compilation failure');};
+    if (failure==='seed') compiled.output.sample.inputs.seed=['custom',0];
+    if (failure==='unavailable') env.api.fetchApi=async route=>route==='/dmc/enhancer'?{ok:true,json:async()=>({models:[{id:'qwen',ready:false}]})}:{ok:true,json:async()=>Object.fromEntries(manifest.required_nodes.map(node=>[node,{}]))};
+    await assert.rejects(env.api.queuePrompt(0,compiled));
+    assert.equal(env.queued.length,0,failure); assert.deepEqual(env.current(),before,failure);
+  }
+});
+
+// AC: @create-managed-prompt-enhancer ac-per-run-seed
+// AC: @create-managed-prompt-enhancer ac-owned-private
+test('cancellation, concurrent calls and edits during enhancement cannot queue stale briefs',async()=>{
+  for (const mode of ['cancel','edit','concurrent']) {
+    const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+    let release;env.onEnhance=()=>new Promise(resolve=>{release=resolve;});
+    const compiled=await env.app.graphToPrompt();
+    const pending=env.api.queuePrompt(0,compiled);const rejected=assert.rejects(pending);
+    await env.settle();
+    if (mode==='cancel') assert.equal((await env.action('cancel-generation')).ok,true);
+    else if (mode==='edit') env.editPrompt('New authored scene');
+    else {await assert.rejects(env.api.queuePrompt(0,compiled),/already|progress|busy/i);await env.action('cancel-generation');}
+    release();await rejected;await env.settle();
+    assert.equal(env.queued.length,0);
+    if (mode==='edit') assert.equal(nodeAt(env.current(),1126).widgets_values[0],'New authored scene');
+    else assert.deepEqual(env.cancels,[{id:'owned-1'}]);
+  }
+});
+
+
+// AC: @create-managed-prompt-enhancer ac-per-run-seed
+test('pinned beforeQueued/afterQueued seed timing and SeedPlan links use the executed seed on every run',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  const compile=env.app.graphToPrompt;
+  env.app.graphToPrompt=async ()=>{
+    const p=await compile();
+    p.output.shared={class_type:'SeedNode',inputs:{seed:p.output.sample.inputs.seed}};
+    p.output.plan={class_type:'DonutSeedPlan',inputs:{text_seed:['shared',0],sampler_seed:['shared',0],filename_seed:['shared',0]}};
+    p.output.sample.inputs.seed=['plan',1]; return p;
+  };
+  let nextSeed=0;
+  env.app.queuePrompt=async ()=>{
+    env.editSeed(nextSeed); // pinned frontend beforeQueued runs before graphToPrompt
+    const result=await env.api.queuePrompt(0,await env.app.graphToPrompt());
+    env.editSeed(++nextSeed); // pinned afterQueued affects only the next run
+    return result;
+  };
+  for (let i=0;i<3;i++) assert.equal((await env.action('generate')).ok,true);
+  assert.deepEqual(env.requests.map(request=>request.seed),[0,1,2]);
+  assert.deepEqual(env.queued.map(args=>args[1].output.shared.inputs.seed),[0,1,2]);
+  assert.deepEqual(env.queued.map(args=>args[1].workflow.extra.dmc_prompt_enhancement.seed),[0,1,2]);
+  assert.equal(nodeAt(env.current(),1137).widgets_values[0],3);
+  assert.ok(env.requests.every(request=>request.image_brief===nodeAt(env.current(),1126).widgets_values[0]));
+});
+
+// AC: @create-managed-prompt-enhancer ac-per-run-seed
+test('saved per-run metadata reopens with original briefs and never compounds generated output',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  const saved=copy(env.queued[0][1].workflow);
+  await env.app.loadGraphData(saved);
+  assert.deepEqual(copy((await env.action('snapshot')).snapshot.enhancer.lastRun),saved.extra.dmc_prompt_enhancement);
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.requests[1].image_brief,env.requests[0].image_brief);
+  assert.equal(env.requests[1].face_brief,env.requests[0].face_brief);
+  assert.equal(env.requests[1].seed,env.requests[0].seed);
+});
+
+// AC: @create-managed-prompt-enhancer ac-per-run-seed
+test('execution changes on recompilation and cancellation during capability checks fail closed',async()=>{
+  for (const mode of ['compile-seed','validation-cancel','pagehide','timeout']) {
+    const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+    const compiled=await env.app.graphToPrompt();
+    let release;
+    if (mode==='compile-seed') {
+      const compile=env.app.graphToPrompt;
+      env.app.graphToPrompt=async ()=>{const p=await compile();p.output.sample.inputs.seed++;return p;};
+    } else if (mode==='validation-cancel') {
+      const fetch=env.api.fetchApi;
+      env.api.fetchApi=async (route,options)=>{if(route==='/object_info') await new Promise(resolve=>{release=resolve;});return fetch(route,options);};
+    } else env.onEnhance=()=>new Promise(resolve=>{release=resolve;});
+    const pending=env.api.queuePrompt(0,compiled), rejected=assert.rejects(pending);
+    await env.settle();
+    if (mode==='validation-cancel') await env.action('cancel-generation');
+    if (mode==='pagehide') env.events.get('pagehide')();
+    if (mode==='timeout') env.context.__fixtureTimers.find(timer=>timer.delay===9*60*1000).fn();
+    release?.();await rejected;await env.settle();assert.equal(env.queued.length,0,mode);
+    if (mode==='validation-cancel') assert.equal(env.requests.length,0);
+  }
+});
+
+
+// AC: @create-managed-prompt-enhancer ac-per-run-seed
+test('cancel during prompt compilation restores temporary text immediately and discards its late result',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  const compiled=await env.app.graphToPrompt(), before=env.current();let release;
+  env.app.graphToPrompt=()=>new Promise(resolve=>{release=resolve;});
+  const pending=env.api.queuePrompt(0,compiled), rejected=assert.rejects(pending);
+  await env.settle();assert.notEqual(nodeAt(env.current(),1126).widgets_values[0],nodeAt(before,1126).widgets_values[0]);
+  await env.action('cancel-generation');await rejected;
+  assert.deepEqual(env.current(),before);release(compiled);await env.settle();assert.equal(env.queued.length,0);
+});
+
+
+// AC: @create-managed-prompt-enhancer ac-per-run-seed
+test('polls only its own seeded job and accepts a deliberately blank generated face prompt',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  env.jobChange=job=>({...job,state:'running',result:{...job.result,face_prompt:''}});
+  const pending=env.api.queuePrompt(0,await env.app.graphToPrompt());await env.settle();
+  assert.equal(env.queued.length,0);env.job.state='complete';
+  env.context.__fixtureTimers.find(timer=>timer.delay===500 && timer.active).fn();
+  await pending;assert.equal(env.queued[0][1].output['text:face'].inputs.Text,'');
+});
+
+// AC: @create-managed-prompt-enhancer ac-per-run-seed
+// AC: @create-managed-prompt-enhancer ac-owned-private
+test('unbound custom controls and wrong job identity/model/seed never submit image work',async()=>{
+  for (const mode of ['unbound','identity','model','seed','error']) {
+    const env=await enhancerFixture({livePrompts:mode!=='unbound'});await env.action('enhancer-config',{enabled:true,model:'qwen'});
+    if (mode==='identity') env.jobChange=job=>({...job,kind:'install'});
+    if (mode==='model') env.jobChange=job=>({...job,model:'minicpm'});
+    if (mode==='seed') env.jobChange=job=>({...job,seed:job.seed+1});
+    if (mode==='error') env.jobChange=job=>({...job,state:'error'});
+    await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()));assert.equal(env.queued.length,0,mode);
+    if (mode==='unbound') assert.equal(env.requests.length,0);
+  }
 });
