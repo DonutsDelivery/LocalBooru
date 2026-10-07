@@ -12,8 +12,11 @@ description: "User requests text-only A/B outputs plus local HTML page that runs
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: completed
 blocked_by: []
+closed_reason: "Bounded standalone comparison spike complete: verified local HTML runner and 48 real
+  synthetic text samples outside the product repo; no integration commit or product release
+  involved. No independent product review claimed."
 depends_on: []
 context: []
 priority: 2
@@ -68,6 +71,22 @@ history:
           generation, product UI changes, user library/profile access or shared Ollama requests."
     command: task-set
     timestamp: 2026-10-07T00:03:37.546Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: in_progress
+      closed_reason:
+        new: "Bounded standalone comparison spike complete: verified local HTML runner and 48 real synthetic
+          text samples outside the product repo; no integration commit or product release involved.
+          No independent product review claimed."
+        previous: null
+      completed_at:
+        new: 2026-10-07T00:17:27.350Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-07T00:17:27.362Z
 created_at: 2026-10-06T23:56:34.557Z
 started_at: 2026-10-06T23:56:34.733Z
+completed_at: 2026-10-07T00:17:27.350Z
 todos: []

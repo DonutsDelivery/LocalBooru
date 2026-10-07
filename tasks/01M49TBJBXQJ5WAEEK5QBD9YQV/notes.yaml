@@ -26,3 +26,35 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T00:03:37.718Z
+  - _ulid: 01M49VHSKVW4W43VQS5D52XYEF
+    content: "Standalone artifact delivered outside Git:
+      /mnt/storage/Projects/extra_storage/localbooru/dmc-qwen-trial-uemwvmwo/lab.html,
+      prompt_lab.py, run.sh, README.txt and comparison-results.json. Official llama.cpp b11457 plus
+      four SHA256-verified GGUF weights. 48 final responses for 12 synthetic prompts; MiniCPM
+      edit-only and LFM Danish retried at2048tokens after initial1024limit, with both reasoning and
+      raw text retained. Ten focused HTTP/validation/privacy/ownership tests passed. Separate
+      disposable HTTP18819 browser test ran all four real models successfully, verified
+      all12sampleviews (4nonemptycards each), native reasoning panels, 390px layout without
+      overflow, and cancellation while owned inference was loading; inference18817released and
+      testcontroller/tab stopped. Fixed sequential port-reuse check; final18818controller restarted
+      preserving prior finished result only in memory and existing browser draft kept. No DMC
+      library/profile accessed, no product source changes/build/push, no image generation. Synthetic
+      checks do not establish uncensoring; user can test own prompts through the local page."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T00:17:27.163Z
+  - _ulid: 01M49VHSSZ95YJEY6S8WGSC0T6
+    content: "Completed with --skip-review: Bounded standalone comparison spike complete: verified local
+      HTML runner and 48 real synthetic text samples outside the product repo; no integration commit
+      or product release involved. No independent product review claimed."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T00:17:27.359Z
+  - _ulid: 01M49VHST2XE0BJ8NJCSN3QR4E
+    content: "Completed with --force from in_progress state. Reason: Bounded standalone comparison spike
+      complete: verified local HTML runner and 48 real synthetic text samples outside the product
+      repo; no integration commit or product release involved. No independent product review
+      claimed."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T00:17:27.362Z
