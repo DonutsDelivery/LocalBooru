@@ -8,3 +8,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T03:58:24.469Z
+  - _ulid: 01M4A88PAWFZ31V56CY4RWAGYA
+    content: Verified running desktop executable checksum matches prior installed repair; stale binary
+      is ruled out without reading profile or logs. Inspecting public pinned frontend serialization
+      and our previous synthetic runtime fixtures to reproduce missing binding.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T03:59:40.380Z
