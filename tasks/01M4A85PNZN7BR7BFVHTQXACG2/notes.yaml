@@ -25,3 +25,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T04:05:51.981Z
+  - _ulid: 01M4A8QRZHANNFBH4XVKK0YC3F
+    content: "Verification: browser adapter 22/22; enhancer Python 11/11; controller 48/49 with
+      unchanged existing port-message expectation failure; new preset UI + mounted Host reset pass.
+      Existing three-file UI run 58 passing with 7 known baseline failures, matching prior
+      documented baseline. ESLint and diff whitespace clean. Fresh preset requests are scoped,
+      whitelisted and never forwarded to backend; reset failure rolls back complete prior draft."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T04:07:54.610Z
