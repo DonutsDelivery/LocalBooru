@@ -16642,7 +16642,78 @@ reviews:
       - review-create-first-pass-b1a81ef5
     title: Independent full first-pass review ed58f12f..b1a81ef5
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: b1a81ef5d887ba66128ecb0321f4d3ddb26fe6a1
+        evidence: "Independently ran 6 targeted tests: both bundled recipes x preview/comfy x
+          original/remapped IDs preserve full 1024x1536 stage, reduced sink removed and scaler not
+          executed, authored workflow identical; original standalone prompt still executes 256x384
+          save. Explicit final/custom half-scale/no matching preview unaffected. Websocket executed
+          first-pass is served through owned view route before final completion; nonexistent reduced
+          image rejected. Existing final destination and ordinary preview ownership checks pass."
+        name: first-pass-output-lifecycle
+        required: true
+        runner: python unittest focused controller tests
+        created_at: 2026-10-07T04:21:40.360Z
+        completed_at: 2026-10-07T04:21:40.360Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: b1a81ef5d887ba66128ecb0321f4d3ddb26fe6a1
+        evidence: "Independently ran full existing browser adapter suite: 22/22 pass on exact candidate
+          b1a81ef5."
+        name: browser-adapter-regressions
+        required: true
+        runner: node --experimental-vm-modules --test
+        created_at: 2026-10-07T04:21:40.740Z
+        completed_at: 2026-10-07T04:21:40.740Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: b1a81ef5d887ba66128ecb0321f4d3ddb26fe6a1
+        evidence: Exact base ed58f12f0b80d60e36e54d4310634766ca63830b, head
+          b1a81ef5d887ba66128ecb0321f4d3ddb26fe6a1. Full diff and interacting
+          validation/queue/history/preview/ownership/frontend stage URL code read before worker
+          notes. ac-full-first-pass is covered by executable behavioral tests; spec has no traits.
+          Serialized workflow/assets/export and DonutImageSave final settings are unchanged.
+          Whitespace check passes.
+        name: diff-spec-and-integration
+        required: true
+        runner: git diff --check and code/AC investigation
+        created_at: 2026-10-07T04:21:41.114Z
+        completed_at: 2026-10-07T04:21:41.114Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: b1a81ef5d887ba66128ecb0321f4d3ddb26fe6a1
+        evidence: Independently candidate87/88 pass. Same sole
+          test_managed_port_occupant_is_not_adopted_as_owned_backend expects18010 in generic
+          configured-port error; independently reproduced on exact ed58f12f base85/86 earlier this
+          review session. No new suite failures.
+        name: python-suite-baseline
+        required: false
+        runner: python unittest discover
+        created_at: 2026-10-07T04:21:41.473Z
+        completed_at: 2026-10-07T04:21:41.473Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: b1a81ef5d887ba66128ecb0321f4d3ddb26fe6a1
+        evidence: "Independently reran registry validation: same130 schema errors and verify skill
+          missing-description. Metadata unaffected by code comparison; target AC read and
+          annotations checked, no inherited traits."
+        name: registry-validation
+        required: false
+        runner: KSPEC_NO_DAEMON=1 kspec validate
+        created_at: 2026-10-07T04:21:41.837Z
+        completed_at: 2026-10-07T04:21:41.837Z
     events:
       - _ulid: 01M4A9FJD8PBEJAKN0V9ABBDZP
         actor: DonutsDelivery
@@ -16650,9 +16721,68 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-07T04:20:54.313Z
+      - _ulid: 01M4A9GZ36BYE7BYQYC28J3F53
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-07T04:21:40.071Z
+      - _ulid: 01M4A9GZFGMXSZPJFHKC6NTGP9
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: first-pass-output-lifecycle
+        timestamp: 2026-10-07T04:21:40.464Z
+      - _ulid: 01M4A9GZV27KS5KCJJ97V9YGW4
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: browser-adapter-regressions
+        timestamp: 2026-10-07T04:21:40.834Z
+      - _ulid: 01M4A9H06TJGG3A2AVM2RM5Z1Y
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: diff-spec-and-integration
+        timestamp: 2026-10-07T04:21:41.210Z
+      - _ulid: 01M4A9H0J2YBPHBVQRA22K9BER
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: python-suite-baseline
+        timestamp: 2026-10-07T04:21:41.570Z
+      - _ulid: 01M4A9H0XF0HR9FKRVXA5GP6Z9
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: registry-validation
+        timestamp: 2026-10-07T04:21:41.935Z
+      - _ulid: 01M4A9H19BWY07SYBMQG1E3XXJ
+        actor: independent-create-reviewer
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+            head_commit: b1a81ef5d887ba66128ecb0321f4d3ddb26fe6a1
+          decision: approve
+        timestamp: 2026-10-07T04:21:42.315Z
+      - _ulid: 01M4A9H19BTH7BG5X0CGRBSX3G
+        actor: independent-create-reviewer
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-07T04:21:42.315Z
     examined_commit: b1a81ef5d887ba66128ecb0321f4d3ddb26fe6a1
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-full-first-pass"
     subject:
@@ -16662,7 +16792,15 @@ reviews:
       head_branch: fix/create-full-first-pass
       head_commit: b1a81ef5d887ba66128ecb0321f4d3ddb26fe6a1
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: b1a81ef5d887ba66128ecb0321f4d3ddb26fe6a1
+        decision: approve
+        reviewer: independent-create-reviewer
+        role: reviewer
+        created_at: 2026-10-07T04:21:42.315Z
     created_at: 2026-10-07T04:20:54.313Z
-    updated_at: null
+    updated_at: 2026-10-07T04:21:42.315Z
     notes: []
