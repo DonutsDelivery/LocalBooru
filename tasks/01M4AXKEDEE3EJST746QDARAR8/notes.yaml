@@ -8,3 +8,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T10:14:51.397Z
+  - _ulid: 01M4AXTEWW3S3JQ7XSGNMSN3GB
+    content: Candidate bf0942a53ce230d845d523874fc5afcd8f5b4ac0 implements single-visible-face
+      derivation, explicitly scoped empty/whitespace source; supplied facial details retain priority
+      even for hidden/ambiguous scene. 18 enhancer checks including 12 HTTP synthetic fixtures and 9
+      rendered panel tests pass. Four opt-in model trials skipped; transport contracts do not
+      establish real model adherence. Preliminary policy-audit findings addressed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T10:16:22.684Z
