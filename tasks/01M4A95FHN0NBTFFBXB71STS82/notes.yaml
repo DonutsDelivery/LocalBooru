@@ -30,3 +30,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T04:21:43.997Z
+  - _ulid: 01M4A9P0PR8NCS4K96FEQ7PFPV
+    content: "Independent exact review approved0660b34f: viewport fitting, new stage/dimension resets,
+      preserved same-stage zoom and delayed Blob frame rejection. Integrated into main; pending
+      combined installation and isolated artifact acceptance. Owned synthetic browser server/tab
+      cleaned."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T04:24:25.560Z
