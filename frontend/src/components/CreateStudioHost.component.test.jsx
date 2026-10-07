@@ -108,7 +108,7 @@ beforeEach(() => {
     { id: 5, library_id: 'offline', name: 'Offline images', show_images: true },
     { id: 6, library_id: 'readonly', name: 'Read only images', show_images: true },
   ] })
-  api.apiClient.get.mockImplementation(async url => ({ data: url.endsWith('/status') ? status : session }))
+  api.apiClient.get.mockImplementation(async url => ({ data: url.endsWith('/dmc/enhancer') ? { supported: true, busy: false, models: [{ id: 'minicpm', name: 'Preserver', ready: true }] } : url.endsWith('/status') ? status : session }))
   api.apiClient.post.mockImplementation(async (url, body) => {
     if (url === `${CREATE_API}/sessions`) return { data: session }
     if (url === '/create/import') return { data: {
@@ -232,6 +232,67 @@ describe('Donut Create studio', () => {
     await act(async () => { await expect(stopCreateBackend()).rejects.toThrow('Synthetic stop failed') })
     await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
     expect(reads()).toBeGreaterThan(initial)
+  })
+
+  // AC: @create-managed-prompt-enhancer ac-per-run-seed
+  test('persists automatic configuration and gives the seeded generation stage enough time', async () => {
+    session.jobs = []; session.outputs = []
+    let current = { ready: true, enhancer: { enabled: false, model: 'minicpm' }, fields: {
+      prompt: { kind: 'text', value: 'Invent a room containing one owl.' }, facePrompt: { kind: 'text', value: 'The owl looks left.' },
+    } }
+    const request = vi.fn(async (action, payload) => {
+      if (action === 'enhancer-config') current = { ...current, enhancer: payload, mutationChanged: true }
+      if (action === 'generate') current = { ...current, mutationChanged: false, lastQueuedPromptIds: ['seeded-job'], enhancer: { ...current.enhancer, lastRun: { model: 'minicpm', seed: 42, main_prompt: 'One owl in a blue room.', face_prompt: 'The owl looks left.' } } }
+      return current
+    })
+    bridgeFixture.current = { dispose: vi.fn(), request }
+    render(<CreateStudioHost />); openStudio()
+    const generate = await screen.findByRole('button', { name: 'Generate image', exact: true })
+    await waitFor(() => expect(generate.disabled).toBe(false))
+    fireEvent.click(screen.getByText('Prompt enhancer'))
+    const toggle = await screen.findByRole('checkbox', { name: 'Enhance every run' })
+    await waitFor(() => expect(toggle.disabled).toBe(false)); fireEvent.click(toggle)
+    await waitFor(() => expect(toggle.checked).toBe(true))
+    expect(request).toHaveBeenCalledWith('enhancer-config', { enabled: true, model: 'minicpm' }, expect.any(Object))
+    fireEvent.click(generate)
+    await waitFor(() => expect(request).toHaveBeenCalledWith('generate', expect.any(Object), { timeout: 600000 }))
+    await screen.findByText('Last run’s enhanced prompts')
+    expect(screen.getByLabelText('Describe your image').value).toBe('Invent a room containing one owl.')
+    expect(screen.getByLabelText('Enhanced image prompt').value).toBe('One owl in a blue room.')
+    expect(api.apiClient.post.mock.calls.some(([url]) => url.endsWith('/dmc/enhancer'))).toBe(false)
+  })
+
+  // AC: @create-managed-prompt-enhancer ac-owned-private
+  test.each(['close', 'stop'])('cancels pending enhancement on %s without a queue acknowledgement or error toast', async action => {
+    session.jobs = []; session.outputs = []
+    const pending = deferred(), notify = vi.spyOn(toast, 'error')
+    const current = { ready: true, enhancer: { enabled: true, model: 'minicpm' }, fields: { prompt: { kind: 'text', value: 'One owl.' }, facePrompt: { kind: 'text', value: '' } } }
+    const request = vi.fn(async name => name === 'generate' ? pending.promise : current)
+    bridgeFixture.current = { dispose: vi.fn(), request }
+    render(<CreateStudioHost />); openStudio()
+    const generate = await screen.findByRole('button', { name: 'Generate image', exact: true })
+    await waitFor(() => expect(generate.disabled).toBe(false)); fireEvent.click(generate)
+    await waitFor(() => expect(request.mock.calls.some(([name]) => name === 'generate')).toBe(true))
+    if (action === 'close') fireEvent.click(screen.getByRole('button', { name: 'Exit', exact: true }))
+    else await act(async () => { await stopCreateBackend() })
+    expect(request).toHaveBeenCalledWith('cancel-generation', {}, { timeout: 5000 })
+    await act(async () => { pending.resolve(Promise.reject(new Error('Synthetic enhancement cancelled'))); await pending.promise.catch(() => {}) })
+    expect(notify).not.toHaveBeenCalled()
+    expect(session.jobs).toHaveLength(0)
+  })
+
+  // AC: @create-managed-prompt-enhancer ac-owned-private
+  test('closing or stopping also cancels adapter-owned Advanced enhancement without a Basic run', async()=>{
+    const request=vi.fn(async()=>({ready:true,fields:{}}))
+    bridgeFixture.current={dispose:vi.fn(),request}
+    render(<CreateStudioHost />); openStudio()
+    await screen.findByTitle('DonutUI creation studio')
+    await act(async()=>{ await stopCreateBackend() })
+    expect(request).toHaveBeenCalledWith('cancel-generation',{}, {timeout:5000})
+    request.mockClear()
+    fireEvent.click(screen.getByRole('button',{name:'Exit',exact:true}))
+    expect(request).toHaveBeenCalledWith('cancel-generation',{}, {timeout:5000})
+    expect(request.mock.calls.some(([name])=>name==='generate')).toBe(false)
   })
 
   test('shows a centered studio loading state until the pending session is ready', async () => {

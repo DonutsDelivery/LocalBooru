@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import io
+import importlib.util
 import json
 import os
 import tarfile
@@ -9,6 +10,7 @@ import urllib.error
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -56,6 +58,73 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.enhancer.close()
         self.temporary.cleanup()
+
+    # AC: @create-managed-prompt-enhancer ac-per-run-seed
+    async def test_job_threads_execution_seed_and_reports_sampling_seed(self):
+        with patch.object(self.enhancer, 'ready', return_value=True), patch.object(self.enhancer, 'infer', new=AsyncMock(return_value={'main_prompt': 'Synthetic owl.', 'face_prompt': ''})) as infer:
+            for seed in (0, 12, 0xffffffff, 2**53 - 1):
+                job = self.enhancer.start('owner', 'enhance', 'qwen', 'Synthetic owl.', '', seed=seed)
+                await self.enhancer.task
+                infer.assert_awaited_with('qwen', 'Synthetic owl.', '', seed)
+                self.assertEqual(job['seed'], seed)
+                self.assertEqual(job['inference_seed'], seed % 0xffffffff)
+                self.assertEqual(self.enhancer.status('owner')['job']['seed'], seed)
+            self.enhancer.start('owner', 'enhance', 'qwen', 'Synthetic owl.', '')
+            await self.enhancer.task
+            infer.assert_awaited_with('qwen', 'Synthetic owl.', '', 0)
+
+    # AC: @create-managed-prompt-enhancer ac-per-run-seed
+    async def test_invalid_seed_is_rejected_before_creating_job(self):
+        with patch.object(self.enhancer, 'ready', return_value=True):
+            for seed in (True, False, -1, 1.5, 1.0, '7', None, 2**53):
+                with self.subTest(seed=seed), self.assertRaises(ValueError):
+                    self.enhancer.start('owner', 'enhance', 'qwen', 'Synthetic owl.', '', seed=seed)
+                self.assertIsNone(self.enhancer.task)
+                self.assertFalse(self.enhancer.jobs)
+
+    # AC: @create-managed-prompt-enhancer ac-per-run-seed
+    # AC: @create-managed-prompt-enhancer ac-creative-instructions
+    async def test_actual_runtime_request_uses_repeatable_seeded_sampling_and_creative_briefs(self):
+        image = 'One owl. Choose a setting and vary the lighting; no other animals. Trigger SYNTH_OWL; a sign reads "Keep out—".'
+        face = 'The owl: choose its gaze, keep both eyes open and its beak closed.'
+        output = {'main_prompt': 'One owl in a moonlit courtyard, looking left with both eyes open and its beak closed. No other animals. SYNTH_OWL; a sign reads "Keep out—".', 'face_prompt': 'The owl looks left, both eyes open and its beak closed.'}
+        requests = []
+        processes = []
+        client_type = httpx.AsyncClient
+        def respond(request):
+            self.assertEqual(request.url.host, '127.0.0.1')
+            data = {} if request.method == 'GET' else json.loads(request.content)
+            if request.url.path == '/health':
+                return httpx.Response(200, json={})
+            if request.url.path == '/apply-template':
+                return httpx.Response(200, json={'prompt': 'synthetic formatted chat'})
+            if request.url.path == '/tokenize':
+                return httpx.Response(200, json={'tokens': [1] * 20})
+            self.assertEqual(request.url.path, '/v1/chat/completions')
+            requests.append(data)
+            self.assertEqual(json.loads(data['messages'][1]['content']), {'image_brief': image, 'face_brief': face})
+            self.assertEqual(data['response_format']['json_schema']['schema']['required'], ['main_prompt', 'face_prompt'])
+            self.assertGreaterEqual(data['temperature'], 0.6)
+            self.assertFalse(data['cache_prompt'])
+            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(output)}}]})
+        def client(**options):
+            options['transport'] = httpx.MockTransport(respond)
+            return client_type(**options)
+        async def spawn(*args, **kwargs):
+            process = unittest.mock.Mock(returncode=None)
+            process.wait = AsyncMock(return_value=0)
+            processes.append(process)
+            return process
+        with patch.object(module, '_read_json', return_value={'server': 'llama-server'}), patch.object(module.asyncio, 'create_subprocess_exec', side_effect=spawn), patch.object(module.httpx, 'AsyncClient', side_effect=client):
+            for seed in (42, 42, 43, 0xffffffff, 2**53 - 1):
+                self.assertEqual(await self.enhancer.infer('qwen', image, face, seed), output)
+        # This proves identical sampling parameters, not identical real-model text.
+        self.assertEqual(requests[0], requests[1])
+        self.assertNotEqual(requests[1]['seed'], requests[2]['seed'])
+        self.assertEqual([request['seed'] for request in requests], [42, 42, 43, 0, (2**53 - 1) % 0xffffffff])
+        for process in processes:
+            process.terminate.assert_called_once()
+        self.assertIsNone(self.enhancer.process)
 
     # AC: @create-managed-prompt-enhancer ac-owned-private
     async def test_immediate_cancel_before_task_starts(self):
@@ -190,6 +259,41 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
         for conversation in conversations:
             self.assertEqual(json.loads(conversation[1]['content']), {'image_brief': image, 'face_brief': face})
         self.assertIsNone(self.enhancer.process)
+
+
+class RouteTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        from fastapi import FastAPI, Request
+        spec = importlib.util.spec_from_file_location('enhancer_route_controller', module.ROOT / 'app.py')
+        controller_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(controller_module)
+        self.temporary = tempfile.TemporaryDirectory(prefix='dmc-enhancer-route-')
+        self.enhancer = Enhancer(Path(self.temporary.name))
+        app = FastAPI()
+        @app.post('/dmc/enhancer')
+        async def enhance(request: Request):
+            return await controller_module.studio_local(SimpleNamespace(enhancer=self.enhancer), {'id': 'owner'}, 'dmc/enhancer', request)
+        self.http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://synthetic.invalid')
+
+    async def asyncTearDown(self):
+        await self.http.aclose()
+        await self.enhancer.close()
+        self.temporary.cleanup()
+
+    # AC: @create-managed-prompt-enhancer ac-per-run-seed
+    async def test_route_accepts_execution_seed_and_rejects_invalid_seed(self):
+        brief = {'kind': 'enhance', 'model': 'qwen', 'image_brief': 'Synthetic owl.', 'face_brief': ''}
+        with patch.object(self.enhancer, 'ready', return_value=True), patch.object(self.enhancer, 'infer', new=AsyncMock(return_value={'main_prompt': 'Synthetic owl.', 'face_prompt': ''})) as infer:
+            response = await self.http.post('/dmc/enhancer', json={**brief, 'seed': 2**53 - 1})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.headers['cache-control'], 'no-store')
+            self.assertEqual(response.json()['job']['seed'], 2**53 - 1)
+            await self.enhancer.task
+            infer.assert_awaited_with('qwen', 'Synthetic owl.', '', 2**53 - 1)
+            for seed in (True, -1, 1.5, 1.0, 2**53, None):
+                with self.subTest(seed=seed):
+                    response = await self.http.post('/dmc/enhancer', json={**brief, 'seed': seed})
+                    self.assertEqual(response.status_code, 400, response.text)
 
 
 class DownloadTests(unittest.TestCase):
