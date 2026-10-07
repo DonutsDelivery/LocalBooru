@@ -301,10 +301,11 @@ class Installer(VerifiedDownloads):
     def _update_nodes(self, root, previous):
         try:
             target = root / "custom_nodes" / "donutnodes"
-            self._safe_node_target(root, target)
+            selected = target
+            target = self._safe_node_target(root, target)
             item = self.required_donutnodes()
             if (target / ".git").exists():
-                self._update_git_nodes(item, target)
+                self._update_git_nodes(item, target, selected if selected != target else None)
             else:
                 self._source(item, target, update=True)
             self._remove_legacy_node(root)
@@ -324,7 +325,21 @@ class Installer(VerifiedDownloads):
         if not (root / "main.py").is_file() or not (root / "comfy").is_dir():
             raise SetupError("Choose the connected ComfyUI installation before updating DonutNodes.")
         if root.is_symlink() or target.parent.is_symlink() or target.is_symlink() or (target / ".git").is_symlink():
-            raise SetupError("The DonutNodes source path is a symlink. It was preserved; update it on the ComfyUI host.")
+            message = "The linked DonutNodes path is not a verified source checkout. It was preserved; update it on the ComfyUI host."
+            resolved = target.resolve()
+            if not resolved.is_dir() or not (resolved / ".git").exists():
+                raise SetupError(message)
+            command = ["git", "-C", str(resolved), "-c", "core.hooksPath=" + os.devnull]
+            try:
+                top = Path(self._run([*command, "rev-parse", "--show-toplevel"], timeout=30).strip()).resolve()
+                origin = self._run([*command, "remote", "get-url", "origin"], timeout=30).strip().rstrip("/").removesuffix(".git")
+            except SetupError:
+                raise SetupError(message) from None
+            repo = self.required_donutnodes()["repo"]
+            if top != resolved or origin not in {"https://github.com/" + repo, "git@github.com:" + repo, "ssh://git@github.com/" + repo}:
+                raise SetupError(message)
+            return resolved
+        return target
 
     def _remove_legacy_node(self, root):
         native = root / "custom_nodes" / "donutnodes" / "dmc_face_detailer.py"
@@ -346,7 +361,7 @@ class Installer(VerifiedDownloads):
                 raise SetupError(message)
         shutil.rmtree(legacy)
 
-    def _update_git_nodes(self, item, target):
+    def _update_git_nodes(self, item, target, selected=None):
         if not re.fullmatch(r"[0-9a-f]{40}", item["commit"]):
             raise SetupError("The required DonutNodes commit is invalid.")
         command = ["git", "-C", str(target), "-c", "core.hooksPath=" + os.devnull]
@@ -354,6 +369,8 @@ class Installer(VerifiedDownloads):
             raise SetupError("DonutNodes has local changes. They were preserved. Commit or move those changes before updating; if this checkout already has DMCFaceDetailer, restart ComfyUI to register it.")
         self._run([*command, "fetch", "--no-tags", "https://github.com/" + item["repo"] + ".git", item["commit"]], timeout=180)
         self._check_cancel()
+        if selected is not None and selected.resolve() != target:
+            raise SetupError("The linked DonutNodes path changed during the download. Its source was preserved; retry with the selected checkout.")
         if self._run([*command, "status", "--porcelain", "--untracked-files=all"], timeout=30).strip():
             raise SetupError("DonutNodes changed during the download. It was preserved. Resolve local changes before updating.")
         try:
