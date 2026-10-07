@@ -691,7 +691,7 @@ export default function CreateStudioHost() {
   useEffect(() => {
     if (!studioSessionId || !status?.backend?.ready || switchingServer) return
     const requestGeneration = generation.current
-    let active = true, socket, retry, failures = 0, ownPreviewUrl = null, runningPromptId = null
+    let active = true, socket, retry, failures = 0, ownPreviewUrl = null, runningPromptId = null, runningNodeId = null
     const signal = requests.current.signal
     const valid = () => active && !signal.aborted && generation.current === requestGeneration
       && sessionRef.current?.id === studioSessionId
@@ -704,27 +704,33 @@ export default function CreateStudioHost() {
           setLiveProgress({ value: Math.max(0, Math.min(message.data.value, message.data.max)), max: message.data.max })
         } else if (message.type === 'execution_start') {
           runningPromptId = message.data?.prompt_id || null
+          runningNodeId = null
           if (ownPreviewUrl) URL.revokeObjectURL(ownPreviewUrl)
           ownPreviewUrl = null
           setLivePreview(previous => previous?.sessionId === studioSessionId ? null : previous)
           setLiveProgress(null)
         }
-        else if (message.type === 'executing' && message.data?.node === null) setLiveProgress(null)
+        else if (message.type === 'executing') {
+          runningNodeId = message.data?.node ?? null
+          if (runningNodeId === null) setLiveProgress(null)
+        }
         return
       }
+      const promptId = runningPromptId, nodeId = runningNodeId
       const buffer = event.data instanceof Blob ? await event.data.arrayBuffer() : event.data
-      if (!valid()) return
+      if (!valid() || promptId !== runningPromptId || nodeId !== runningNodeId) return
       const image = readStudioPreview(buffer)
       if (!image) return
       const url = URL.createObjectURL(image)
       const previous = ownPreviewUrl
       ownPreviewUrl = url
-      setLivePreview({ url, sessionId: studioSessionId, promptId: runningPromptId || sessionRef.current?.jobs?.find(job => job.status === 'running')?.id })
+      setLivePreview({ url, sessionId: studioSessionId, promptId: promptId || sessionRef.current?.jobs?.find(job => job.status === 'running')?.id, nodeId })
       if (previous) URL.revokeObjectURL(previous)
     }
     const connect = () => {
       if (!valid()) return
       runningPromptId = null
+      runningNodeId = null
       setPreviewConnecting(true)
       try { socket = new WebSocket(studioEventsUrl(studioSessionId)) }
       catch {
@@ -1076,6 +1082,10 @@ export default function CreateStudioHost() {
   const liveImage = !selectedOutputId && hasActiveJobs && status?.backend?.ready
     ? livePreview?.sessionId === session?.id ? livePreview.url : stagePreview ? stagePreviewUrl(session.id, stagePreview) : '' : ''
   const previewUrl = liveImage || (selectedOutput ? outputUrl(session.id, selectedOutput.id) : '')
+  const liveStage = livePreview?.sessionId === session?.id ? livePreview : stagePreview
+  const previewKey = liveImage
+    ? session.id + ':live:' + (liveStage?.promptId || liveStage?.prompt_id || activeJobs.find(job => job.status === 'running')?.id || 'current') + ':' + (liveStage?.nodeId ?? liveStage?.node_id ?? liveStage?.id ?? 'current')
+    : selectedOutput?.id
   const imported = selectedOutput && saved[selectedOutput.id + ':' + destinationKey]
   const settings = Object.fromEntries(['editing', 'geometryMode', 'outputCanvas', 'resolutionMode', 'aspectRatio', 'megapixels', 'width', 'height', 'pixelGrid', 'outputMultiple', 'referenceB']
     .map(key => [key, fields[key]?.value]))
@@ -1194,7 +1204,7 @@ export default function CreateStudioHost() {
           {centerSwitch}
           {failedPreview === previewUrl ? <div className="create-preview-error"><strong>The preview could not be loaded.</strong><p>Your workflow and completed results are still available.</p>
             <button type="button" onClick={() => { setFailedPreview(''); setPreviewRetry(previous => previous + 1) }}>Retry preview</button></div>
-            : <CreateResultPreview key={previewRetry} imageKey={liveImage ? session.id + ':live:' + (livePreview?.promptId || stagePreview?.prompt_id || activeJobs.find(job => job.status === 'running')?.id || 'current') : selectedOutput?.id} src={previewUrl} alt={liveImage ? 'Live generation preview' : selectedOutput?.filename || 'Generated image'} onError={() => setFailedPreview(previewUrl)} />}
+            : <CreateResultPreview key={previewRetry} imageKey={previewKey} src={previewUrl} alt={liveImage ? 'Live generation preview' : selectedOutput?.filename || 'Generated image'} onError={() => setFailedPreview(previewUrl)} />}
           {!liveImage && imported && <span className="create-saved-badge">Saved</span>}
           {hasActiveJobs && <div className="create-preview-run-status"><span className="create-spinner" aria-hidden="true" />
             <span>{liveProgress ? Math.round(liveProgress.value / liveProgress.max * 100) + '% · Generating' : activeJobs.some(job => job.status === 'running') ? 'Generating' : 'Queued'}</span>

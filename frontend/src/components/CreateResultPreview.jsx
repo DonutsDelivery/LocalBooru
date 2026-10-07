@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 // Scale is relative to the source image, so 100% means one CSS pixel per image pixel.
 function clampView(view, scale, size, viewport) {
@@ -27,7 +27,7 @@ export default function CreateResultPreview({ src, imageKey, alt, onError }) {
     setView(bounded)
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const initial = { mode: 'fit', scale: 1, x: 0, y: 0 }
     viewRef.current = initial
     setView(initial)
@@ -104,6 +104,7 @@ export default function CreateResultPreview({ src, imageKey, alt, onError }) {
   }
 
   const loaded = !!size.width
+  const pixelZoom = loaded && view.mode !== 'fit'
   return <div className="create-result-viewer">
     <div className="create-preview-zoom" role="group" aria-label="Preview zoom">
       <button type="button" aria-pressed={view.mode === 'fit'} onClick={() => update({ mode: 'fit', scale: 1, x: 0, y: 0 })}>Fit</button>
@@ -129,9 +130,14 @@ export default function CreateResultPreview({ src, imageKey, alt, onError }) {
         event.currentTarget.setPointerCapture?.(event.pointerId)
       }} onPointerMove={move} onPointerUp={release} onPointerCancel={release} onLostPointerCapture={release}>
       <img src={src} alt={alt} draggable={false} onError={onError}
-        onLoad={event => setSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
-        style={loaded ? { width: size.width * scale, height: size.height * scale, left: `calc(50% + ${view.x}px)`, top: `calc(50% + ${view.y}px)` } : undefined}
-        className={loaded ? 'create-result-image' : 'create-preview-image'} />
+        onLoad={event => {
+          const next = { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }
+          // A live stream can change resolution without changing its image key.
+          if (next.width !== size.width || next.height !== size.height) update({ mode: 'fit', scale: 1, x: 0, y: 0 })
+          setSize(next)
+        }}
+        style={pixelZoom ? { width: size.width * scale, height: size.height * scale, left: `calc(50% + ${view.x}px)`, top: `calc(50% + ${view.y}px)` } : undefined}
+        className={pixelZoom ? 'create-result-image' : 'create-preview-image'} />
     </div>
   </div>
 }

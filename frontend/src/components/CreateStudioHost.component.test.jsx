@@ -352,6 +352,63 @@ describe('Donut Create studio', () => {
     } finally { cleanup(); vi.unstubAllGlobals() }
   })
 
+  // AC: @donut-create-plugin ac-preview-fit
+  test('fits new live stages while preserving zoom on repeated frames and discards late old-stage frames', async () => {
+    let socket, frame = 0
+    const OriginalURL = URL
+    vi.stubGlobal('URL', class extends OriginalURL {
+      static createObjectURL = vi.fn(() => 'blob:synthetic-frame-' + ++frame)
+      static revokeObjectURL = vi.fn()
+    })
+    vi.stubGlobal('WebSocket', class {
+      constructor() { socket = this }
+      close() {}
+    })
+    const buffer = new ArrayBuffer(9)
+    const header = new DataView(buffer)
+    header.setUint32(0, 1)
+    header.setUint32(4, 2)
+    const message = (type, data) => act(() => socket.onmessage({ data: JSON.stringify({ type, data }) }))
+    const sendFrame = async () => { await act(async () => { socket.onmessage({ data: buffer }) }) }
+    const load = () => {
+      const image = screen.getByRole('img', { name: 'Live generation preview' })
+      Object.defineProperties(image, {
+        naturalWidth: { configurable: true, value: 1024 },
+        naturalHeight: { configurable: true, value: 768 },
+      })
+      fireEvent.load(image)
+      return image
+    }
+    try {
+      render(<CreateStudioHost />)
+      openStudio()
+      await screen.findByTitle('DonutUI creation studio')
+      await waitFor(() => expect(socket?.onmessage).toBeTypeOf('function'))
+      message('execution_start', { prompt_id: 'owned-job' })
+      message('executing', { node: 'first-pass' })
+      await sendFrame()
+      const image = load()
+      fireEvent.click(screen.getByRole('button', { name: 'Zoom in preview' }))
+      const zoomedWidth = image.style.width
+      await sendFrame()
+      load()
+      expect(image.style.width).toBe(zoomedWidth)
+      expect(screen.getByRole('button', { name: 'Fit', exact: true }).getAttribute('aria-pressed')).toBe('false')
+      const delayed = deferred()
+      const oldFrame = new Blob([])
+      oldFrame.arrayBuffer = () => delayed.promise
+      act(() => socket.onmessage({ data: oldFrame }))
+      message('executing', { node: 'upscale' })
+      await sendFrame()
+      load()
+      expect(screen.getByRole('button', { name: 'Fit', exact: true }).getAttribute('aria-pressed')).toBe('true')
+      const newStageSource = image.getAttribute('src')
+      await act(async () => { delayed.resolve(buffer); await delayed.promise })
+      expect(image.getAttribute('src')).toBe(newStageSource)
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(3)
+    } finally { cleanup(); vi.unstubAllGlobals() }
+  })
+
   test('groups final batch images by run and collapses intermediate stages', async () => {
     session.outputs = [
       { id: 'stage-a', filename: 'first-pass.png', prompt_id: 'run-a', final: false, media_type: 'image/png' },
