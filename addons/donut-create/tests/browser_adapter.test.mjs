@@ -25,7 +25,7 @@ function nodeAt(workflow, wanted) {
   }
 }
 
-function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 'synthetic-device-a'} = {}) {
+function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 'synthetic-device-a', livePrompts = false, failFace = false} = {}) {
   const timers = [], events = new Map(), elements = new Map();
   function element(tag) {
     const result = {
@@ -42,9 +42,18 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
   let current = copy(initial);
   const loaded = [], queued = [], fetched = [];
   const models = Object.fromEntries([...new Set(catalog.models.map(model => model.folder))].map(folder => [folder,catalog.models.filter(model => model.folder === folder).map(model => model.filename)]));
+  function liveNodes() {
+    if (!livePrompts) return current.nodes;
+    const nodes = [1126, 1178].map(id => ({ id, type: 'DF_Text_Box', widgets: [{ name: 'Text',
+      get value() { return nodeAt(current, id).widgets_values[0]; },
+      set value(value) { nodeAt(current, id).widgets_values[0] = value; },
+      callback() { if (id === 1178 && failFace) throw new Error('Synthetic face callback failure'); },
+    }] }));
+    return [...current.nodes.filter(node => node.id !== 1138), { id: 1138, subgraph: { _nodes: nodes } }];
+  }
   const app = {
     canvas:{draw() {}}, registerExtension() {},
-    graph:{get _nodes() { return current.nodes; },serialize() { return copy(current); }},
+    graph:{get _nodes() { return liveNodes(); },serialize() { return copy(current); }},
     async loadGraphData(data) { current = copy(data || stock); loaded.push(copy(current)); },
     async graphToPrompt() {
       const face = nodeAt(current,1125)?.widgets_values?.[0] || '';
@@ -225,4 +234,44 @@ test('queue validation uses the already compiled prompt once', async () => {
   await env.api.queuePrompt(0, compiled);
   assert.equal(env.queued.length, 1);
   assert.equal(env.fetched.filter(route => route === '/object_info').length, 1);
+});
+
+// AC: @create-managed-prompt-enhancer ac-apply-routing
+test('enhancement patches both prompts atomically, rejects stale fields, and never queues', async () => {
+  const env = fixture({livePrompts:true}); await env.boot();
+  const replies = [], parent = {postMessage:value=>replies.push(value)};
+  env.context.parent = parent;
+  async function action(action, payload) {
+    env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'enhancer-'+replies.length,action,payload}});
+    await env.settle(); return replies.at(-1);
+  }
+  const original = (await action('snapshot')).snapshot.fields;
+  const expected = {prompt:original.prompt.value, facePrompt:original.facePrompt.value};
+  const fields = {prompt:'A synthetic owl gazes left.',facePrompt:'The owl gazes left.'};
+  const changed = await action('enhance-prompts', {fields,expected});
+  assert.equal(changed.ok,true);
+  assert.equal(changed.snapshot.fields.prompt.value,fields.prompt);
+  assert.equal(changed.snapshot.fields.facePrompt.value,fields.facePrompt);
+  const stale = await action('enhance-prompts', {fields:{prompt:'Wrong scene',facePrompt:''},expected});
+  assert.equal(stale.ok,false);
+  assert.match(stale.error,/prompts changed/);
+  assert.equal(nodeAt(env.current(),1126).widgets_values[0],fields.prompt);
+  assert.equal(env.queued.length,0);
+});
+
+// AC: @create-managed-prompt-enhancer ac-apply-routing
+test('failed face mutation rolls back both fields', async () => {
+  const env = fixture({livePrompts:true,failFace:true}); await env.boot();
+  const replies = [], parent = {postMessage:value=>replies.push(value)};
+  env.context.parent = parent;
+  async function action(action,payload) {
+    env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'failure-'+replies.length,action,payload}});
+    await env.settle(); return replies.at(-1);
+  }
+  const original = (await action('snapshot')).snapshot.fields;
+  const response = await action('enhance-prompts',{fields:{prompt:'Synthetic new scene',facePrompt:'Synthetic new face'},expected:{prompt:original.prompt.value,facePrompt:original.facePrompt.value}});
+  assert.equal(response.ok,false);
+  assert.equal(nodeAt(env.current(),1126).widgets_values[0],original.prompt.value);
+  assert.equal(nodeAt(env.current(),1178).widgets_values[0],original.facePrompt.value);
+  assert.equal(env.queued.length,0);
 });

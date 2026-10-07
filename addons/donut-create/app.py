@@ -186,6 +186,8 @@ class Controller:
             from installer import Installer
             installer = Installer(self.state_dir)
         self.installer = installer
+        from enhancer import Enhancer
+        self.enhancer = Enhancer(self.state_dir)
         self.clock = clock
         self.ttl = ttl
         self.config = read_json(self.state_dir / "config.json", {"mode": "managed", "backend_url": MANAGED_URL})
@@ -476,6 +478,7 @@ class Controller:
     async def close(self) -> None:
         # Stop only our child, including when shutdown races with a restart.
         self.closing = True
+        await self.enhancer.close()
         async with self.backend_lock:
             # An adopted external backend stays running across controller/app restarts.
             # Explicit Stop/Restart controls it; shutdown still cleans up our own child.
@@ -1187,6 +1190,10 @@ XMLHttpRequest.prototype.open=function(method,url,...args){return originalOpen.c
 
 
 def allowed_route(method: str, route: str) -> bool:
+    if route == "dmc/enhancer":
+        return method in {"GET", "POST"}
+    if route == "dmc/enhancer/cancel":
+        return method == "POST"
     if method in {"GET", "HEAD"}:
         if route in {"", "index.html", "favicon.ico", "materialdesignicons.min.css", "user.css", "object_info", "embeddings", "models", "experiment/models", "extensions", "features", "system_stats", "prompt", "queue", "history", "view", "settings", "users", "userdata", "donut/config", "api/jobs", "dmc/workflow"}:
             return True
@@ -1226,6 +1233,28 @@ def query_params(route: str, request: Request) -> dict[str, str]:
 
 
 async def studio_local(controller: Controller, session: dict[str, Any], route: str, request: Request) -> Response | None:
+    if route in {"dmc/enhancer", "dmc/enhancer/cancel"}:
+        owner = session["id"]
+        if request.query_params:
+            raise HTTPException(400, "Invalid enhancer query.")
+        if request.method == "GET":
+            return JSONResponse(controller.enhancer.status(owner), headers={"Cache-Control": "no-store"})
+        try:
+            data = json.loads(await limited_body(request, 100000))
+            allowed = {"id"} if route.endswith("/cancel") else {"kind", "model", "image_brief", "face_brief"}
+            if not isinstance(data, dict) or set(data) - allowed:
+                raise ValueError("Invalid enhancer request.")
+            if route.endswith("/cancel"):
+                await controller.enhancer.cancel(owner, data.get("id"))
+            else:
+                controller.enhancer.start(owner, data.get("kind"), data.get("model"), data.get("image_brief", ""), data.get("face_brief", ""))
+        except PermissionError:
+            raise HTTPException(404, "Enhancer operation not found in this studio.") from None
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from None
+        except (ValueError, TypeError):
+            raise HTTPException(400, "Invalid enhancer request. Choose a model and supply a main brief of at most 16,000 characters and a face brief of at most 8,000 characters.") from None
+        return JSONResponse(controller.enhancer.status(owner), headers={"Cache-Control": "no-store"})
     if route == "dmc/workflow" and request.method in {"GET", "HEAD"}:
         if set(request.query_params) - {"revision_only"}:
             raise HTTPException(400, "Invalid workflow query.")

@@ -30,6 +30,18 @@ pub fn get_addon_sources(id: &str) -> Option<&'static [AddonSource]> {
                 include_str!("../../../addons/donut-create/installer.py"),
             ),
             (
+                "enhancer.py",
+                include_str!("../../../addons/donut-create/enhancer.py"),
+            ),
+            (
+                "enhancer_models.json",
+                include_str!("../../../addons/donut-create/enhancer_models.json"),
+            ),
+            (
+                "enhancer_prompt.txt",
+                include_str!("../../../addons/donut-create/enhancer_prompt.txt"),
+            ),
+            (
                 "runtime.json",
                 include_str!("../../../addons/donut-create/runtime.json"),
             ),
@@ -117,6 +129,7 @@ mod tests {
     }
 
     // AC: @donut-create-plugin ac-managed-setup
+    // AC: @create-managed-prompt-enhancer ac-managed-models
     #[test]
     fn creation_sources_deploy_with_nested_assets_and_matching_base_preset() {
         let temporary = tempfile::tempdir().unwrap();
@@ -137,5 +150,14 @@ mod tests {
             .as_array()
             .unwrap()
             .is_empty());
+        let enhancer: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(temporary.path().join("enhancer_models.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(enhancer["default_model"], "minicpm");
+        assert_eq!(enhancer["models"]["minicpm"]["quantization"], "Q6_K");
+        assert_eq!(enhancer["models"]["qwen"]["quantization"], "Q4_K_M");
+        assert!(temporary.path().join("enhancer.py").is_file());
+        assert!(temporary.path().join("enhancer_prompt.txt").is_file());
     }
 }

@@ -1,0 +1,60 @@
+{
+  "runtime_version": "b11457",
+  "runtime_source": "https://github.com/ggml-org/llama.cpp/releases/tag/b11457",
+  "runtime_license": "MIT",
+  "default_model": "minicpm",
+  "runtimes": {
+    "linux-x64": {
+      "filename": "llama-b11457-bin-ubuntu-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11457/llama-b11457-bin-ubuntu-x64.tar.gz",
+      "sha256": "210eaa41a16e0d24fa44071cb62f95702ef903c84d86506d6482ac919bcee078",
+      "size": 17733249
+    },
+    "linux-arm64": {
+      "filename": "llama-b11457-bin-ubuntu-arm64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11457/llama-b11457-bin-ubuntu-arm64.tar.gz",
+      "sha256": "f1df5992bd17702a5c40b3081a65d33f4ed5bfc963f6a8fc4dbf0be78a2b1e48",
+      "size": 13725320
+    },
+    "windows-x64": {
+      "filename": "llama-b11457-bin-win-cpu-x64.zip",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11457/llama-b11457-bin-win-cpu-x64.zip",
+      "sha256": "ed20ed40e10c04d0853d8acf8700f0e6c1bb8212f0cc70c3a0da13dcbbc1b802",
+      "size": 19436652
+    },
+    "macos-arm64": {
+      "filename": "llama-b11457-bin-macos-arm64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11457/llama-b11457-bin-macos-arm64.tar.gz",
+      "sha256": "e234070cbde0c8b0d30f79fa08ff8246abe22c72acb752619349b8d9c46f7839",
+      "size": 12007659
+    },
+    "macos-x64": {
+      "filename": "llama-b11457-bin-macos-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11457/llama-b11457-bin-macos-x64.tar.gz",
+      "sha256": "f807f15aa0d4d9947b9befd06b3ff4bd8ddd30775d7b4b4505c8d3c5f33f0014",
+      "size": 11525345
+    }
+  },
+  "models": {
+    "minicpm": {
+      "name": "MiniCPM5-2B \u00b7 mondk Abliterated",
+      "repo": "mondk/MiniCPM5-2B-Abliterated-Uncensored-GGUF",
+      "revision": "f00783ef970d5eca1206b783555b6acb886c01d2",
+      "filename": "minicpm5-2b-abliterated-Q6_K.gguf",
+      "sha256": "fe9533120c3c85da83f40b5aace4e061534a2bc498f9dbdc487599f147a7feb5",
+      "size": 2070216736,
+      "quantization": "Q6_K",
+      "url": "https://huggingface.co/mondk/MiniCPM5-2B-Abliterated-Uncensored-GGUF/resolve/f00783ef970d5eca1206b783555b6acb886c01d2/minicpm5-2b-abliterated-Q6_K.gguf"
+    },
+    "qwen": {
+      "name": "Qwen3.5-4B \u00b7 HauhauCS Aggressive",
+      "repo": "HauhauCS/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive",
+      "revision": "c09cdbcdb1fefad6d335809d445621b5f5ba0c6e",
+      "filename": "Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+      "sha256": "79e28ecacf84e75b6056cf4059636d435aa9eb67795780f7b7dbc7d32a962741",
+      "size": 2707513696,
+      "quantization": "Q4_K_M",
+      "url": "https://huggingface.co/HauhauCS/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive/resolve/c09cdbcdb1fefad6d335809d445621b5f5ba0c6e/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf"
+    }
+  }
+}

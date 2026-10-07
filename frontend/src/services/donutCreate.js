@@ -168,6 +168,24 @@ export function createErrorMessage(error) {
   return typeof detail === 'string' ? detail : error?.message || 'The creator could not complete this action.'
 }
 
+function enhancerUrl(sessionId) {
+  return `/create/studio/${encodeURIComponent(sessionId)}/dmc/enhancer`
+}
+
+export async function getEnhancerStatus(sessionId, signal) {
+  const response = await apiClient.get(enhancerUrl(sessionId), { signal })
+  checkRequest(signal)
+  return response.data
+}
+
+export async function startEnhancer(sessionId, options) {
+  return (await apiClient.post(enhancerUrl(sessionId), options)).data
+}
+
+export async function cancelEnhancer(sessionId, id) {
+  return (await apiClient.post(`${enhancerUrl(sessionId)}/cancel`, { id })).data
+}
+
 export function formatCreateBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes < 0) return 'Unknown'
   if (bytes < 1_000_000_000) return `${Math.round(bytes / 1_000_000)} MB`

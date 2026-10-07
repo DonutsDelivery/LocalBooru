@@ -50,6 +50,50 @@ Dropping an image onto a reference card or canvas replaces that reference and
 keeps the workflow. Imports pause Run Instant and never generate automatically;
 unrecognized editable graphs open in the Advanced editor.
 
+## Local prompt enhancement
+
+Open **Prompt enhancer** below the image/face descriptions in the simple Create
+or Edit controls. Choose **Download model**, then **Enhance prompts**. The default
+is MiniCPM5-2B mondk Abliterated **Q6_K** (2.07 GB); Qwen3.5-4B HauhauCS Aggressive
+**Q4_K_M** (2.71 GB) is an alternative. Both the existing image description and
+the user-written face description are supplied separately. Review the two outputs
+and choose **Apply both prompts**, or discard them. Originals remain available in
+the preview. Applying changes neither starts generation nor enables face detail;
+Run Instant is paused. Changed inputs require a new enhancement.
+
+The add-on downloads its own pinned llama.cpp **b11457** CPU runtime and GGUF
+weights using the byte counts, revisions, and SHA-256 checksums in
+`enhancer_models.json`. It needs no Ollama installation or model-server URL.
+Runtime assets are available for Linux x64/ARM64, Windows x64, and macOS
+Intel/Apple Silicon; platform availability does not establish runtime acceptance
+on every platform. Linux x64 is exercised with both models. macOS runtime binaries
+are downloaded from upstream, not modified or re-signed by DMC.
+
+Files live under `enhancer/` in the add-on state root. Setup is optional, requires
+internet access and free disk space for the selected model and runtime, verifies
+before activation, and retains partial downloads for retry. **Repair / verify
+model** reuses verified files. Inference works offline afterward. It runs on the
+computer hosting Create, including when controlled from a paired phone. CPU
+inference avoids unloading ComfyUI's GPU models. A temporary authenticated helper
+listens only on loopback and exits after completion, cancellation, or add-on
+shutdown. Cancellation targets only that studio's enhancer operation.
+
+Enhancer inputs and outputs are held in bounded memory, not logged or saved by
+the enhancer. Applying a preview uses the studio's normal saved workflow behavior.
+Malformed, truncated, or incomplete output cannot change either workflow field.
+The context is bounded; overly long briefs fail without truncating or applying.
+Maximum input sizes are 16,000 characters for the image and 8,000 for the face.
+
+llama.cpp is separately licensed under MIT; see its pinned
+[release](https://github.com/ggml-org/llama.cpp/releases/tag/b11457) and
+[source license](https://github.com/ggml-org/llama.cpp/blob/b11457/LICENSE).
+Model weights retain their publishers' terms:
+[MiniCPM GGUF](https://huggingface.co/mondk/MiniCPM5-2B-Abliterated-Uncensored-GGUF)
+and [Qwen GGUF](https://huggingface.co/HauhauCS/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive).
+They are downloaded on request and are not bundled or relicensed by DMC.
+
+## Image backend setup
+
 Desktop addon installation uses an existing Python **3.12** when available,
 including standard Homebrew/python.org locations on macOS. Otherwise DMC
 downloads a pinned, SHA-256 verified Python 3.12 runtime into its own application

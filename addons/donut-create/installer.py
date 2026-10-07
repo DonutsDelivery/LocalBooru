@@ -95,7 +95,110 @@ def _fingerprint(path):
     return {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
 
 
-class Installer:
+class VerifiedDownloads:
+    """Shared checksum/resume primitives; callers own status and cancellation."""
+
+    def _check_cancel(self):
+        if self._cancel.is_set():
+            raise SetupCancelled("Setup cancelled. Retry resumes partial downloads and reuses verified files.")
+
+    def _redact(self, text):
+        for token in self._tokens.values():
+            if token:
+                text = text.replace(token, "[redacted]")
+        return re.sub(r"(?i)(?:bearer\s+|(?:token|api[_-]?key)=)[^\s&]+", "[redacted]", text)
+
+    def _hash(self, path):
+        digest = hashlib.sha256()
+        with Path(path).open("rb") as handle:
+            while chunk := handle.read(4 * 1024 * 1024):
+                self._check_cancel()
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _matches(self, path, item):
+        return Path(path).is_file() and Path(path).stat().st_size == item["size"] and self._hash(path) == item["sha256"]
+
+    def _auth(self, url):
+        host = urllib.parse.urlsplit(url).hostname
+        token = self._tokens.get("hf_token", "") if host == "huggingface.co" else self._tokens.get("civitai_api_key", "") if host == "civitai.com" else ""
+        return {"Authorization": "Bearer " + token} if token else {}
+
+    def _download(self, item, completed=0, model_progress=False):
+        """Download to a hash-addressed partial; verify before any activation."""
+        cache = self.state_dir / "downloads"
+        cache.mkdir(parents=True, exist_ok=True)
+        part = cache / (item["sha256"] + ".part")
+        name = item.get("filename", item.get("directory", "source archive"))
+        if part.exists() and part.stat().st_size > item["size"]:
+            part.unlink()
+        for attempt in range(3):
+            self._check_cancel()
+            offset = part.stat().st_size if part.is_file() else 0
+            if offset == item["size"]:
+                if self._matches(part, item):
+                    return part
+                part.unlink()
+                raise SetupError("Checksum mismatch for " + name + ". The invalid partial was removed; Retry downloads it again.")
+            headers = {"User-Agent": "DonutCreate/1", **self._auth(item["url"])}
+            if offset:
+                headers["Range"] = "bytes=" + str(offset) + "-"
+            try:
+                request = urllib.request.Request(item["url"], headers=headers)
+                with self._opener.open(request, timeout=20) as response:
+                    code = response.getcode()
+                    content_range = response.headers.get("Content-Range", "")
+                    if code == 206:
+                        match = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)", content_range)
+                        if not match or int(match[1]) != offset or int(match[3]) != item["size"]:
+                            raise SetupError("The provider returned an invalid resume range for " + name + ".")
+                    elif code == 200:
+                        offset = 0  # A server may ignore Range; safely restart the partial.
+                    else:
+                        raise SetupError("Unexpected download response for " + name + ".")
+                    updated = 0
+                    with part.open("ab" if offset else "wb") as handle:
+                        while True:
+                            self._check_cancel()
+                            chunk = response.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            offset += len(chunk)
+                            if offset > item["size"]:
+                                part.unlink(missing_ok=True)
+                                raise SetupError("Download exceeds the catalog size for " + name + ".")
+                            handle.write(chunk)
+                            if model_progress and time.monotonic() - updated > 0.2:
+                                updated = time.monotonic()
+                                total = self._status["total_bytes"]
+                                self._update(current_file=name, downloaded_bytes=completed + offset, progress=0.35 + 0.55 * (completed + offset) / max(1, total))
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                if self._matches(part, item):
+                    return part
+                if part.stat().st_size == item["size"]:
+                    part.unlink()
+                    raise SetupError("Checksum mismatch for " + name + ". The invalid partial was removed; Retry downloads it again.")
+                raise OSError("The download ended before the expected byte count.")
+            except urllib.error.HTTPError as error:
+                if error.code in (401, 403):
+                    host = urllib.parse.urlsplit(item["url"]).hostname
+                    provider = {"huggingface.co": "Hugging Face", "civitai.com": "Civitai"}.get(host)
+                    if provider is None:
+                        raise SetupError("Access denied for " + name + ". Retry when the download provider is available.") from None
+                    raise SetupError("Access denied for " + name + ". Check the " + provider + " token and your account's model permissions, then Retry.") from None
+                if error.code not in (408, 429, 500, 502, 503, 504):
+                    raise SetupError("Download failed for " + name + " (HTTP " + str(error.code) + "). Retry after the provider is available.") from None
+            except (OSError, urllib.error.URLError) as error:
+                if attempt == 2:
+                    raise SetupError("Download failed for " + name + ": " + self._redact(str(error)) + ". Partial bytes remain for Retry.") from None
+            if attempt == 2:
+                raise SetupError("The provider repeatedly refused " + name + ". Partial bytes remain for Retry.")
+            self._cancel.wait(2 ** attempt)
+        raise SetupError("Download failed for " + name)
+
+
+class Installer(VerifiedDownloads):
     def __init__(self, state_dir):
         self.state_dir = Path(state_dir).resolve()
         self.assets_root = ROOT / "assets"
@@ -278,102 +381,6 @@ class Installer:
             if _read_json(target / ".donut-create-source.json", {}).get("sha256") != source["sha256"] or not (target / "__init__.py" if target != self.backend_root else target / "main.py").is_file():
                 return False
         return receipt.get("capability_check") is True
-
-    def _check_cancel(self):
-        if self._cancel.is_set():
-            raise SetupCancelled("Setup cancelled. Retry resumes partial downloads and reuses verified files.")
-
-    def _redact(self, text):
-        for token in self._tokens.values():
-            if token:
-                text = text.replace(token, "[redacted]")
-        return re.sub(r"(?i)(?:bearer\s+|(?:token|api[_-]?key)=)[^\s&]+", "[redacted]", text)
-
-    def _hash(self, path):
-        digest = hashlib.sha256()
-        with Path(path).open("rb") as handle:
-            while chunk := handle.read(4 * 1024 * 1024):
-                self._check_cancel()
-                digest.update(chunk)
-        return digest.hexdigest()
-
-    def _matches(self, path, item):
-        return Path(path).is_file() and Path(path).stat().st_size == item["size"] and self._hash(path) == item["sha256"]
-
-    def _auth(self, url):
-        host = urllib.parse.urlsplit(url).hostname
-        token = self._tokens.get("hf_token", "") if host == "huggingface.co" else self._tokens.get("civitai_api_key", "") if host == "civitai.com" else ""
-        return {"Authorization": "Bearer " + token} if token else {}
-
-    def _download(self, item, completed=0, model_progress=False):
-        """Download to a hash-addressed partial; verify before any activation."""
-        cache = self.state_dir / "downloads"
-        cache.mkdir(parents=True, exist_ok=True)
-        part = cache / (item["sha256"] + ".part")
-        name = item.get("filename", item.get("directory", "source archive"))
-        if part.exists() and part.stat().st_size > item["size"]:
-            part.unlink()
-        for attempt in range(3):
-            self._check_cancel()
-            offset = part.stat().st_size if part.is_file() else 0
-            if offset == item["size"]:
-                if self._matches(part, item):
-                    return part
-                part.unlink()
-                raise SetupError("Checksum mismatch for " + name + ". The invalid partial was removed; Retry downloads it again.")
-            headers = {"User-Agent": "DonutCreate/1", **self._auth(item["url"])}
-            if offset:
-                headers["Range"] = "bytes=" + str(offset) + "-"
-            try:
-                request = urllib.request.Request(item["url"], headers=headers)
-                with self._opener.open(request, timeout=20) as response:
-                    code = response.getcode()
-                    content_range = response.headers.get("Content-Range", "")
-                    if code == 206:
-                        match = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)", content_range)
-                        if not match or int(match[1]) != offset or int(match[3]) != item["size"]:
-                            raise SetupError("The provider returned an invalid resume range for " + name + ".")
-                    elif code == 200:
-                        offset = 0  # A server may ignore Range; safely restart the partial.
-                    else:
-                        raise SetupError("Unexpected download response for " + name + ".")
-                    updated = 0
-                    with part.open("ab" if offset else "wb") as handle:
-                        while True:
-                            self._check_cancel()
-                            chunk = response.read(1024 * 1024)
-                            if not chunk:
-                                break
-                            offset += len(chunk)
-                            if offset > item["size"]:
-                                part.unlink(missing_ok=True)
-                                raise SetupError("Download exceeds the catalog size for " + name + ".")
-                            handle.write(chunk)
-                            if model_progress and time.monotonic() - updated > 0.2:
-                                updated = time.monotonic()
-                                total = self._status["total_bytes"]
-                                self._update(current_file=name, downloaded_bytes=completed + offset, progress=0.35 + 0.55 * (completed + offset) / max(1, total))
-                        handle.flush()
-                        os.fsync(handle.fileno())
-                if self._matches(part, item):
-                    return part
-                if part.stat().st_size == item["size"]:
-                    part.unlink()
-                    raise SetupError("Checksum mismatch for " + name + ". The invalid partial was removed; Retry downloads it again.")
-                raise OSError("The download ended before the expected byte count.")
-            except urllib.error.HTTPError as error:
-                if error.code in (401, 403):
-                    provider = "Hugging Face" if urllib.parse.urlsplit(item["url"]).hostname == "huggingface.co" else "Civitai"
-                    raise SetupError("Access denied for " + name + ". Check the " + provider + " token and your account's model permissions, then Retry.") from None
-                if error.code not in (408, 429, 500, 502, 503, 504):
-                    raise SetupError("Download failed for " + name + " (HTTP " + str(error.code) + "). Retry after the provider is available.") from None
-            except (OSError, urllib.error.URLError) as error:
-                if attempt == 2:
-                    raise SetupError("Download failed for " + name + ": " + self._redact(str(error)) + ". Partial bytes remain for Retry.") from None
-            if attempt == 2:
-                raise SetupError("The provider repeatedly refused " + name + ". Partial bytes remain for Retry.")
-            self._cancel.wait(2 ** attempt)
-        raise SetupError("Download failed for " + name)
 
     def _sources(self):
         result = [(self.manifest["comfyui"], self.backend_root)]
