@@ -18431,3 +18431,32 @@ reviews:
     created_at: 2026-10-07T08:02:45.659Z
     updated_at: 2026-10-07T08:04:27.790Z
     notes: []
+  - _ulid: 01M4AY1RKGVHDBWZD17NMHCZZA
+    slugs:
+      - review-infer-empty-face-bf0942a5
+    title: "Independent review: infer one face from an empty face brief"
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M4AY1RKFEVTJPBBAHRGWJGKD
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T10:20:22.000Z
+    examined_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@create-infer-empty-face"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: bc6b6025
+      head_branch: fix/create-infer-empty-face
+      head_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
+    threads: []
+    verdicts: []
+    created_at: 2026-10-07T10:20:22.000Z
+    updated_at: null
+    notes: []
