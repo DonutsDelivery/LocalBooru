@@ -194,6 +194,8 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
     async def test_scene_derived_face_pair_survives_owned_inference_with_empty_face_brief(self):
         # Synthetic model responses verify transport and parsing, not real-model
         # obedience to the face-selection policy. No model is downloaded here.
+        # These legacy two-field outputs remain readable for compatibility;
+        # current three-field policy requires coverage of every visible face.
         fixtures = [
             ('A front-facing portrait of one adult dancer. No makeup.', '',
              "The adult dancer's face, facing the viewer, without makeup."),
@@ -265,6 +267,10 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
         positioned = 'Bob on the right frowns, looking left; Alice on the left smiles, looking right. Trigger SYNTH_PAIR. A sign says "Keep out—".'
         fixtures = [
             (positioned, '', {'main_prompt': positioned, 'face_prompt': '', 'face_prompts': [left, right]}, 'complete'),
+            ('Bob is on the right; Alice is on the left. Both faces are visible.', 'Alice smiles, eyes closed.',
+             {'main_prompt': 'Bob is on the right; Alice is on the left, smiling with eyes closed. Both faces are visible.', 'face_prompt': '',
+              'face_prompts': [{'character': 'Alice', 'position': 'left', 'face_prompt': 'Alice smiles, eyes closed.'},
+                               {'character': 'Bob', 'position': 'right', 'face_prompt': "Bob's face."}]}, 'complete'),
             ('Alice and Bob pose for a portrait.', 'From left to right: Alice smiles, looking right; Bob frowns, looking left.',
              {'main_prompt': 'Alice on the left smiles, looking right; Bob on the right frowns, looking left, in a portrait.', 'face_prompt': '',
               'face_prompts': [{**left, 'position': '1st'}, {**right, 'position': '2nd'}]}, 'complete'),
@@ -272,6 +278,8 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
              {'main_prompt': 'Alice looks left; Bob looks right. Neither has a specified position.', 'face_prompt': '', 'face_prompts': []}, 'complete'),
             ('Alice and Bob pose for a portrait.', 'Alice smiles; Bob frowns. No order is specified.',
              {'main_prompt': 'Alice smiles; Bob frowns, in a portrait.', 'face_prompt': '', 'face_prompts': []}, 'error'),
+            ('Alice and Bob pose together, both faces visible. Their positions are unspecified.', 'Alice smiles, eyes closed.',
+             {'main_prompt': 'Alice smiles with eyes closed; Bob poses beside her, both faces visible. Their positions are unspecified.', 'face_prompt': '', 'face_prompts': []}, 'error'),
         ]
         client_type = httpx.AsyncClient
         for image, face, output, state in fixtures:
