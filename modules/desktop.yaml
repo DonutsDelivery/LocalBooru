@@ -1210,6 +1210,13 @@ features:
           first-pass image as the stage result, preserves the separate workflow JSON and final image
           output, and standalone exported recipes retain their original save behavior.
         when: Create queues a run in either output destination
+      - given: Create has a live preview, stage image or completed output
+        id: ac-preview-fit
+        then: Each new output or stage fits and centers in the available preview pane without
+          natural-pixel-size jumps; explicit zoom and pan remain usable and same-stage live frames
+          preserve intentional zoom.
+        when: The user switches outputs or stages, a live image changes dimensions, or the preview pane
+          resizes
     tags: []
     requirements:
       - _ulid: 01M49YHS0SSQXCX7R7AGQE401X
