@@ -9,7 +9,7 @@ description: Trace and correct bundled and recognized saved workflows that route
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
@@ -19,12 +19,12 @@ vcs_refs: []
 review_ref: "@review-create-face-only-ac74e6d6"
 submission_linkage:
   review_url: null
-  branch: main
-  captured_at: 2026-10-07T10:20:37.877Z
-  commit: bc6b602583728e291b63e4871ef640f866049181
-  remote: origin
-  remote_url: https://github.com/DonutsDelivery/LocalBooru.git
-  upstream_ref: refs/heads/main
+  branch: fix/create-face-only-conditioning
+  captured_at: 2026-10-07T10:47:09.146Z
+  commit: d48dc40814d46cd83852474625a978c27e13d403
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -83,7 +83,34 @@ history:
         previous: 2026-10-07T10:08:32.621Z
     command: task-start
     timestamp: 2026-10-07T10:45:20.924Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: fix/create-face-only-conditioning
+          captured_at: 2026-10-07T10:47:09.146Z
+          commit: d48dc40814d46cd83852474625a978c27e13d403
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous:
+          review_url: null
+          branch: main
+          captured_at: 2026-10-07T10:20:37.877Z
+          commit: bc6b602583728e291b63e4871ef640f866049181
+          remote: origin
+          remote_url: https://github.com/DonutsDelivery/LocalBooru.git
+          upstream_ref: refs/heads/main
+      submitted_at:
+        new: 2026-10-07T10:47:09.153Z
+        previous: 2026-10-07T10:20:37.881Z
+    command: task-submit
+    timestamp: 2026-10-07T10:47:09.153Z
 created_at: 2026-10-07T10:08:31.074Z
 started_at: 2026-10-07T10:45:20.924Z
-submitted_at: 2026-10-07T10:20:37.881Z
+submitted_at: 2026-10-07T10:47:09.153Z
 todos: []
