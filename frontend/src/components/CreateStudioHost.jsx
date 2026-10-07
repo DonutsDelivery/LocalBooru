@@ -103,6 +103,9 @@ export default function CreateStudioHost() {
   const snapshotRequest = useRef(null)
   const connectionDeadline = useRef(0)
   const backendWasReady = useRef(null)
+  const backendChanging = useRef(false)
+  const backendReady = useRef(false)
+  const pollRequest = useRef(null)
   const studioActions = useRef(Promise.resolve())
   const sessionMutationRevision = useRef(0)
   const pendingActions = useRef(0)
@@ -284,15 +287,31 @@ export default function CreateStudioHost() {
 
   const handleStatus = useCallback(nextStatus => {
     if (serverChanging.current) return
+    if (backendChanging.current) return
+    backendReady.current = !!nextStatus?.backend?.ready
+    if (!backendReady.current) stopInstant()
     setStatus(nextStatus)
     setConnectionFailed(false)
     const current = sessionRef.current
     if (current?.backend_url && nextStatus?.backend_url && current.backend_url !== nextStatus.backend_url) {
       invalidateSession('The backend changed. Open a new studio session to continue.')
     }
-  }, [invalidateSession])
+  }, [invalidateSession, stopInstant])
 
   useEffect(() => {
+    const lifecycle = event => {
+      backendChanging.current = event.detail.changing
+      if (backendChanging.current) {
+        pollRequest.current?.abort()
+        backendReady.current = false
+        stopInstant()
+        setStatus(previous => previous ? { ...previous, backend: { ...previous.backend, ready: false } } : null)
+        setError('')
+        setBridgeError('')
+      } else if (event.detail.status?.backend) {
+        handleStatus(event.detail.status)
+      }
+    }
     const changed = event => {
       // Adopting the connected process changes ownership, not the active graph or queue.
       if (event.detail?.adopted && event.detail.backendUrl === sessionRef.current?.backend_url) return
@@ -301,6 +320,7 @@ export default function CreateStudioHost() {
     const changingServer = () => {
       const hadStudio = !!sessionRef.current || openingLock.current || initialLaunch.current
       serverChanging.current = true
+      backendReady.current = false
       setSwitchingServer(true)
       invalidateSession('The selected server changed. Open a new studio session to continue.')
       if (!hadStudio) initialLaunch.current = false
@@ -314,36 +334,43 @@ export default function CreateStudioHost() {
       setSwitchingServer(false)
       setServerRevision(previous => previous + 1)
     }
+    window.addEventListener('donut-create-backend-lifecycle', lifecycle)
     window.addEventListener('donut-create-backend-changed', changed)
     window.addEventListener('donut-create-server-changing', changingServer)
     window.addEventListener('donut-create-server-changed', changedServer)
     return () => {
+      window.removeEventListener('donut-create-backend-lifecycle', lifecycle)
       window.removeEventListener('donut-create-backend-changed', changed)
       window.removeEventListener('donut-create-server-changing', changingServer)
       window.removeEventListener('donut-create-server-changed', changedServer)
     }
-  }, [invalidateSession])
+  }, [invalidateSession, handleStatus, stopInstant])
 
   useEffect(() => {
     if (!started) return
     let active = true
     let polling = false
     const poll = async () => {
-      if (polling || serverChanging.current) return
+      if (polling || serverChanging.current || backendChanging.current) return
       polling = true
       const requestGeneration = generation.current
-      const signal = requests.current.signal
+      const controller = new AbortController()
+      pollRequest.current = controller
+      const parentSignal = requests.current.signal
+      const abort = () => controller.abort()
+      parentSignal.addEventListener('abort', abort, { once: true })
+      const signal = controller.signal
       try {
         const response = await getAddon('donut-create', { signal })
         const addon = response.addon
-        if (!active || requestGeneration !== generation.current) return
+        if (!active || requestGeneration !== generation.current || signal.aborted) return
         if (!addon.installed || addon.status !== 'running') {
           handleStatus(null)
           setShowSetup(true)
           return
         }
         const nextStatus = await getCreateStatus(signal)
-        if (!active || requestGeneration !== generation.current) return
+        if (!active || requestGeneration !== generation.current || signal.aborted) return
         handleStatus(nextStatus)
         if (requestGeneration !== generation.current) return
         if (!sessionRef.current && !initialLaunch.current && visible.current) {
@@ -351,10 +378,10 @@ export default function CreateStudioHost() {
           else setShowSetup(true)
         }
         const current = sessionRef.current
-        if (current) {
+        if (current && nextStatus.backend?.ready) {
           const mutationRevision = sessionMutationRevision.current
           const nextSession = await getStudioSession(current.id, signal)
-          if (active && requestGeneration === generation.current && sessionRef.current?.id === current.id
+          if (active && !signal.aborted && requestGeneration === generation.current && sessionRef.current?.id === current.id
             && mutationRevision === sessionMutationRevision.current) {
             for (const job of nextSession.jobs || []) acknowledgedPrompts.current.delete(job.id)
             sessionRef.current = nextSession
@@ -371,12 +398,14 @@ export default function CreateStudioHost() {
           setError(createErrorMessage(pollError))
         }
       } finally {
+        parentSignal.removeEventListener('abort', abort)
+        if (pollRequest.current === controller) pollRequest.current = null
         polling = false
       }
     }
     poll()
     const timer = setInterval(poll, 2000)
-    return () => { active = false; clearInterval(timer) }
+    return () => { active = false; clearInterval(timer); pollRequest.current?.abort() }
   }, [started, serverRevision, handleStatus, invalidateSession, launchStudio])
 
   const refreshDestinations = useCallback(async select => {
@@ -460,7 +489,7 @@ export default function CreateStudioHost() {
     })
     bridge.current = currentBridge
     const handshake = () => {
-      if (!visible.current) return
+      if (!visible.current || !backendReady.current) return
       if (!snapshotRef.current?.ready && Date.now() >= connectionDeadline.current) {
         setBridgeConnecting(false)
         if (!actionErrorVisible.current) setBridgeError('ComfyUI did not finish starting within five minutes. Retry connection to keep waiting.')
@@ -1041,10 +1070,10 @@ export default function CreateStudioHost() {
 
   const notifiedError = useRef('')
   useEffect(() => {
-    const message = error || (snapshot?.ready ? bridgeError : '')
+    const message = error || (status?.backend?.ready && snapshot?.ready ? bridgeError : '')
     if (opened && message && message !== notifiedError.current) toast.error(message)
     notifiedError.current = opened ? message : ''
-  }, [opened, error, bridgeError, snapshot?.ready])
+  }, [opened, error, bridgeError, snapshot?.ready, status?.backend?.ready])
 
   const simpleView = !showSetup && studioView === 'simple'
   const waitingForStudio = !session && !showSetup

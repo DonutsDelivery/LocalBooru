@@ -27,7 +27,7 @@ import CreateSettings from './CreateSettings'
 import Sidebar from './Sidebar/Sidebar'
 import AddonSettings from './AddonSettings'
 import ToastContainer, { toast } from './Toast'
-import { getCreateStatus, startCreateBackend, stopCreateBackend } from '../services/donutCreate'
+import { getCreateStatus, getStudioSession, restartCreateBackend, startCreateBackend, stopCreateBackend } from '../services/donutCreate'
 
 const CREATE_API = '/addons/donut-create/api/create'
 let status
@@ -122,6 +122,118 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('Donut Create studio', () => {
+  // AC: @donut-create-plugin ac-quiet-backend-stop
+  test('pauses session reads when stopped and resumes the same studio without generation', async () => {
+    vi.useFakeTimers()
+    const notify = vi.spyOn(toast, 'error')
+    bridgeFixture.current = { dispose: vi.fn(), request: vi.fn(async () => ({ ready: true, fields: {} })) }
+    render(<CreateStudioHost />)
+    openStudio()
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    const frame = screen.getByTitle('DonutUI creation studio')
+    const reads = () => api.apiClient.get.mock.calls.filter(([url]) => url.includes('/sessions/')).length
+    const initialReads = reads()
+    status = { ...status, backend: { ready: false, running: false, owned: false } }
+    await act(async () => { await vi.advanceTimersByTimeAsync(8000) })
+    expect(reads()).toBe(initialReads)
+    expect(screen.getByTitle('DonutUI creation studio')).toBe(frame)
+    expect(screen.getByRole('img', { name: 'synthetic.png' })).toBeTruthy()
+    expect(notify).not.toHaveBeenCalled()
+    status = { ...status, backend: { ready: true, running: true, owned: true } }
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(reads()).toBeGreaterThan(initialReads)
+    expect(api.apiClient.post.mock.calls.filter(([url]) => url === `${CREATE_API}/sessions`)).toHaveLength(1)
+    expect(bridgeFixture.current.request.mock.calls.some(([action]) => action === 'generate')).toBe(false)
+  })
+
+  // AC: @donut-create-plugin ac-quiet-backend-stop
+  test('stopping aborts an in-flight session poll and ignores its late shutdown failure', async () => {
+    vi.useFakeTimers()
+    const notify = vi.spyOn(toast, 'error')
+    const pending = deferred()
+    const stopping = deferred()
+    bridgeFixture.current = { dispose: vi.fn(), request: vi.fn(async () => ({ ready: true, fields: {} })) }
+    render(<CreateStudioHost />)
+    openStudio()
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    let pollSignal
+    api.apiClient.get.mockImplementation(async (url, config) => {
+      if (url.includes('/sessions/')) { pollSignal = config.signal; return pending.promise }
+      return { data: status }
+    })
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(pollSignal.aborted).toBe(false)
+    api.apiClient.post.mockImplementation(async url => url.endsWith('/backend/stop') ? stopping.promise : { data: session })
+    let stop
+    act(() => { stop = stopCreateBackend() })
+    expect(pollSignal.aborted).toBe(true)
+    await act(async () => {
+      pending.resolve(Promise.reject({ response: { status: 502, data: { detail: 'Synthetic shutdown' } } }))
+      await pending.promise.catch(() => {})
+      await vi.advanceTimersByTimeAsync(6000)
+    })
+    expect(notify).not.toHaveBeenCalled()
+    status = { ...status, backend: { ready: false, running: false, owned: false } }
+    await act(async () => { stopping.resolve({ data: status }); await stop })
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(notify).not.toHaveBeenCalled()
+    expect(screen.getByTitle('DonutUI creation studio')).toBeTruthy()
+  })
+
+  // AC: @donut-create-plugin ac-quiet-backend-stop
+  test('background read requests own their notifications, while mutations keep normal errors', async () => {
+    await getCreateStatus()
+    await getStudioSession('synthetic-session')
+    expect(api.apiClient.get.mock.calls.every(([, config]) => config.background === true)).toBe(true)
+    await stopCreateBackend()
+    expect(api.apiClient.post.mock.calls.at(-1)[2].background).not.toBe(true)
+  })
+
+  // AC: @donut-create-plugin ac-quiet-backend-stop
+  test('overlapping restart and stop release polling only after both have settled', async () => {
+    const restarting = deferred(), stopping = deferred()
+    const events = []
+    const listener = event => events.push(event.detail)
+    window.addEventListener('donut-create-backend-lifecycle', listener)
+    api.apiClient.post.mockImplementation(async url => url.endsWith('/backend/restart') ? restarting.promise : stopping.promise)
+    try {
+      const restart = restartCreateBackend().catch(error => error)
+      const stop = stopCreateBackend()
+      stopping.resolve({ data: { ...status, backend: { ready: false } } })
+      await stop
+      expect(events.at(-1).changing).toBe(true)
+      restarting.resolve({ data: status })
+      expect((await restart).name).toBe('AbortError')
+      expect(events.at(-1).changing).toBe(false)
+      expect(events.at(-1).status).toBeUndefined()
+    } finally { window.removeEventListener('donut-create-backend-lifecycle', listener) }
+  })
+
+  // AC: @donut-create-plugin ac-quiet-backend-stop
+  test('a failed status read superseded by stop is cancellation rather than a setup error', async () => {
+    const pending = deferred()
+    api.apiClient.get.mockImplementationOnce(() => pending.promise)
+    const read = getCreateStatus().catch(error => error)
+    await stopCreateBackend()
+    pending.resolve(Promise.reject({ response: { status: 502 } }))
+    expect((await read).name).toBe('AbortError')
+  })
+
+  // AC: @donut-create-plugin ac-quiet-backend-stop
+  test('failed stop releases the polling pause so a still-running backend recovers', async () => {
+    vi.useFakeTimers()
+    bridgeFixture.current = { dispose: vi.fn(), request: vi.fn(async () => ({ ready: true, fields: {} })) }
+    render(<CreateStudioHost />)
+    openStudio()
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    const reads = () => api.apiClient.get.mock.calls.filter(([url]) => url.includes('/sessions/')).length
+    const initial = reads()
+    api.apiClient.post.mockRejectedValueOnce(new Error('Synthetic stop failed'))
+    await act(async () => { await expect(stopCreateBackend()).rejects.toThrow('Synthetic stop failed') })
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(reads()).toBeGreaterThan(initial)
+  })
+
   test('shows a centered studio loading state until the pending session is ready', async () => {
     const pendingSession = deferred()
     api.apiClient.post.mockImplementation(async url => url === `${CREATE_API}/sessions`

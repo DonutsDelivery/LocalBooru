@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { createUnavailableLibraryToastGate, createRemoteConnectionToastGate, isRemoteConnectionFailure, shouldSuppressOptionalNotFound } from './apiErrors.js'
+import { shouldSuppressBackgroundError, createUnavailableLibraryToastGate, createRemoteConnectionToastGate, isRemoteConnectionFailure, shouldSuppressOptionalNotFound } from './apiErrors.js'
 
 // AC: @identity-safe-timeline-previews ac-optional-failure
 test('only request-scoped optional 404 responses suppress error toasts', () => {
@@ -48,4 +48,13 @@ test('both failed addresses count as one outage; real server and mutation errors
   assert.equal(gate({ method: 'get' }, 401, failure, 1001), false)
   assert.equal(gate({ method: 'get' }, 502, failure, 1001), true)
   assert.equal(createRemoteConnectionToastGate()({ method: 'get' }, 502, failure, 1001), false)
+})
+
+// AC: @donut-create-plugin ac-quiet-backend-stop
+test('only explicitly background GET requests skip global notifications', () => {
+  assert.equal(shouldSuppressBackgroundError({ method: 'get', background: true }), true)
+  assert.equal(shouldSuppressBackgroundError({ method: 'GET', background: true }), true)
+  assert.equal(shouldSuppressBackgroundError({ method: 'get' }), false)
+  assert.equal(shouldSuppressBackgroundError({ method: 'post', background: true }), false)
+  assert.equal(shouldSuppressBackgroundError({ background: true }), false)
 })

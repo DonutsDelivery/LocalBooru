@@ -7,7 +7,7 @@ import axios from 'axios'
 import { isMobileApp, isTauriApp as isTauriClient, getActiveServer, getActiveServerId, setActiveServerId, LOCAL_SERVER, probeServer, serverConnectionUrls, learnServerAddresses } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
 import { adjustmentQuery } from './utils/imageAdjustments.js'
-import { createUnavailableLibraryToastGate, createRemoteConnectionToastGate, isRemoteConnectionFailure, shouldSuppressOptionalNotFound } from './utils/apiErrors.js'
+import { shouldSuppressBackgroundError, createUnavailableLibraryToastGate, createRemoteConnectionToastGate, isRemoteConnectionFailure, shouldSuppressOptionalNotFound } from './utils/apiErrors.js'
 import { remoteMediaProxyUrl } from './utils/remoteMediaRouting.js'
 import { splitTagFilters } from './utils/tagFilters.js'
 import { runtimeDiagnosticTimeoutMs } from './components/autoTaggerRuntime.js'
@@ -312,6 +312,7 @@ api.interceptors.response.use(
     return response
   },
   (error) => {
+    if (shouldSuppressBackgroundError(error.config)) return Promise.reject(error)
     const url = error.config?.url || 'unknown'
     const method = error.config?.method?.toUpperCase() || 'UNKNOWN'
     const status = error.response?.status
