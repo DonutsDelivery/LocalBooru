@@ -18642,3 +18642,133 @@ reviews:
     created_at: 2026-10-07T10:20:22.000Z
     updated_at: 2026-10-07T10:22:12.267Z
     notes: []
+  - _ulid: 01M4AYSC3TTZPPWBZYNDQGX5QE
+    slugs:
+      - create-default-save-output-review
+    title: Review default Create output saving
+    author: DonutsDelivery
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d6c24fb8158b58f788c65a99bfd1c2ed8e1a69b8
+        evidence: "Exact d6c24fb8158b58f788c65a99bfd1c2ed8e1a69b8: all14 default-output behavioral Host
+          tests passed independently in cleared-env disposable HOME/TMPDIR with API/bridge mocks
+          only; Basic lazy creation+auto import, saved explicit off/reconnect/remount, explicit
+          existing/ComfyUI choice, errors/no library, Advanced scope/shared pending create, stale
+          close/reopen/settings/source, Run Instant once and timeout discard.
+          /tmp/creator-review-default-save-final-ui.log."
+        name: independent-default-saving-ui
+        required: true
+        runner: creator-review
+        created_at: 2026-10-07T10:33:16.746Z
+        completed_at: 2026-10-07T10:33:16.746Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d6c24fb8158b58f788c65a99bfd1c2ed8e1a69b8
+        evidence: All40 VM behavioral adapter tests independently passed exact frozen candidate;
+          scope/source/origin/session/request checks, fresh queue storage intent without editable
+          graph mutation, timeout/cancel/pagehide/draft-change rejection, existing
+          workflow/enhancement contracts. /tmp/creator-review-default-save-final-adapter.log.
+        name: independent-default-saving-adapter
+        required: true
+        runner: creator-review
+        created_at: 2026-10-07T10:33:17.141Z
+        completed_at: 2026-10-07T10:33:17.141Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d6c24fb8158b58f788c65a99bfd1c2ed8e1a69b8
+        evidence: Read all4 changed paths and surrounding Host generation/session/destination/import flow,
+          parent bridge and existing backend image-only idempotent Created Images endpoint. Default
+          enabled only absent explicit false preference; no folder on opening/off, writable library
+          selection, explicit destination preserved, fresh scoped parent prepare before actual
+          Basic/Instant/Advanced queue, revision/generation/epoch/deadline guards and visible
+          failures. Existing metadata import/permission enforcement unchanged. Matching behavioral
+          ac-default-save-output annotations, no traits/source-scanning tests. Clean exact SHA and
+          diff --check pass; source-only frontend change, no compiler/runtime/private data or source
+          edits.
+        name: independent-source-ac-review
+        required: true
+        runner: creator-review
+        created_at: 2026-10-07T10:33:17.549Z
+        completed_at: 2026-10-07T10:33:17.549Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d6c24fb8158b58f788c65a99bfd1c2ed8e1a69b8
+        evidence: Full final Host run:64passed2failed, not a whole-suite pass; both unchanged URL-only
+          management text/config tests independently fail at exact
+          bc6b602583728e291b63e4871ef640f866049181 using external base-source loader, so not
+          introduced by this candidate. /tmp/creator-review-default-save-final-broad-ui.log and
+          /tmp/creator-review-default-save-base-ui.log. Global kspec validate still reports
+          existing130schema47reference errors; /tmp/creator-review-default-save-validation.json.
+          These unrelated baseline limitations are retained; no fixes in this scope.
+        name: existing-full-suite-validation-limitations
+        required: false
+        runner: creator-review
+        created_at: 2026-10-07T10:33:17.939Z
+        completed_at: 2026-10-07T10:33:17.939Z
+    events:
+      - _ulid: 01M4AYSC3SE4BATW45ADPRDJGY
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T10:33:15.642Z
+      - _ulid: 01M4AYSCXQWS7WGEZF4BMF5Z99
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-07T10:33:16.471Z
+      - _ulid: 01M4AYSD9F63SB9YBAMDAQJ098
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-default-saving-ui
+        timestamp: 2026-10-07T10:33:16.847Z
+      - _ulid: 01M4AYSDP3DD0VR9MYRGENTNAA
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-default-saving-adapter
+        timestamp: 2026-10-07T10:33:17.251Z
+      - _ulid: 01M4AYSE2QX8EKTD58YCG7E3J0
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-source-ac-review
+        timestamp: 2026-10-07T10:33:17.655Z
+      - _ulid: 01M4AYSEES0Y49EGR8RH3VVZCW
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: existing-full-suite-validation-limitations
+        timestamp: 2026-10-07T10:33:18.041Z
+    examined_commit: d6c24fb8158b58f788c65a99bfd1c2ed8e1a69b8
+    external_links: []
+    lifecycle_state: open
+    related_refs:
+      - "@create-default-save-output"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: bc6b602583728e291b63e4871ef640f866049181
+      head_branch: fix/create-default-output
+      head_commit: d6c24fb8158b58f788c65a99bfd1c2ed8e1a69b8
+    threads: []
+    verdicts: []
+    created_at: 2026-10-07T10:33:15.642Z
+    updated_at: 2026-10-07T10:33:17.939Z
+    notes: []
