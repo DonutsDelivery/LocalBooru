@@ -44,3 +44,18 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T07:46:12.837Z
+  - _ulid: 01M4ANREPGK7RHD0YMGFPRB493
+    content: "Completed shipping: independently approved exact862ff96a
+      review@review-create-per-run-862ff96a gatespassing/zero blockers, merged6501234a onmain,
+      app:install exited0 with native optimized release5m54s and no live Cargo/Rust writers.
+      Installed/build binary SHA256 add41e61e5b1b4ca8c03f5d0de180714666877da64eec5bcf4189cc59a491568
+      match; embedded adapter/enhancer/policy matchcurrent source,
+      installedfrontendhashmatchesbuild. Canonical app:test-isolated exactinstalledbinary
+      health/emptyimages/disposable cleanup passed, receipt/tmp/dmc-per-run-acceptance-result.json.
+      Clean merged worktree/branch removed; unrelateduntrackedtesthashpreserved. Python17,
+      adapter38, Node216, focusedUI andproductionlint pass;2Hostfailures exactbase and
+      existingkspec130errors recordedoptional, live-modelwording notret tested. No private
+      library/prompts accessed orpush/publication."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T07:55:28.336Z

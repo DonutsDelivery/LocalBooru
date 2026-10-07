@@ -9,8 +9,11 @@ description: Replace manual apply-before-generation flow with optional per-run e
 spec_ref: "@create-managed-prompt-enhancer"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Reviewed, merged to main6501234a, rebuilt and installed exact native candidate;
+  per-run seed/source/cancellation regressions and isolated installed-binary
+  health/empty-library/cleanup checks passed.
 depends_on: []
 context: []
 priority: 1
@@ -117,7 +120,23 @@ history:
         previous: "@review-create-per-run-08388370"
     command: review-link
     timestamp: 2026-10-07T07:46:46.008Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Reviewed, merged to main6501234a, rebuilt and installed exact native candidate; per-run
+          seed/source/cancellation regressions and isolated installed-binary
+          health/empty-library/cleanup checks passed.
+        previous: null
+      completed_at:
+        new: 2026-10-07T07:55:28.556Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-07T07:55:28.562Z
 created_at: 2026-10-07T07:24:14.457Z
 started_at: 2026-10-07T07:45:33.428Z
 submitted_at: 2026-10-07T07:46:13.033Z
+completed_at: 2026-10-07T07:55:28.556Z
 todos: []
