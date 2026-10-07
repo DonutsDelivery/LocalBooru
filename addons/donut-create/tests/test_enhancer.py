@@ -28,6 +28,15 @@ class OutputTests(unittest.TestCase):
         result = {"main_prompt": "A clockwork owl looks left, eyes open.", "face_prompt": "The owl looks left, eyes open."}
         self.assertEqual(parse_result(json.dumps(result), "stop", True), result)
 
+    # AC: @create-managed-prompt-enhancer ac-enhance-preview
+    def test_expanded_scene_and_identity_only_face_are_not_shortened_or_combined(self):
+        result = {
+            "main_prompt": "An owl beside a wooden cabin, with visible wood grain and softly lit timber textures, gentle natural light and a quiet atmosphere, photographed with a natural perspective.",
+            "face_prompt": "The owl's face.",
+        }
+        self.assertEqual(parse_result(json.dumps(result), "stop", True), result)
+        self.assertEqual(parse_result('<think>synthetic reasoning</think>\n' + json.dumps(result), "stop", True), result)
+
     # AC: @create-managed-prompt-enhancer ac-owned-private
     def test_malformed_truncated_and_empty_supplied_face_are_rejected(self):
         for text, finish, face in [('{"main_prompt":"owl"}', "stop", False),
@@ -145,6 +154,42 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn('HF_TOKEN', environment)
             process.terminate.assert_called_once()
             self.assertIsNone(self.enhancer.process)
+
+    # AC: @create-managed-prompt-enhancer ac-enhance-preview
+    # AC: @create-managed-prompt-enhancer ac-owned-private
+    async def test_request_preserves_full_briefs_and_returns_exact_model_output(self):
+        image = 'An owl beside a wooden cabin, no other animals, dim blue light. Literal trigger SYNTH_OWL and the sign says "Keep out—".'
+        face = "The owl's face."
+        output = {"main_prompt": image + ' Fine wood grain and soft feather textures remain visible in the dim light.', "face_prompt": face}
+        client_type = httpx.AsyncClient
+        conversations = []
+        process = unittest.mock.Mock(returncode=None)
+        process.wait = AsyncMock(return_value=0)
+        def respond(request):
+            data = {} if request.method == 'GET' else json.loads(request.content)
+            if request.url.path == '/health':
+                return httpx.Response(200, json={})
+            if request.url.path == '/apply-template':
+                conversations.append(data['messages'])
+                return httpx.Response(200, json={'prompt': 'synthetic formatted chat'})
+            if request.url.path == '/tokenize':
+                return httpx.Response(200, json={'tokens': [1] * 20})
+            self.assertEqual(request.url.path, '/v1/chat/completions')
+            conversations.append(data['messages'])
+            self.assertFalse(data['cache_prompt'])
+            self.assertFalse(data['chat_template_kwargs']['enable_thinking'])
+            self.assertEqual(data['response_format']['json_schema']['schema']['required'], ['main_prompt', 'face_prompt'])
+            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(output)}}]})
+        def client(**options):
+            options['transport'] = httpx.MockTransport(respond)
+            return client_type(**options)
+        with patch.object(module, '_read_json', return_value={'server': 'llama-server'}), patch.object(module.asyncio, 'create_subprocess_exec', new=AsyncMock(return_value=process)), patch.object(module.httpx, 'AsyncClient', side_effect=client):
+            result = await self.enhancer.infer('qwen', image, face)
+        self.assertEqual(result, output)
+        self.assertEqual(conversations, [messages(image, face), messages(image, face)])
+        for conversation in conversations:
+            self.assertEqual(json.loads(conversation[1]['content']), {'image_brief': image, 'face_brief': face})
+        self.assertIsNone(self.enhancer.process)
 
 
 class DownloadTests(unittest.TestCase):
