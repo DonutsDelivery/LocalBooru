@@ -53,3 +53,28 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T05:59:36.909Z
+  - _ulid: 01M4AG2XV95YYGDYCZKX6TTWGA
+    content: Shipping verified for merged main source 56785c5e2bea66d85b7023d30bb9f052a83b73a3. Existing
+      parent-owned npm run app:install wrapper PID436557/run-cargo436584 was monitored without a
+      duplicate or lock bypass; unrelated C++ lock holder exited naturally. Release build Finished
+      in 4m58s and installer reported Installed with browser frontend; all tracked writer PIDs
+      exited and live Cargo/Rust/Docker scan was empty. Built
+      /mnt/storage/Projects/extra_storage/localbooru/builds/main-target/release/donutmediacenter and
+      installed /home/user/.local/share/localbooru/local-build/donutmediacenter both SHA256
+      91e0055160f3b93918844a47c6d398d1a4a6b949f4f53a4a09257d7edaa3e470. Main still exact source;
+      tracked source unchanged and untracked MediaNavigation.component.test.jsx preserved. Owned
+      python3 /tmp/dmc-stop-acceptance.py 56785c5e2bea66d85b7023d30bb9f052a83b73a3 exited0, using
+      ONLY canonical npm run app:test-isolated with installed candidate, empty temporary data,
+      port18792. Healthy response had 64-character isolated identity, /api/images empty;
+      installed/source frontend index SHA256
+      acd037482d4eca195971e973e60795b5776c9fb184e8493f61e0d03520b02295 matched. Owned canonical
+      launcher terminated; /tmp/localbooru-isolated.tN0sqJ absent and port18792 closed for
+      stable45sec, reconfirmed afterward. No private library/profile/prompt/browser/real-app
+      inspection; no product edits, merge/push, or unrelated process cancellation. Receipts
+      /tmp/dmc-stop-install-verification.json and /tmp/dmc-stop-acceptance-result.json; helper
+      retained for parent. Approved review @review-create-quiet-stop-274ef9f3 passing/zero blockers;
+      prior focused7/7, Node216/216, production ESLint clean, main gallery6/6; broader7 known
+      baseline failures remain the documented limitation.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T06:16:20.073Z
