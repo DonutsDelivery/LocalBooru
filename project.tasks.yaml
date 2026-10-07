@@ -2571,7 +2571,7 @@ tasks:
     title: Stop Create session polling and notification spam during backend shutdown
     type: bug
     spec_ref: "@donut-create-plugin"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -2580,3 +2580,4 @@ tasks:
     todos_count: 0
     created_at: 2026-10-07T05:50:24.404Z
     started_at: 2026-10-07T05:50:24.595Z
+    submitted_at: 2026-10-07T05:54:16.463Z
