@@ -1431,7 +1431,7 @@
       labels.add(label); family = kind; previous = rank; return true;
     });
   }
-  function routeFacePrompts(output, entries, binding, detailBinding) {
+  function routeFacePrompts(output, entries, binding, detailBinding, requireSingle = false) {
     const detailers = Object.entries(output).filter(([, node]) => node.class_type === 'DonutFaceDetailer');
     // Pinned ComfyUI execution IDs are the full control path joined by ':'.
     const boundId = (id, target) => String(id) === (target?.control?.path?.map(String).join(':') || String(target?.node?.id));
@@ -1450,11 +1450,11 @@
       source = node.inputs?.text;
     }
     if (!link(source, 0) || !boundId(source[0], binding) || output[source[0]]?.class_type !== binding.node.type) throw new Error('Multiple face descriptions need the bound separate face input.');
-    if (detail.inputs.edit_mode === true || detail.inputs.wildcard?.trim?.() || detail.inputs.detailer_hook != null
-      || Number.isFinite(detail.inputs.max_faces) && detail.inputs.max_faces > 0 && detail.inputs.max_faces < entries.length) {
+    if (!requireSingle && (detail.inputs.edit_mode === true || detail.inputs.wildcard?.trim?.() || detail.inputs.detailer_hook != null
+      || Number.isFinite(detail.inputs.max_faces) && detail.inputs.max_faces > 0 && detail.inputs.max_faces < entries.length)) {
       throw new Error('This Face detail edit mode, hook, wildcard or face limit cannot safely apply separate character descriptions.');
     }
-    return {...output, [id]: {...detail, class_type: 'DMCFaceDetailer', inputs: {...detail.inputs, face_prompts_json: JSON.stringify(entries)}}};
+    return {...output, [id]: {...detail, class_type: 'DMCFaceDetailer', inputs: {...detail.inputs, face_prompts_json: JSON.stringify(entries), ...(requireSingle ? {require_single_face: true} : {})}}};
   }
   function validEnhancementRun(run) {
     return object(run) && Number.isSafeInteger(run.seed) && run.seed >= 0 && ['qwen', 'minicpm'].includes(run.model)
@@ -1600,14 +1600,17 @@
         if (!bound) throw new Error('This prompt control cannot be compiled safely for per-run enhancement.');
       }
       if (canonical(restored) !== canonical(compiled.output) || executionSeed(enhanced.output) !== seed) throw new Error('The execution prompt changed while enhancing. Retry with supported prompt and seed controls.');
-      if (result.face_prompts?.length) {
+      const requireSingle = result.face_prompts?.length === 0 && Boolean(result.face_prompt.trim());
+      if (result.face_prompts?.length || requireSingle) {
         if (current.faceDetail?.widget.value === false) {
           if (Object.values(enhanced.output).some(node => ['DonutFaceDetailer', 'DMCFaceDetailer'].includes(node.class_type))) throw new Error('Face detail execution changed while enhancing. Retry with the current workflow.');
         } else {
-          enhanced.output = routeFacePrompts(enhanced.output, result.face_prompts, face, current.faceDetail);
+          enhanced.output = routeFacePrompts(enhanced.output, result.face_prompts, face, current.faceDetail, requireSingle);
           await Promise.race([checkCapabilities(enhanced), cancelled]); valid();
           const spec = nodeInfo.DMCFaceDetailer?.input, field = spec?.required?.face_prompts_json || spec?.optional?.face_prompts_json;
           if (!Array.isArray(field) || field[0] !== 'STRING') throw new Error('The installed multi-face detailer does not support separate face descriptions. Repair the add-on.');
+          const singleGuard = spec?.optional?.require_single_face || spec?.required?.require_single_face;
+          if (requireSingle && (!Array.isArray(singleGuard) || singleGuard[0] !== 'BOOLEAN')) throw new Error('The installed face detailer lacks the single-face count guard. Repair the add-on.');
         }
       }
       const run = {seed, model: settings.model, main_prompt: result.main_prompt, face_prompt: result.face_prompt,
