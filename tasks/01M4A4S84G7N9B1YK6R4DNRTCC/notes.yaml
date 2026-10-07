@@ -42,3 +42,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T03:21:19.875Z
+  - _ulid: 01M4A6MYWPQGHMGE2586H9X55S
+    content: The attached finish-shipping watcher exited with SIGTERM (143) while waiting, before
+      reading any user data or starting acceptance. Installer PID 204776 remains alive and queued on
+      the host gate. Restarted exactly one owned detached watcher PID 223653; log
+      /tmp/dmc-face-prompt-watcher.log, PID file /tmp/dmc-face-prompt-watcher.pid. It uses the same
+      owned installer and exact-binary canonical isolated acceptance; no second build was started.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T03:31:25.206Z
