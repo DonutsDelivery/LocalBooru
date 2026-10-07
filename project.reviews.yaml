@@ -19344,3 +19344,32 @@ reviews:
     created_at: 2026-10-07T10:48:00.433Z
     updated_at: 2026-10-07T10:48:55.771Z
     notes: []
+  - _ulid: 01M4AZXWXJWXVJYDM75T9QF1TB
+    slugs:
+      - review-create-aggregate-5b195f7
+    title: Independent frozen Create aggregate 5b195f7
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M4AZXWXH99MB81F586WQ8Q5C
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T10:53:12.498Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@create-multi-face-routing"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: a96dce9e
+      head_branch: fix/create-face-integration
+      head_commit: 5b195f7159af3c9422e74a319d59f4858acd0d81
+    threads: []
+    verdicts: []
+    created_at: 2026-10-07T10:53:12.498Z
+    updated_at: null
+    notes: []
