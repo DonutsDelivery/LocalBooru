@@ -16992,3 +16992,32 @@ reviews:
     created_at: 2026-10-07T04:22:02.791Z
     updated_at: 2026-10-07T04:23:46.843Z
     notes: []
+  - _ulid: 01M4AAAW90ZPN0V3YHVRJZMHTR
+    slugs:
+      - review-create-enhancer-d0e0a9d4
+    title: Independent enhancer expansion review ed58f12f..d0e0a9d4
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M4AAAW90Q5RP3JFGDBDG4MZM
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T04:35:49.152Z
+    examined_commit: d0e0a9d4a00c5421e10f7ad0f8c7610f8eb89617
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@fix-managed-enhancer-expansion"
+    subject:
+      type: code
+      base_branch: dmc-main
+      base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+      head_branch: fix/create-enhancer-expansion
+      head_commit: d0e0a9d4a00c5421e10f7ad0f8c7610f8eb89617
+    threads: []
+    verdicts: []
+    created_at: 2026-10-07T04:35:49.152Z
+    updated_at: null
+    notes: []
