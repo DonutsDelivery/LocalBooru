@@ -241,6 +241,10 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(requests[0], requests[1])
         self.assertNotEqual(requests[1]['seed'], requests[2]['seed'])
         self.assertEqual([request['seed'] for request in requests], [42, 42, 43, 0, (2**53 - 1) % 0xffffffff])
+        self.assertEqual(len(processes), 1)
+        self.assertIs(self.enhancer.process, processes[0])
+        processes[0].terminate.assert_not_called()
+        await self.enhancer.stop_process()
         for process in processes:
             process.terminate.assert_called_once()
         self.assertIsNone(self.enhancer.process)
@@ -312,6 +316,9 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(job['seed'], 73)
                 self.assertEqual(len(completion_requests), 1)
                 self.assertNotIn('job', self.enhancer.status('other'))
+                self.assertIs(self.enhancer.process, process)
+                process.terminate.assert_not_called()
+                await self.enhancer.stop_process()
                 process.terminate.assert_called_once()
                 self.assertIsNone(self.enhancer.process)
 
@@ -383,6 +390,10 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn('could not resolve', job['error'])
                 self.assertEqual(len(requests), 1)
                 self.assertNotIn('job', self.enhancer.status('other'))
+                if state == 'complete':
+                    self.assertIs(self.enhancer.process, process)
+                    process.terminate.assert_not_called()
+                    await self.enhancer.stop_process()
                 process.terminate.assert_called_once()
                 self.assertIsNone(self.enhancer.process)
 
@@ -413,7 +424,7 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(list(Path(self.temporary.name).rglob("*.json")))
 
     # AC: @create-managed-prompt-enhancer ac-offline-resources
-    async def test_completion_and_shutdown_release_owned_work(self):
+    async def test_shutdown_releases_owned_work(self):
         with patch.object(self.enhancer, "ready", return_value=True), patch.object(self.enhancer, "infer", new=AsyncMock(return_value={"main_prompt": "Synthetic owl.", "face_prompt": ""})):
             self.enhancer.start("owner", "enhance", "minicpm", "Synthetic owl.", "")
             await self.enhancer.task
@@ -481,6 +492,10 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
                 environment = spawn.call_args.kwargs['env']
                 self.assertFalse(any(name.startswith('LLAMA_') for name in environment))
                 self.assertNotIn('HF_TOKEN', environment)
+            if token_count == 5:
+                self.assertIs(self.enhancer.process, process)
+                process.terminate.assert_not_called()
+                await self.enhancer.stop_process()
             process.terminate.assert_called_once()
             self.assertIsNone(self.enhancer.process)
 
@@ -518,7 +533,8 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(conversations, [messages(image, face), messages(image, face)])
         for conversation in conversations:
             self.assertEqual(json.loads(conversation[1]['content']), {'image_brief': image, 'face_brief': face})
-        self.assertIsNone(self.enhancer.process)
+        self.assertIs(self.enhancer.process, process)
+        process.terminate.assert_not_called()
 
 
 class RouteTests(unittest.IsolatedAsyncioTestCase):

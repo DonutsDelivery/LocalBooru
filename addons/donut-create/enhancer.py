@@ -150,6 +150,10 @@ class Enhancer(VerifiedDownloads):
         self.current = None
         self.task = None
         self.process = None
+        self._loaded_model = None
+        self._port = None
+        self._api_key = None
+        self._stop_task = None
         self.closing = False
 
     @property
@@ -179,6 +183,7 @@ class Enhancer(VerifiedDownloads):
         # Each studio can see shared availability, but never another studio's text/job ID.
         result = {"supported": self.runtime is not None, "default_model": CATALOG["default_model"],
                   "device": "cpu", "busy": self.task is not None and not self.task.done(),
+                  "loaded_model": self._loaded_model if self.process is not None and self.process.returncode is None else None,
                   "models": [{"id": key, "name": model["name"], "size": model["size"],
                               "quantization": model["quantization"], "ready": self.ready(key)}
                              for key, model in CATALOG["models"].items()]}
@@ -215,6 +220,7 @@ class Enhancer(VerifiedDownloads):
     async def _run(self, job, model, image_brief, face_brief, seed):
         try:
             if job["kind"] == "install":
+                await self.stop_process()
                 await asyncio.to_thread(self.install, model)
             else:
                 job["result"] = await self.infer(model, image_brief, face_brief, seed)
@@ -233,14 +239,19 @@ class Enhancer(VerifiedDownloads):
         if not job or job["id"] != job_id:
             raise PermissionError("Enhancer operation not found in this studio.")
         if self.current == (owner, job) and self.task is not None and not self.task.done():
+            task = self.task
             self._cancel.set()
             if job["kind"] == "enhance":
-                self.task.cancel()
+                task.cancel()
             try:
-                await asyncio.shield(self.task)
+                await asyncio.shield(task)
             except asyncio.CancelledError:
-                if not self.task.cancelled():
+                if not task.cancelled():
                     raise
+        # A completed job can discard its idle helper; an older job must never
+        # stop the helper now serving another studio's newer operation.
+        if self.current == (owner, job):
+            await self.stop_process()
         # Explicit cancellation/discard also removes completed text from memory.
         job.pop("result", None)
         job["state"] = "cancelled"
@@ -356,19 +367,39 @@ class Enhancer(VerifiedDownloads):
         self._update(phase="complete", progress=1, downloaded_bytes=self._status["total_bytes"])
 
     async def stop_process(self):
-        process, self.process = self.process, None
-        if process is not None and process.returncode is None:
+        cleanup = self._stop_task
+        if cleanup is None:
+            process, self.process = self.process, None
+            self._loaded_model = self._port = self._api_key = None
+            if process is None or process.returncode is not None:
+                return
+            async def reap():
+                try:
+                    process.terminate()
+                    await asyncio.wait_for(process.wait(), 5)
+                except asyncio.TimeoutError:
+                    process.kill()
+                    await process.wait()
+                except ProcessLookupError:
+                    pass
+            cleanup = asyncio.create_task(reap())
+            self._stop_task = cleanup
+        cancelled = False
+        while True:
             try:
-                process.terminate()
-                await asyncio.wait_for(process.wait(), 5)
-            except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
-            except ProcessLookupError:
-                pass
+                await asyncio.shield(cleanup)
+                break
+            except asyncio.CancelledError:
+                if cleanup.cancelled():
+                    raise
+                # A second Cancel request must not abandon native teardown.
+                cancelled = True
+        if self._stop_task is cleanup:
+            self._stop_task = None
+        if cancelled:
+            raise asyncio.CancelledError
 
-    async def infer(self, model, image_brief, face_brief, seed=0):
-        sampling_seed = inference_seed(seed)
+    async def _start_process(self, model):
         receipt = _read_json(self.state_dir / (model + "-ready.json"))
         executable = self.runtime_root / receipt["server"]
         key = uuid.uuid4().hex + uuid.uuid4().hex
@@ -386,23 +417,38 @@ class Enhancer(VerifiedDownloads):
         library_key = 'DYLD_LIBRARY_PATH' if platform.system() == 'Darwin' else 'LD_LIBRARY_PATH'
         if os.name != 'nt':
             environment[library_key] = str(executable.parent) + (os.pathsep + environment[library_key] if environment.get(library_key) else '')
-        # No shared model server, GPU unload, prompt cache file, or prompt-bearing logs.
-        try:
-            spawn = asyncio.create_task(asyncio.create_subprocess_exec(*command, cwd=executable.parent,
-                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, env=environment))
+        spawn = asyncio.create_task(asyncio.create_subprocess_exec(*command, cwd=executable.parent,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, env=environment))
+        cancelled = False
+        while True:
             try:
                 self.process = await asyncio.shield(spawn)
+                break
             except asyncio.CancelledError:
-                self.process = await spawn
-                raise
-            async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", trust_env=False,
-                    headers={"Authorization": "Bearer " + key}, timeout=600) as client:
+                if spawn.cancelled():
+                    raise
+                cancelled = True
+        if cancelled:
+            raise asyncio.CancelledError
+        self._port, self._api_key = port, key
+
+    async def infer(self, model, image_brief, face_brief, seed=0):
+        sampling_seed = inference_seed(seed)
+        # Keep only this add-on's healthy CPU helper. Requests carry fresh briefs
+        # and seeds; no shared model server, GPU unload, cache file, or text logs.
+        try:
+            if self.process is None or self.process.returncode is not None or self._loaded_model != model:
+                await self.stop_process()
+                await self._start_process(model)
+            async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{self._port}", trust_env=False,
+                    headers={"Authorization": "Bearer " + self._api_key}, timeout=600) as client:
                 for _ in range(600):
                     if self.process.returncode is not None:
                         raise ValueError("The managed enhancer runtime could not start on this computer. Repair it or check platform compatibility.")
                     try:
                         health = await client.get("/health", timeout=1)
                         if health.status_code == 200:
+                            self._loaded_model = model
                             break
                     except httpx.HTTPError:
                         pass
@@ -439,5 +485,6 @@ class Enhancer(VerifiedDownloads):
                     raise ValueError("The local model could not process this brief. Try a shorter brief or retry; nothing has been applied.")
                 choice = response.json()["choices"][0]
                 return parse_result(choice["message"].get("content"), choice.get("finish_reason"), bool(face_brief.strip()))
-        finally:
+        except BaseException:
             await self.stop_process()
+            raise
