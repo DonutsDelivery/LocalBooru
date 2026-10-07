@@ -1313,6 +1313,9 @@ features:
         description: Create retains distinct facial descriptions for several characters and applies them to
           corresponding visible faces in left-to-right order. Enhancement preserves identity and
           spatial associations instead of merging subjects.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
