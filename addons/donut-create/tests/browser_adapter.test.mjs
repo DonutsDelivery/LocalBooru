@@ -145,7 +145,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
         : route === '/object_info' ? Object.fromEntries(manifest.required_nodes.map(node=>[node,{}])) : models[route.slice('/models/'.length)];
       return {ok:true,json:async()=>copy(value)};
     },
-    async queuePrompt(...args) { queued.push(copy(args)); return {prompt_id:'synthetic-prompt-id'}; },
+    async queuePrompt(...args) { queued.push(copy(args)); return api.onQueue ? api.onQueue(...args) : {prompt_id:'synthetic-prompt-id'}; },
   };
   const context = vm.createContext({
     URL,JSON,Map,Set,Date,Promise,AbortController,performance:{now:()=>0},
@@ -719,7 +719,7 @@ async function enhancerFixture(options = {}) {
       if (env.jobChange) job=env.jobChange(job);
       env.job=job;
     }
-    return {ok:true,json:async()=>({supported:true,busy:false,models:[{id:'qwen',ready:true}],job:env.job})};
+    return {ok:true,json:async()=>({supported:true,busy:false,models:[{id:'qwen',ready:true},{id:'minicpm',ready:true}],job:env.job})};
   };
   await env.action('snapshot');
   return env;
@@ -1614,4 +1614,158 @@ test('Edit resolves its active edit brief, and disabling enhancement leaves the 
   await env.api.queuePrompt(0,await env.app.graphToPrompt());
   assert.equal(env.expansions.length,1);assert.equal(env.requests.length,1);assert.equal(env.queued.length,2);
   assert.equal(env.queued[1][1].output.edit.inputs.prompt,'{A silver cup|A copper cup}');
+});
+
+// AC: @create-managed-prompt-enhancer ac-enhance-on-change
+// AC: @create-managed-prompt-enhancer ac-per-run-seed
+test('changed timing reuses successful owner text with current seed while always still infers every run',async()=>{
+  for(const timing of ['changed','always']) {
+    const env=await enhancerFixture();
+    await env.action('enhancer-config',{enabled:true,model:'qwen',timing});
+    env.editPrompt('A synthetic ceramic owl');env.editFace('The owl has amber eyes');
+    for(const seed of [11,12]) {env.editSeed(seed);await env.api.queuePrompt(0,await env.app.graphToPrompt());}
+    assert.equal(env.requests.length,timing==='changed'?1:2);
+    const run=env.queued[1][1];
+    assert.equal(run.output.sample.inputs.seed,12);assert.equal(run.workflow.extra.dmc_prompt_enhancement.seed,12);
+    assert.equal(run.output['text:scene'].inputs.Text,timing==='changed'?'Scene for 11':'Scene for 12');
+    assert.equal(run.workflow.extra.dmc_prompt_enhancement.reused,timing==='changed'?true:undefined);
+    assert.equal(run.workflow.extra.dmc_prompt_enhancement.enhancement_seed,timing==='changed'?11:undefined);
+    assert.equal(nodeAt(env.current(),1126).widgets_values[0],'A synthetic ceramic owl');
+    assert.equal(nodeAt(env.current(),1178).widgets_values[0],'The owl has amber eyes');
+  }
+});
+
+// AC: @create-managed-prompt-enhancer ac-enhance-on-change
+test('changed timing refreshes scene, face, model and loaded workflow and never crosses studios',async()=>{
+  const env=await enhancerFixture();
+  await env.action('enhancer-config',{enabled:true,model:'qwen',timing:'changed'});
+  const run=async()=>env.api.queuePrompt(0,await env.app.graphToPrompt());
+  await run();await run();assert.equal(env.requests.length,1);
+  env.editPrompt('A new synthetic scene');await run();assert.equal(env.requests.length,2);
+  env.editFace('A new synthetic face');await run();assert.equal(env.requests.length,3);
+  await env.action('enhancer-config',{enabled:true,model:'minicpm',timing:'changed'});
+  await run();assert.equal(env.requests.length,4);
+  await env.app.loadGraphData(env.current());await run();assert.equal(env.requests.length,5);
+  const other=await enhancerFixture({initial:env.current()});await other.api.queuePrompt(0,await other.app.graphToPrompt());
+  assert.equal(other.requests.length,1);
+});
+
+// AC: @create-managed-prompt-enhancer ac-enhance-on-change
+// AC: @create-managed-prompt-enhancer ac-wildcards-before-enhancement
+test('changed timing resolves wildcards on every seed before deciding to reuse the matching branch',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen',timing:'changed'});
+  env.editPrompt('{A synthetic vase|A synthetic bowl}');env.editFace('{Blue eyes|Amber eyes}');
+  env.onExpand=async({text,seed})=>({ok:true,json:async()=>({text:text.startsWith('{A')?(seed<3?'A synthetic vase':'A synthetic bowl'):(seed<4?'Blue eyes':'Amber eyes')})});
+  for(const seed of [1,2,3,4]) {env.editSeed(seed);await env.api.queuePrompt(0,await env.app.graphToPrompt());}
+  assert.equal(env.expansions.length,8);assert.equal(env.requests.length,3);
+  assert.deepEqual(env.requests.map(value=>[value.image_brief,value.face_brief]),[['A synthetic vase','Blue eyes'],['A synthetic bowl','Blue eyes'],['A synthetic bowl','Amber eyes']]);
+  assert.equal(env.queued[1][1].workflow.extra.dmc_prompt_enhancement.enhancement_seed,1);
+  assert.equal(nodeAt(env.current(),1126).widgets_values[0],'{A synthetic vase|A synthetic bowl}');
+});
+
+// AC: @create-managed-prompt-enhancer ac-enhance-on-change
+// AC: @create-managed-prompt-enhancer ac-owned-private
+test('failed changed briefs invalidate the old result and cancellation, errors and malformed output never cache',async()=>{
+  for(const failure of ['cancel','error','malformed','queue']) {
+    const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen',timing:'changed'});
+    env.editPrompt('First synthetic brief');await env.api.queuePrompt(0,await env.app.graphToPrompt());
+    env.editPrompt('Second synthetic brief');
+    if(failure==='cancel')env.onEnhance=()=>env.action('cancel-generation');
+    if(failure==='error')env.onEnhance=()=>{throw new Error('Synthetic inference error');};
+    if(failure==='malformed')env.jobChange=job=>({...job,result:{main_prompt:'',face_prompt:''}});
+    if(failure==='queue')env.api.onQueue=()=>{throw new Error('Synthetic backend rejection');};
+    await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),undefined,failure);
+    env.onEnhance=null;env.jobChange=null;env.api.onQueue=null;env.editPrompt('First synthetic brief');
+    await env.api.queuePrompt(0,await env.app.graphToPrompt());
+    assert.equal(env.requests.length,3,failure);assert.equal(env.queued.length,failure==='queue'?3:2,failure);
+    assert.equal(env.queued.at(-1)[1].workflow.extra.dmc_prompt_enhancement.reused,undefined,failure);
+  }
+});
+
+// AC: @create-managed-prompt-enhancer ac-enhance-on-change
+test('reused multi-face output reroutes against current face controls and checks current node capabilities',async()=>{
+  const env=await multiFaceFixture();await env.action('enhancer-config',{enabled:true,model:'qwen',timing:'changed'});
+  env.editSeed(21);await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  await env.action('patch',{negativePrompt:'Synthetic unwanted glare'});
+  env.editSeed(22);await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.requests.length,1);
+  const second=env.queued[1][1];assert.equal(second.output['1014:984'].inputs.seed,22);
+  assert.equal(second.output['text:negative'].inputs.Text,'Synthetic unwanted glare');
+  assert.deepEqual(JSON.parse(second.output['1014:984'].inputs.face_prompts_json),twoFacePlan);
+  assert.deepEqual(second.workflow.extra.dmc_prompt_enhancement.face_prompts,twoFacePlan);
+  assert.equal(second.workflow.extra.dmc_prompt_enhancement.enhancement_seed,21);
+  const compile=env.app.graphToPrompt;
+  env.app.graphToPrompt=async()=>{const value=await compile();if(nodeAt(env.current(),984).mode===4)delete value.output['1014:984'];return value;};
+  env.editFaceDetail(false);env.editSeed(23);await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.queued[2][1].output['1014:984'],undefined);
+  env.editFaceDetail(true);env.editSeed(24);await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.queued[3][1].output['1014:984'].inputs.seed,24);assert.equal(env.requests.length,1);
+  env.missingMultiNode=true;
+  await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/DMCFaceDetailer|face|capabilit/i);
+  assert.equal(env.queued.length,4);
+});
+
+
+// AC: @create-managed-prompt-enhancer ac-enhance-on-change
+test('timing configuration defaults legacy workflows to always and rejects unknown fields and invalid policies',async()=>{
+  const env=await enhancerFixture();
+  assert.equal((await env.action('snapshot')).snapshot.enhancer.timing,'always');
+  await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  assert.equal((await env.action('snapshot')).snapshot.enhancer.timing,'always');
+  for(const value of [{enabled:true,model:'qwen',timing:'sometimes'}, {enabled:true,model:'qwen',timing:null},
+    {enabled:true,model:'qwen',extra:true}, {enabled:true,model:'other',timing:'changed'},
+    {enabled:true,model:'qwen',timing:'changed',extra:true}]) {
+    assert.equal((await env.action('enhancer-config',value)).ok,false);
+  }
+  for(const seed of [31,32]) {env.editSeed(seed);await env.api.queuePrompt(0,await env.app.graphToPrompt());}
+  assert.equal(env.requests.length,2);assert.equal(env.requests[1].seed,32);
+});
+
+// AC: @create-managed-prompt-enhancer ac-enhance-on-change
+test('authored wildcard choices and model selections invalidate reuse even when changed back or resolved identically',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen',timing:'changed'});
+  env.editPrompt('{A synthetic vase|A synthetic bowl}');
+  env.onExpand=async()=>({ok:true,json:async()=>({text:'A synthetic vase'})});
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  env.editPrompt('{A synthetic vase|A synthetic jug}');await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.requests.length,2);
+  await env.action('enhancer-config',{enabled:true,model:'minicpm',timing:'changed'});
+  await env.action('enhancer-config',{enabled:true,model:'qwen',timing:'changed'});
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());assert.equal(env.requests.length,3);
+});
+
+// AC: @create-managed-prompt-enhancer ac-enhance-on-change
+// AC: @create-managed-prompt-enhancer ac-owned-private
+test('late queue acknowledgements after cancellation or stale graph edits publish no result and seed no reusable entry',async()=>{
+  for(const mode of ['cancel','stale']) {
+    const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen',timing:'changed'});
+    env.editPrompt('Captured synthetic brief');let release;
+    env.api.onQueue=()=>new Promise(resolve=>{release=resolve;});
+    const pending=env.api.queuePrompt(0,await env.app.graphToPrompt());
+    const outcome=mode==='stale'?assert.rejects(pending,/workflow changed/i):pending;
+    await env.settle();
+    if(mode==='cancel')await env.action('cancel-generation');else env.editPrompt('Next synthetic brief');
+    release({prompt_id:'late-synthetic-id'});await outcome;
+    assert.equal((await env.action('snapshot')).snapshot.enhancer.lastRun,undefined,mode);
+    env.api.onQueue=null;env.editPrompt('Captured synthetic brief');
+    await env.api.queuePrompt(0,await env.app.graphToPrompt());assert.equal(env.requests.length,2,mode);
+    assert.equal(env.queued.at(-1)[1].workflow.extra.dmc_prompt_enhancement.reused,undefined,mode);
+  }
+});
+
+// AC: @create-managed-prompt-enhancer ac-enhance-on-change
+// AC: @create-managed-prompt-enhancer ac-enhance-preview
+test('saved reuse metadata requires a safe original sampling seed and never restores the ephemeral cache',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen',timing:'changed'});
+  for(const seed of [41,42]) {env.editSeed(seed);await env.api.queuePrompt(0,await env.app.graphToPrompt());}
+  const saved=copy(env.queued.at(-1)[1].workflow);
+  await env.app.loadGraphData(saved);
+  assert.equal((await env.action('snapshot')).snapshot.enhancer.lastRun.enhancement_seed,41);
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());assert.equal(env.requests.length,2);
+  for(const invalid of [{reused:true}, {reused:true,enhancement_seed:-1}, {reused:true,enhancement_seed:1.5},
+    {reused:false,enhancement_seed:41}, {enhancement_seed:41}]) {
+    const workflow=copy(saved);delete workflow.extra.dmc_prompt_enhancement.reused;delete workflow.extra.dmc_prompt_enhancement.enhancement_seed;
+    Object.assign(workflow.extra.dmc_prompt_enhancement,invalid);await env.app.loadGraphData(workflow);
+    assert.equal((await env.action('snapshot')).snapshot.enhancer.lastRun,undefined);
+  }
 });
