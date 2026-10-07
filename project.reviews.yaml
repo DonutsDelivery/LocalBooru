@@ -18797,3 +18797,32 @@ reviews:
     created_at: 2026-10-07T10:33:15.642Z
     updated_at: 2026-10-07T10:33:43.623Z
     notes: []
+  - _ulid: 01M4AZ4NJC9VJZ1W7QBB18KS4H
+    slugs:
+      - review-create-face-only-ac74e6d6
+    title: Independent face-only conditioning review ac74e6d6
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M4AZ4NJB1N4R0WY7F6HSDHGK
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T10:39:25.771Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@create-face-only-conditioning"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: bc6b602583728e291b63e4871ef640f866049181
+      head_branch: fix/create-face-conditioning
+      head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+    threads: []
+    verdicts: []
+    created_at: 2026-10-07T10:39:25.772Z
+    updated_at: null
+    notes: []
