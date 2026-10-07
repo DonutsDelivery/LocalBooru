@@ -7,12 +7,24 @@ description: Synthetic-only request trace and useful expansion without losing co
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
 priority: 3
 tags: []
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-07T04:15:39.035Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-07T04:15:39.036Z
 created_at: 2026-10-07T04:15:28.597Z
+started_at: 2026-10-07T04:15:39.035Z
 todos: []
