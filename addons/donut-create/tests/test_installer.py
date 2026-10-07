@@ -364,6 +364,8 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(self.installer.ready())
         receipt["capability_check"] = True
         module._atomic_json(self.installer.state_dir / "ready.json", receipt)
+        self.assertFalse(self.installer.ready(), "Owned face runtime source must also be activated.")
+        self.installer.ensure_owned_nodes()
         self.assertTrue(self.installer.ready())
         first = next(iter(records.values()))
         Path(first["path"]).write_bytes(b"edited")

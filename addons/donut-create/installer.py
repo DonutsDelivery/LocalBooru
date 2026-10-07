@@ -283,7 +283,7 @@ class Installer(VerifiedDownloads):
 
     def expected_capabilities(self):
         models = self._models()
-        nodes = set(self.manifest["required_nodes"])
+        nodes = set(self.manifest["required_nodes"]) | {"DMCFaceDetailer"}
         for model in models:
             nodes.update(model.get("requires_nodes", []))
         return {"required_nodes": sorted(nodes), "required_models": [{"folder": m["folder"], "filename": m["filename"]} for m in models]}
