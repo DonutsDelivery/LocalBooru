@@ -19117,7 +19117,129 @@ reviews:
       - review-create-face-only-d48dc408
     title: Independent face-only conditioning fix-cycle review d48dc408
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d48dc40814d46cd83852474625a978c27e13d403
+        evidence: Fresh independent exactd48dc40814d46cd83852474625a978c27e13d403 adapter47/47 pass.
+          Includes inherited oldstock selected prompt sets, copiedIDs, blank face,
+          reopening/idempotence, preservation of independently authored setJSON/index/controlmode
+          and null/absent output links, plus complete original suite.
+          /tmp/dmc-face-cycle2-adapter.txt
+        name: adapter47
+        required: true
+        runner: node
+        created_at: 2026-10-07T10:48:52.492Z
+        completed_at: 2026-10-07T10:48:52.492Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d48dc40814d46cd83852474625a978c27e13d403
+        evidence: "Both unchanged independent adversarial reproductions now2/2 pass against dynamically
+          loaded current candidate: actual exact-base legacy upgrade/save/reopen now respects FACE
+          ONLY: smile; nullable unused output links now repair rather than leak scene.
+          /tmp/dmc-face-review-adversarial.mjs /tmp/dmc-face-cycle2-adversarial.txt. Both were RED
+          on ac74e6d6."
+        name: independent-blocker-reproductions
+        required: true
+        runner: node
+        created_at: 2026-10-07T10:48:52.921Z
+        completed_at: 2026-10-07T10:48:52.921Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d48dc40814d46cd83852474625a978c27e13d403
+        evidence: Fresh independent installer22/22 pass, verifying workflow/browser asset provenance hashes
+          and both bundled presets. /tmp/dmc-face-cycle2-installer.txt
+        name: installer22
+        required: true
+        runner: unittest
+        created_at: 2026-10-07T10:48:53.313Z
+        completed_at: 2026-10-07T10:48:53.313Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d48dc40814d46cd83852474625a978c27e13d403
+        evidence: "Captured previously upgraded/repaired synthetic saved recipe
+          /tmp/dmc-face-cycle2-repaired.json using reviewer base-to-candidate repro; independently
+          reran actual pinned DonutNodes2806ebe12caada993e6305e3f441ce61ab22a11c
+          DonutPromptConditioning.encode with captured branch1180 prompt-set options. Blank and FACE
+          ONLY: smile cases both return face-only text1/conditioning4, whole mixed full0/positive3
+          separately. Actual source /tmp/dmc-face-review-public-donut_prompt.py; synthetic
+          CLIP/nodes/variance stubs and disposable wildcard roots, no model/GPU/private data.
+          https://github.com/DonutsDelivery/ComfyUI-DonutNodes/blob/2806ebe12caada993e6305e3f441ce6\
+          1ab22a11c/donut_prompt.py"
+        name: actual-pinned-encode-repaired-settings
+        required: true
+        runner: python
+        created_at: 2026-10-07T10:48:53.717Z
+        completed_at: 2026-10-07T10:48:53.717Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d48dc40814d46cd83852474625a978c27e13d403
+        evidence: Fresh syntax node --check and git diff --check pass; clean candidate. Read complete fix
+          delta JS/tests/manifest and whole earlier7-file diff/context, AGENTS/HERMES/safety/review
+          skill and task/spec. Initialized destination arrays solves null/absent serialization; set
+          reset restricted to fully recognized old stock branch, nonempty validJSON, matching3
+          positional options and consistent anypresent named values. Independent sets/settings
+          preserved. Original graph inputs preserved, default/migrated/copied blank face has no
+          scene fallback, safe custom wiring/rollback/idempotence retained.
+          ac-face-prompt-routing/ac-workflow-state assessed. No new findings or unresolved blockers
+          on this fresh exact record.
+        name: syntax-diff-full-ac-review
+        required: true
+        runner: manual
+        created_at: 2026-10-07T10:48:54.102Z
+        completed_at: 2026-10-07T10:48:54.102Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d48dc40814d46cd83852474625a978c27e13d403
+        evidence: Retained independent prior exactcandidate controller50pass/1fail; same
+          test_managed_port_occupant_is_not_adopted_as_owned_backend failure independently
+          reproduced on exactbasebc6b602583728e291b63e4871ef640f866049181. Controller source/test
+          and presets unchanged across fix cycle. /tmp/dmc-face-review-controller.txt
+          /tmp/dmc-face-review-base-port.txt. No fullPython97 pass claim.
+        name: controller-existing-port-failure
+        required: false
+        runner: unittest
+        created_at: 2026-10-07T10:48:54.510Z
+        completed_at: 2026-10-07T10:48:54.510Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d48dc40814d46cd83852474625a978c27e13d403
+        evidence: Retained independent kspec validation130preexisting schema errors and verify/SKILL.md
+          missing-description. /tmp/dmc-face-review-validate.txt. No affected trait coverage
+          failure.
+        name: kspec-baseline-errors
+        required: false
+        runner: kspec
+        created_at: 2026-10-07T10:48:54.891Z
+        completed_at: 2026-10-07T10:48:54.891Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d48dc40814d46cd83852474625a978c27e13d403
+        evidence: Prior independent public pinned frontend1.53.6 workflowSchema and NodeOutputSlot/slotUtils
+          inspection confirms null/absent unconnected output links are valid and persist
+          serialization; current migration handles both. /tmp/dmc-face-review-public-schema.ts
+          /tmp/dmc-face-review-public-NodeOutputSlot.ts /tmp/dmc-face-review-public-slotUtils.ts.
+        name: pinned-frontend-nullable-link-proof
+        required: false
+        runner: manual
+        created_at: 2026-10-07T10:48:55.278Z
+        completed_at: 2026-10-07T10:48:55.278Z
     events:
       - _ulid: 01M4AZMC5H7EJTTNKA1MR5RV10
         actor: DonutsDelivery
@@ -19125,9 +19247,82 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-07T10:48:00.433Z
+      - _ulid: 01M4AZNZ3XV0XX5NEEJKYX1NNZ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: adapter47
+        timestamp: 2026-10-07T10:48:52.605Z
+      - _ulid: 01M4AZNZH0JKX9JVC59G10BRF2
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-blocker-reproductions
+        timestamp: 2026-10-07T10:48:53.024Z
+      - _ulid: 01M4AZNZX5EVJZ9B714D2S0KP8
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: installer22
+        timestamp: 2026-10-07T10:48:53.413Z
+      - _ulid: 01M4AZP09WGR8CEA1FMN1EVW2P
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: actual-pinned-encode-repaired-settings
+        timestamp: 2026-10-07T10:48:53.820Z
+      - _ulid: 01M4AZP0PPRABVG2H8SHB5SKHR
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: syntax-diff-full-ac-review
+        timestamp: 2026-10-07T10:48:54.230Z
+      - _ulid: 01M4AZP12JQ5TJ26M6SV7WY49M
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: controller-existing-port-failure
+        timestamp: 2026-10-07T10:48:54.610Z
+      - _ulid: 01M4AZP1EJKBQKXMA7PCC45GS3
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: kspec-baseline-errors
+        timestamp: 2026-10-07T10:48:54.994Z
+      - _ulid: 01M4AZP1TY2BK4ZMGXJ51G0ZHB
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: pinned-frontend-nullable-link-proof
+        timestamp: 2026-10-07T10:48:55.390Z
+      - _ulid: 01M4AZP26VAZFB9JJGFQJWTAB2
+        actor: independent-create-fix-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: bc6b602583728e291b63e4871ef640f866049181
+            head_commit: d48dc40814d46cd83852474625a978c27e13d403
+          decision: approve
+        timestamp: 2026-10-07T10:48:55.771Z
+      - _ulid: 01M4AZP26V1WMYXR7NM2SDZYM4
+        actor: independent-create-fix-review
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: closed
+        timestamp: 2026-10-07T10:48:55.771Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-face-only-conditioning"
     subject:
@@ -19137,7 +19332,15 @@ reviews:
       head_branch: fix/create-face-only-conditioning
       head_commit: d48dc40814d46cd83852474625a978c27e13d403
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: d48dc40814d46cd83852474625a978c27e13d403
+        decision: approve
+        reviewer: independent-create-fix-review
+        role: reviewer
+        created_at: 2026-10-07T10:48:55.771Z
     created_at: 2026-10-07T10:48:00.433Z
-    updated_at: null
+    updated_at: 2026-10-07T10:48:55.771Z
     notes: []
