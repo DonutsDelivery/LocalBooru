@@ -35,3 +35,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T07:44:59.670Z
+  - _ulid: 01M4AN7G75R1ZB839TSSG7VAQW
+    content: "Fix cycle1: sole blocker from exact08388370 review resolved in862ff96a using immutable
+      compilation evidence. Added identical scene/face pair regression, verified RED before fix and
+      GREEN after;38/38browser adapter tests pass. Full other source checks unchanged and
+      independently verified; no other review findings. Resubmit current exacthead for fresh review
+      before main integration/install."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T07:46:12.837Z
