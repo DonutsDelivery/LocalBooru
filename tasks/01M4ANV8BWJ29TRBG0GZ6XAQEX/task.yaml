@@ -1,0 +1,20 @@
+_ulid: 01M4ANV8BWJ29TRBG0GZ6XAQEX
+slugs:
+  - create-visible-generation-errors
+title: Keep Create generation errors visible beside Generate
+type: bug
+description: Move local validation and generation failure text out of the scrolling controls to the
+  persistent Generate area, retain readable long details without hiding actions, and verify
+  Create/Edit retries preserve drafts.
+spec_ref: "@donut-create-plugin"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-10-07T07:57:00.156Z
+todos: []
