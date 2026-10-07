@@ -1,1 +1,13 @@
-notes: []
+notes:
+  - _ulid: 01M4A95MZG20VAMDRHAMVJ48DH
+    content: "Approach: preserve the serialized/exported workflow unchanged. At queue time find the
+      explicit intermediate SaveImage or legacy v5 quarter-scale sink, match its unscaled sibling
+      PreviewImage, remove the reduced save sink and register the original full preview as the
+      nonfinal output. Reuse existing session output/history ownership and sidecar contracts. Tests
+      will queue bundled and remapped/reloaded recipes for preview/comfy destinations, verify no
+      quarter-scale output activation, reconcile full media/history, and preserve final
+      save/workflow metadata. Dedicated assigned branch fix/create-full-first-pass stays based on
+      parent-authorized ed58f12f; parent handles integration/build."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T04:15:29.265Z
