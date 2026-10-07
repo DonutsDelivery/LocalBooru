@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01M4AXQNR5WZ4SMG0AZGF3WRKN
+    content: "Approach: runtime already accepts inferred face output with empty source face; update
+      model policy and user explanation. Use scene-supported facial facts for one identifiable
+      visible subject, explicit face input wins, hidden/faceless/ambiguous scenes remain empty.
+      Focused HTTP transport/parser contracts and UI checks use synthetic prompts; no private
+      runtime/model inference."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T10:14:51.397Z

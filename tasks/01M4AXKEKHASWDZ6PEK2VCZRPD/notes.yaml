@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01M4AXQNZ551A10HZX1PT3ZMF1
+    content: "Approach: default Save output to true when preference absent and preserve explicit
+      opt-out. Reuse library-owned Created Images endpoint lazily before a saving-enabled run if
+      destination missing, including Advanced queue entry via scoped parent preparation. Verify
+      Basic/Instant/Advanced paths, single directory creation, explicit destinations/off,
+      stale/cancelled preparation and surfaced errors. No folder creation merely opening studio."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T10:14:51.622Z
