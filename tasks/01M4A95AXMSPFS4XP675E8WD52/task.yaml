@@ -10,13 +10,21 @@ description: Remove runtime activation of the quarter-scale workflow PNG and exp
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 2
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: fix/create-full-first-pass
+  captured_at: 2026-10-07T04:19:50.970Z
+  commit: b1a81ef5d887ba66128ecb0321f4d3ddb26fe6a1
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -28,6 +36,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-07T04:15:29.057Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: fix/create-full-first-pass
+          captured_at: 2026-10-07T04:19:50.970Z
+          commit: b1a81ef5d887ba66128ecb0321f4d3ddb26fe6a1
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-07T04:19:50.977Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-07T04:19:50.977Z
 created_at: 2026-10-07T04:15:18.964Z
 started_at: 2026-10-07T04:15:29.056Z
+submitted_at: 2026-10-07T04:19:50.977Z
 todos: []
