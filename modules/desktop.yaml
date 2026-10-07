@@ -1204,6 +1204,58 @@ features:
           usable on mobile.
         when: They use reference guidance or Edit Studio tools
     tags: []
+    requirements:
+      - _ulid: 01M49YHS0SSQXCX7R7AGQE401X
+        slugs:
+          - create-managed-prompt-enhancer
+        title: Managed local prompt enhancement
+        type: requirement
+        description: Create offers optional local prompt enhancement with a downloaded model managed by the
+          add-on. Users can inspect and apply a complete scene description and a separate narrowly
+          scoped face description while preserving their original brief. Enhancement works offline
+          after setup and does not require a separately configured model server.
+        status:
+          maturity: draft
+          implementation: in_progress
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        acceptance_criteria:
+          - given: The Create add-on is installed and a user chooses an available enhancer model
+            id: ac-managed-models
+            then: The add-on downloads and verifies its own runtime and selected model, shows progress and
+              errors, permits cancellation and retry without losing completed verified downloads,
+              and becomes ready without external model-server setup.
+            when: They install or repair that enhancer
+          - given: An authorized studio user supplies an image brief and an installed enhancer model
+            id: ac-enhance-preview
+            then: The studio presents a complete scene description and a separate face description generated
+              using the supplied preservation rules; the original brief remains available and
+              generation does not start automatically.
+            when: They request enhancement
+          - given: A completed enhancer preview contains valid scene and face descriptions
+            id: ac-apply-routing
+            then: Both descriptions update their respective existing studio controls together; a blank face
+              description remains blank, unrelated settings remain intact, and edits made since the
+              request require a new enhancement rather than being overwritten.
+            when: The user applies it
+          - given: An enhancement or enhancer installation is running for one studio
+            id: ac-owned-private
+            then: Only the owning authorized studio can read its results or cancel its work; cancellation stops
+              only the owned helper, no prompt or response is logged by the enhancer, and malformed
+              or incomplete responses cannot change the workflow.
+            when: Another studio attempts to inspect or cancel it, or the owner cancels it
+          - given: The enhancer has completed setup and image generation may use the local GPU
+            id: ac-offline-resources
+            then: Enhancement uses the installed local files without contacting a hosted inference service,
+              releases its helper resources after completion or cancellation, and does not interrupt
+              unrelated image-generation work.
+            when: The user enhances a brief offline or stops the add-on
+        tags: []
+        created: 2026-10-07T01:09:52.281Z
+        notes: []
     created: 2026-09-29T23:03:40.541Z
     notes: []
 requirements:

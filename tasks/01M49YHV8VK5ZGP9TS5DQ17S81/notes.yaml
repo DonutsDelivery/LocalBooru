@@ -1,0 +1,15 @@
+notes:
+  - _ulid: 01M49YHVM3ECDC2TFGWHS0VF02
+    content: "User explicitly approved integration after verifying the two published GGUF quants and
+      requested managed setup without external Ollama. Use the exact latest user system prompt. Main
+      checkout has unrelated untracked MediaNavigation test; original checkout has unrelated
+      AGENTS.md/SSR CSS changes, all preserved. Remote fetch currently fails with Empty reply;
+      implementation bases on up-to-date local integration main and will rebase on it before edits.
+      Reuse installer download/extraction helpers and existing session auth and main/face workflow
+      bindings. Tests: integrity/cancel/retry/offline setup; model
+      parsing/invalid/truncated/reasoning outputs; session ownership/no logging/owned subprocess
+      cleanup; UI preview/atomic main+face patch/stale edits. Separate synthetic runtime validation,
+      no private profile."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T01:09:54.947Z
