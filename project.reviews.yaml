@@ -17153,7 +17153,80 @@ reviews:
       - review-create-quiet-stop-5a1b9ccc
     title: Independent quiet backend stop review d0551fc0..5a1b9ccc
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
+        evidence: "Independent7/7new targeted tests pass: real Axios interceptor repeated
+          background502rejections quiet while stop/unrelatedmutationsnotify; readinessgated
+          sessionreads; in-flightstopabortandlatefailureignored;
+          sameiframe/session/resultsretainedwith no generation; stop/restartoverlap;
+          supersededfailedstatusbecomesAbortError; failedstoprecovery. Full two files47pass/2fail;
+          both unchanged failures independently reproduced on exact base42Hosttests focused URL-only
+          instructions and existing backend setup cases."
+        name: quiet-stop-focused-behavior
+        required: true
+        runner: vitest two targeted component files
+        created_at: 2026-10-07T05:55:45.969Z
+        completed_at: 2026-10-07T05:55:45.969Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
+        evidence: Independently216/216pass. Backgroundsuppressionhelperbehaviorannotationschecked;
+          onlyexplicitbackgroundGETsuppressglobalnotification.
+        name: frontend-node-suite
+        required: true
+        runner: node --test frontend
+        created_at: 2026-10-07T05:55:46.338Z
+        completed_at: 2026-10-07T05:55:46.338Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
+        evidence: Candidateone new error services/donutCreate.js:17:45 no-unsafe-finally. Exactbase
+          samecommandpasses. Evidence /tmp/create-review-stop-poll-eslint.log and
+          /tmp/create-review-stop-poll-base-eslint.log.
+        name: changed-production-eslint
+        required: true
+        runner: npx eslint src/api.js src/components/CreateStudioHost.jsx src/services/donutCreate.js
+          src/utils/apiErrors.js
+        created_at: 2026-10-07T05:55:46.742Z
+        completed_at: 2026-10-07T05:55:46.742Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
+        evidence: Exactbase
+          d0551fc0e4a7f3d62c583017acf87799c9d00271;head5a1b9ccc40dcfce0240af75c95c28a890e46dd1e.
+          Read every changedfile beforetasknotes, related CreateSettingsrefresh/action revision,
+          Host parentabort/generation lifecycle, bridge gating, API interceptor notification
+          behavior and Toast context. ac-quiet-backend-stop annotated with behavioral tests, no
+          source scanning, spec no traits. Required deterministic/analytical checks completed across
+          correctness/cancellation/overlap/recovery/privacy/integration/testquality. Diff
+          whitespaceclean; no sourceedits/apps/builds/privateprofile/browseraccess.
+        name: diff-AC-concurrency-integrity
+        required: true
+        runner: git diff --check plus complete code/context review
+        created_at: 2026-10-07T05:55:47.114Z
+        completed_at: 2026-10-07T05:55:47.114Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
+        evidence: Same130schemaerrorsandverify skill missing-description diagnostics independently
+          confirmed; unrelated to this code-only candidate.
+        name: registry-validation-baseline
+        required: false
+        runner: KSPEC_NO_DAEMON=1 kspec validate
+        created_at: 2026-10-07T05:55:47.502Z
+        completed_at: 2026-10-07T05:55:47.502Z
     events:
       - _ulid: 01M4AEVR3F80AXA67E2AZS9NM4
         actor: DonutsDelivery
@@ -17161,9 +17234,75 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-07T05:54:56.240Z
+      - _ulid: 01M4AEX7ZGAR93FV2ZCZ3QC88V
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-07T05:55:45.264Z
+      - _ulid: 01M4AEX8CYRGSB789KT6VB4WSW
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01M4AEX892WP6XJG7PC3P7PZWH
+        timestamp: 2026-10-07T05:55:45.694Z
+      - _ulid: 01M4AEX8RPAME0P6DQTFN013KC
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: quiet-stop-focused-behavior
+        timestamp: 2026-10-07T05:55:46.070Z
+      - _ulid: 01M4AEX94B8GBV7PC381ETWRGH
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-node-suite
+        timestamp: 2026-10-07T05:55:46.443Z
+      - _ulid: 01M4AEX9GR63Q9SQJB8JPY3QYK
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: changed-production-eslint
+        timestamp: 2026-10-07T05:55:46.840Z
+      - _ulid: 01M4AEX9WGYKXR4C8ANHFYTNT6
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: diff-AC-concurrency-integrity
+        timestamp: 2026-10-07T05:55:47.216Z
+      - _ulid: 01M4AEXA8MFGYYT6EKJ5DEX80F
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: registry-validation-baseline
+        timestamp: 2026-10-07T05:55:47.604Z
+      - _ulid: 01M4AEXAMWN9KY2T95PMR60ENA
+        actor: independent-create-reviewer
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+            head_commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
+          decision: request_changes
+        timestamp: 2026-10-07T05:55:47.997Z
+      - _ulid: 01M4AEXAMXR01G678R888KCW7Z
+        actor: independent-create-reviewer
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-07T05:55:47.997Z
     examined_commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-quiet-backend-stop"
     subject:
@@ -17172,8 +17311,36 @@ reviews:
       base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
       head_branch: fix/create-stop-poll
       head_commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
-    threads: []
-    verdicts: []
+    threads:
+      - _ulid: 01M4AEX892WP6XJG7PC3P7PZWH
+        anchor:
+          type: code
+          commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
+          line_end: 17
+          line_start: 15
+          path: frontend/src/services/donutCreate.js
+          side: head
+        entries:
+          - _ulid: 01M4AEX892X9PYDVDJFYXTXFQS
+            author: DonutsDelivery
+            body: "MUST-FIX: getCreateStatus throws directly from its finally block. Independent
+              changed-production ESLint fails with no-unsafe-finally at line17; the same command
+              passes on exact base d0551fc0. Move the superseded/aborted checks into explicit
+              success/error handling or a shared check helper while retaining the tested AbortError
+              semantics for late shutdown failures. Re-run the seven focused tests and
+              changed-production ESLint on the repaired candidate. No other blocker found in full
+              lifecycle/cancellation/recovery review."
+            created_at: 2026-10-07T05:55:45.570Z
+        kind: blocker
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
+        decision: request_changes
+        reviewer: independent-create-reviewer
+        role: reviewer
+        created_at: 2026-10-07T05:55:47.996Z
     created_at: 2026-10-07T05:54:56.240Z
-    updated_at: null
+    updated_at: 2026-10-07T05:55:47.997Z
     notes: []
