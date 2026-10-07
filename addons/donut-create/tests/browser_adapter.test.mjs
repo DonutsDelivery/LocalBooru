@@ -1113,7 +1113,7 @@ async function multiFaceFixture() {
     const response=await fetch(route,options);
     if(route==='/object_info') {
       const value=await response.json();
-      if(!env.missingMultiNode)value.DMCFaceDetailer={input:{required:{face_prompts_json:['STRING',{}]}}};
+      if(!env.missingMultiNode)value.DMCFaceDetailer={input:{required:{face_prompts_json:['STRING',{}]},optional:{require_single_face:['BOOLEAN',{default:false}]}}};
       return {...response,json:async()=>value};
     }
     return response;
@@ -1130,6 +1130,7 @@ test('multi-face enhancement submits separate ordered records only in the compil
   await env.api.queuePrompt(0,await env.app.graphToPrompt());
   const compiled=env.queued[0][1],detail=compiled.output['1014:984'];
   assert.equal(detail.class_type,'DMCFaceDetailer');
+  assert.equal(detail.inputs.require_single_face,undefined);
   assert.deepEqual(JSON.parse(detail.inputs.face_prompts_json),twoFacePlan);
   assert.deepEqual(detail.inputs.positive,['face:fusion',2]);
   assert.equal(detail.inputs.seed,env.requests[0].seed);
@@ -1146,12 +1147,14 @@ test('multi-face enhancement submits separate ordered records only in the compil
 });
 
 // AC: @create-multiple-face-prompts ac-single-face-compatible
-test('legacy two-key and new single-face results preserve the original compiled detailer behavior',async()=>{
+test('legacy two-key results preserve the detailer and new single-face results require exactly one detected face',async()=>{
   for(const result of [{main_prompt:'One scene',face_prompt:'One face'}, {main_prompt:'One scene',face_prompt:'One face',face_prompts:[]}]) {
-    const env=await multiFaceFixture();env.jobChange=job=>({...job,result});
+    const env=await multiFaceFixture();env.jobChange=job=>({...job,result});env.missingMultiNode=!Object.hasOwn(result,'face_prompts');
     await env.api.queuePrompt(0,await env.app.graphToPrompt());
-    assert.equal(env.queued[0][1].output['1014:984'].class_type,'DonutFaceDetailer');
-    assert.equal(env.queued[0][1].output['1014:984'].inputs.face_prompts_json,undefined);
+    const strictSingle=Object.hasOwn(result,'face_prompts'),detail=env.queued[0][1].output['1014:984'];
+    assert.equal(detail.class_type,strictSingle?'DMCFaceDetailer':'DonutFaceDetailer');
+    assert.equal(detail.inputs.face_prompts_json,strictSingle?'[]':undefined);
+    assert.equal(detail.inputs.require_single_face,strictSingle?true:undefined);
     assert.equal(env.queued[0][1].output['text:face'].inputs.Text,'One face');
   }
 });
@@ -1261,4 +1264,39 @@ test('an authored edit after per-face capability verification still cancels subm
   };
   await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/workflow changed/i);
   assert.equal(env.queued.length,0);assert.equal(nodeAt(env.current(),1126).widgets_values[0],'Latest authored scene');
+});
+
+
+// AC: @create-multiple-face-prompts ac-mismatch
+// AC: @create-multiple-face-prompts ac-single-face-compatible
+test('strict single-face execution requires the runtime Boolean guard capability and preserves reference/edit options',async()=>{
+  for(const mode of ['supported','missing-guard','wrong-type']) {
+    const env=await multiFaceFixture(),fetch=env.api.fetchApi,compile=env.app.graphToPrompt;
+    env.jobChange=job=>({...job,result:{main_prompt:'One character',face_prompt:'Blue eyes and freckles',face_prompts:[]}});
+    env.app.graphToPrompt=async ()=>{const value=await compile();Object.assign(value.output['1014:984'].inputs,{
+      edit_mode:true,face_reference:['reference',0],face_reference_b:['reference-b',0],detailer_hook:['hook',0],wildcard:'A single face wildcard'});return value;};
+    env.api.fetchApi=async (route,options)=>{
+      const response=await fetch(route,options);if(route!=='/object_info')return response;
+      const value=await response.json();
+      if(mode==='missing-guard')delete value.DMCFaceDetailer.input.optional.require_single_face;
+      if(mode==='wrong-type')value.DMCFaceDetailer.input.optional.require_single_face=['STRING',{}];
+      return {...response,json:async()=>value};
+    };
+    if(mode==='supported') {
+      const before=env.current(),compiled=await env.app.graphToPrompt();await env.api.queuePrompt(0,compiled);
+      const detail=env.queued[0][1].output['1014:984'];assert.equal(detail.class_type,'DMCFaceDetailer');
+      assert.deepEqual(detail.inputs,{...compiled.output['1014:984'].inputs,face_prompts_json:'[]',require_single_face:true});
+      assert.deepEqual(env.current(),before);
+    } else {await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/single.face|guard|repair/i);assert.equal(env.queued.length,0);}
+  }
+});
+
+// AC: @create-multiple-face-prompts ac-single-face-compatible
+test('disabled known face detail retains new single-face metadata without requiring a runtime guard',async()=>{
+  const env=await multiFaceFixture(),compile=env.app.graphToPrompt;env.editFaceDetail(false);env.missingMultiNode=true;
+  env.jobChange=job=>({...job,result:{main_prompt:'One character',face_prompt:'Blue eyes and freckles',face_prompts:[]}});
+  env.app.graphToPrompt=async ()=>{const value=await compile();delete value.output['1014:984'];return value;};
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.queued.length,1);assert.equal(env.queued[0][1].output['1014:984'],undefined);
+  assert.equal(env.queued[0][1].workflow.extra.dmc_prompt_enhancement.face_prompt,'Blue eyes and freckles');
 });
