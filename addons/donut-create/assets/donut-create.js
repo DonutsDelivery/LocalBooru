@@ -1470,10 +1470,10 @@
       const restored = JSON.parse(JSON.stringify(enhanced.output));
       for (const {binding, source, generated} of updates) {
         let bound = false;
-        for (const [id, node] of Object.entries(restored)) {
+        for (const [id, node] of Object.entries(enhanced.output)) {
           if (node.class_type === binding.node.type && compiled.output[id]?.inputs?.[binding.widget.name] === source
             && node.inputs?.[binding.widget.name] === generated) {
-            node.inputs[binding.widget.name] = source; bound = true;
+            restored[id].inputs[binding.widget.name] = source; bound = true;
           }
         }
         if (!bound) throw new Error('This prompt control cannot be compiled safely for per-run enhancement.');

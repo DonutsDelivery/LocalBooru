@@ -888,3 +888,28 @@ test('unbound custom controls and wrong job identity/model/seed never submit ima
     if (mode==='unbound') assert.equal(env.requests.length,0);
   }
 });
+
+
+// AC: @create-managed-prompt-enhancer ac-per-run-seed
+test('identical scene and face briefs with identical generated prompts queue without consuming binding evidence',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  env.editPrompt('The same synthetic subject brief.');env.editFace('The same synthetic subject brief.');
+  const before=env.current();
+  env.jobChange=job=>({...job,result:{main_prompt:'The same generated subject description.',face_prompt:'The same generated subject description.'}});
+  for (let run=0;run<2;run++) await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.queued.length,2);
+  for (const [index,args] of env.queued.entries()) {
+    const compiled=args[1];
+    assert.equal(compiled.output['text:scene'].inputs.Text,'The same generated subject description.');
+    assert.equal(compiled.output['text:face'].inputs.Text,'The same generated subject description.');
+    assert.equal(compiled.output.sample.inputs.seed,env.requests[index].seed);
+    assert.equal(compiled.workflow.extra.dmc_prompt_enhancement.main_prompt,'The same generated subject description.');
+    assert.equal(compiled.workflow.extra.dmc_prompt_enhancement.face_prompt,'The same generated subject description.');
+    assert.equal(nodeAt(compiled.workflow,1126).widgets_values[0],'The same synthetic subject brief.');
+    assert.equal(nodeAt(compiled.workflow,1178).widgets_values[0],'The same synthetic subject brief.');
+    assert.equal(env.requests[index].image_brief,'The same synthetic subject brief.');
+    assert.equal(env.requests[index].face_brief,'The same synthetic subject brief.');
+  }
+  assert.deepEqual(env.current(),before);
+  assert.deepEqual(JSON.parse(env.store.get(draftKey('synthetic-device-a'))),before);
+});
