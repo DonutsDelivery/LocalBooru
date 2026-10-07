@@ -2405,7 +2405,7 @@ tasks:
   - _ulid: 01M49TBJBXQJ5WAEEK5QBD9YQV
     slugs:
       - qwen-prompt-enhancer-trial
-    title: Trial Qwen3.5-4B as a local generator prompt enhancer
+    title: Compare four local prompt enhancers in an HTML runner
     type: spike
     spec_ref: "@donut-create-plugin"
     status: in_progress
@@ -2413,7 +2413,7 @@ tasks:
     depends_on: []
     priority: 2
     tags: []
-    notes_count: 2
+    notes_count: 3
     todos_count: 0
     created_at: 2026-10-06T23:56:34.557Z
     started_at: 2026-10-06T23:56:34.733Z

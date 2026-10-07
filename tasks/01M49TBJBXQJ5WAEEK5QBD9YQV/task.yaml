@@ -1,14 +1,14 @@
 _ulid: 01M49TBJBXQJ5WAEEK5QBD9YQV
 slugs:
   - qwen-prompt-enhancer-trial
-title: Trial Qwen3.5-4B as a local generator prompt enhancer
+title: Compare four local prompt enhancers in an HTML runner
 type: spike
-description: "Text-only comparative trial requested by user: Qwen3.5-4B HauhauCS Aggressive Q4_K_M;
-  mondk MiniCPM5-2B Abliterated Q6_K; SC117 LFM2.5-2.6B Uncensored Q6_K; BennyDaBall LFM2.5-1.2B
-  Z-Image-Engineer V4 Q8_0. Skip Krea2 Engineer. Same varied synthetic
-  prompts/instructions/sampling; provide exact output text in side-by-side artifact plus
-  timing/runtime provenance. User authorizes runtime update/replacement. No image generation,
-  product UI changes, user library/profile access or shared Ollama requests."
+description: "User requests text-only A/B outputs plus local HTML page that runs four candidates:
+  Qwen3.5-4B Aggressive Q4_K_M; MiniCPM5-2B mondk Q6_K; SC117 LFM2.5-2.6B Q6_K; Z-Image-Engineer V4
+  Q8_0; skip Krea2 Engineer. Use current verified llama.cpp, same editable instructions/sampling,
+  sequential GPU use, raw output, latency and local-only requests. Keep user prompts in memory
+  without logs/persistence; no image generation or private DMC profile access. Deliver standalone
+  HTML+stdlibPythonrunner and synthetic comparison artifact outside repo."
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
@@ -47,6 +47,27 @@ history:
           library/profile/process changes or public push. Integration scope awaits user preference.
     command: task-set
     timestamp: 2026-10-07T00:00:24.969Z
+  - author: DonutsDelivery
+    changes:
+      title:
+        new: Compare four local prompt enhancers in an HTML runner
+        previous: Trial Qwen3.5-4B as a local generator prompt enhancer
+      description:
+        new: "User requests text-only A/B outputs plus local HTML page that runs four candidates: Qwen3.5-4B
+          Aggressive Q4_K_M; MiniCPM5-2B mondk Q6_K; SC117 LFM2.5-2.6B Q6_K; Z-Image-Engineer V4
+          Q8_0; skip Krea2 Engineer. Use current verified llama.cpp, same editable
+          instructions/sampling, sequential GPU use, raw output, latency and local-only requests.
+          Keep user prompts in memory without logs/persistence; no image generation or private DMC
+          profile access. Deliver standalone HTML+stdlibPythonrunner and synthetic comparison
+          artifact outside repo."
+        previous: "Text-only comparative trial requested by user: Qwen3.5-4B HauhauCS Aggressive Q4_K_M;
+          mondk MiniCPM5-2B Abliterated Q6_K; SC117 LFM2.5-2.6B Uncensored Q6_K; BennyDaBall
+          LFM2.5-1.2B Z-Image-Engineer V4 Q8_0. Skip Krea2 Engineer. Same varied synthetic
+          prompts/instructions/sampling; provide exact output text in side-by-side artifact plus
+          timing/runtime provenance. User authorizes runtime update/replacement. No image
+          generation, product UI changes, user library/profile access or shared Ollama requests."
+    command: task-set
+    timestamp: 2026-10-07T00:03:37.546Z
 created_at: 2026-10-06T23:56:34.557Z
 started_at: 2026-10-06T23:56:34.733Z
 todos: []

@@ -17,3 +17,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T00:00:25.112Z
+  - _ulid: 01M49TRFKNJJ6FJ7620VJNN535
+    content: All four weights downloaded with exact HF commit revision, size and SHA256 verification.
+      User requests reusable HTML runner for own prompts/uncensoring comparison. Use editable
+      neutral prompt-enhancement instruction preserving intent/content intensity, raw model
+      responses, bounded authenticated local API, no prompt storage/logging; benchmark fixtures
+      remain synthetic. Runtime official b11457, host systemOllama unchanged.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T00:03:37.718Z
