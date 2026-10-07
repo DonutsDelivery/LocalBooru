@@ -32,3 +32,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T05:56:31.291Z
+  - _ulid: 01M4AEZM9WBK5W1ZN1P0WT9JBD
+    content: Broad worktree component run:253 passed,7 known baseline assertion failures, plus2
+      gallery-suite import failures due Vite filesystem deny of LICENSE?raw in symlinked
+      dependencies. Independent reviewer reproduced the2 Host assertions on exact unchangedbase.
+      The2 omitted gallery suites will be checked from main after approved integration; this is a
+      harness limitation, not a product failure.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T05:57:03.421Z
