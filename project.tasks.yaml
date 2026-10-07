@@ -2630,7 +2630,7 @@ tasks:
     depends_on: []
     priority: 1
     tags: []
-    notes_count: 0
+    notes_count: 1
     todos_count: 0
     created_at: 2026-10-07T10:08:31.074Z
     started_at: 2026-10-07T10:08:32.621Z
@@ -2640,7 +2640,7 @@ tasks:
     title: Infer a face-only prompt when the user leaves it empty
     type: task
     spec_ref: "@create-managed-prompt-enhancer"
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 2
@@ -2648,13 +2648,14 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-07T10:12:32.814Z
+    started_at: 2026-10-07T10:12:41.546Z
   - _ulid: 01M4AXKEKHASWDZ6PEK2VCZRPD
     slugs:
       - create-default-save-output
     title: Default Create to saving into an automatic output directory
     type: task
     spec_ref: "@donut-create-plugin"
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 2
@@ -2662,3 +2663,4 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-07T10:12:33.009Z
+    started_at: 2026-10-07T10:12:41.755Z

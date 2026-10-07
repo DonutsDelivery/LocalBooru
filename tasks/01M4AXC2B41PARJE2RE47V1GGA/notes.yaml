@@ -1,1 +1,9 @@
-notes: []
+notes:
+  - _ulid: 01M4AXKQAMRZRVZWFCC2T2FY85
+    content: Confirmed bundled node1180 takes node996 whole-image full_text as its face input and
+      face_instruction as scene input, combining both into face detail text/conditioning. Adapter
+      worker will correct presets plus safe recognized copy repair; separate user-authorized tasks
+      cover automatic output saving and empty-face inference. All use synthetic data.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T10:12:41.940Z
