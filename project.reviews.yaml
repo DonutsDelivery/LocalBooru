@@ -17369,7 +17369,95 @@ reviews:
       - review-create-quiet-stop-274ef9f3
     title: Independent quiet backend stop re-review d0551fc0..274ef9f3
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 274ef9f334633cbd837a5a2925e6a110b70de12b
+        evidence: Independently7/7pass on exact274ef9f3. Scope includes readinessgating,
+          in-flightstopabort/latefailureignored, session/iframe/resultsremainandnogeneration,
+          backgroundGETquietwithmutationsnormal, overlappingstop/restart,
+          supersededfailedstatusAbortError andfailedstoprecovery. Regression assertions unchanged
+          from priorreview; source-scanning not used.
+        name: quiet-stop-focused-behavior
+        required: true
+        runner: vitest focused Host and real Axios interceptor tests
+        created_at: 2026-10-07T05:57:38.866Z
+        completed_at: 2026-10-07T05:57:38.866Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 274ef9f334633cbd837a5a2925e6a110b70de12b
+        evidence: Independently216/216pass on exact replacementhead;
+          scopedbackgroundGETsuppressionbehaviorpasses.
+        name: frontend-node-suite
+        required: true
+        runner: node --test frontend
+        created_at: 2026-10-07T05:57:39.262Z
+        completed_at: 2026-10-07T05:57:39.262Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 274ef9f334633cbd837a5a2925e6a110b70de12b
+        evidence: Independent final commandexit0,no diagnostics. Prior blocker services/donutCreate.js
+          unsafe finally throw is replaced by shared ensureCurrent invoked in explicit
+          success/catchpaths. Checksretain intended cancellation precedence for superseded/aborted
+          failures; currentsuccess/currenterrorsemanticsremain. Previousclosedreviewthreadresolution
+          independentlyverified.
+        name: changed-production-eslint
+        required: true
+        runner: npx eslint src/api.js src/components/CreateStudioHost.jsx src/services/donutCreate.js
+          src/utils/apiErrors.js
+        created_at: 2026-10-07T05:57:39.640Z
+        completed_at: 2026-10-07T05:57:39.640Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 274ef9f334633cbd837a5a2925e6a110b70de12b
+        evidence: Exactbase
+          d0551fc0e4a7f3d62c583017acf87799c9d00271;head274ef9f334633cbd837a5a2925e6a110b70de12b.
+          Compared complete5a1b9ccc..274ef9f3delta(onlygetCreateStatus), read resultingservice
+          beforeworkerclaims, verified all other7filebasecomparison unchangedfrom full
+          prioradversarial review. RelevantACreadandall8behavioralannotationsverified, no traits.
+          Prior lifecycle/overlap/cancellation/recovery/privacy/integrationinvestigation remains
+          applicable. Whitespaceclean; candidateworktreeclean; no
+          sourceedits/apps/builds/merge/privateprofile/browseroperations.
+        name: exact-delta-AC-concurrency-review
+        required: true
+        runner: git diff --check and replacementdelta/context review
+        created_at: 2026-10-07T05:57:40.025Z
+        completed_at: 2026-10-07T05:57:40.025Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 274ef9f334633cbd837a5a2925e6a110b70de12b
+        evidence: Broadcomponent suite not rerun for semanticallyequivalent singlefunctionlintrepair. Prior
+          independenttwofiles47pass/2fail(Host46pass/2fail+API1pass); both named
+          URL-onlymanagementinstructions/existingbackendsetupfailures independentlyreproduced exact
+          d0551fc0base. Parent broadworktree run additionally has Vitefs/LICENSEimportrestriction;
+          no whole-suite pass claim. Current required focused7andNode216 independentlypass.
+        name: retained-full-suite-limitations
+        required: false
+        runner: priorround baseline verification
+        created_at: 2026-10-07T05:57:40.407Z
+        completed_at: 2026-10-07T05:57:40.407Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 274ef9f334633cbd837a5a2925e6a110b70de12b
+        evidence: Independent rerun same130schemaerrorsandverify skill missing-description
+          unrelatedtocodecandidate. RelevantAC/specchecked.
+        name: registry-validation-baseline
+        required: false
+        runner: KSPEC_NO_DAEMON=1 kspec validate
+        created_at: 2026-10-07T05:57:40.801Z
+        completed_at: 2026-10-07T05:57:40.801Z
     events:
       - _ulid: 01M4AEZNWMR9AFN57KV0E0W7FT
         actor: DonutsDelivery
@@ -17377,9 +17465,75 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-07T05:57:05.045Z
+      - _ulid: 01M4AF0PM9CF0MNNNZMYK49A53
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-07T05:57:38.569Z
+      - _ulid: 01M4AF0Q196NVF163EZVSZ4MYG
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: quiet-stop-focused-behavior
+        timestamp: 2026-10-07T05:57:38.985Z
+      - _ulid: 01M4AF0QD3JNDMTYGHA6JM84VC
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-node-suite
+        timestamp: 2026-10-07T05:57:39.363Z
+      - _ulid: 01M4AF0QRSM4N752P6M27P8WXH
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: changed-production-eslint
+        timestamp: 2026-10-07T05:57:39.737Z
+      - _ulid: 01M4AF0R4ZW6CXGT7KAMWTKG01
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: exact-delta-AC-concurrency-review
+        timestamp: 2026-10-07T05:57:40.127Z
+      - _ulid: 01M4AF0RH8G6S0HFC8G6Z6QCRY
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: retained-full-suite-limitations
+        timestamp: 2026-10-07T05:57:40.520Z
+      - _ulid: 01M4AF0RX4SWB0V289G5CY7QDK
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: registry-validation-baseline
+        timestamp: 2026-10-07T05:57:40.900Z
+      - _ulid: 01M4AF0S8W3CH8W9WJ563C7WFX
+        actor: independent-create-reviewer
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+            head_commit: 274ef9f334633cbd837a5a2925e6a110b70de12b
+          decision: approve
+        timestamp: 2026-10-07T05:57:41.276Z
+      - _ulid: 01M4AF0S8W46THXBV7GFYE3R1S
+        actor: independent-create-reviewer
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-07T05:57:41.276Z
     examined_commit: 274ef9f334633cbd837a5a2925e6a110b70de12b
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-quiet-backend-stop"
     subject:
@@ -17389,7 +17543,15 @@ reviews:
       head_branch: fix/create-stop-poll
       head_commit: 274ef9f334633cbd837a5a2925e6a110b70de12b
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+          head_commit: 274ef9f334633cbd837a5a2925e6a110b70de12b
+        decision: approve
+        reviewer: independent-create-reviewer
+        role: reviewer
+        created_at: 2026-10-07T05:57:41.276Z
     created_at: 2026-10-07T05:57:05.045Z
-    updated_at: null
+    updated_at: 2026-10-07T05:57:41.276Z
     notes: []
