@@ -1,0 +1,33 @@
+_ulid: 01M4A4S84G7N9B1YK6R4DNRTCC
+slugs:
+  - fix-create-enhancer-visibility
+title: Keep enhancer settings visible when a workflow lacks face controls
+type: bug
+description: Enhancer settings were hidden behind both main and face control availability. Keep
+  model setup accessible in every simple studio; explain unavailable prompt routing and disable
+  enhancement/apply until both controls exist. Preserve existing drafts and require explicit
+  workflow changes.
+spec_ref: "@create-managed-prompt-enhancer"
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-07T02:58:48.772Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-07T02:58:48.772Z
+created_at: 2026-10-07T02:58:48.592Z
+started_at: 2026-10-07T02:58:48.772Z
+todos: []

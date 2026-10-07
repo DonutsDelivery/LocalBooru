@@ -1216,7 +1216,7 @@ features:
           after setup and does not require a separately configured model server.
         status:
           maturity: draft
-          implementation: implemented
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []

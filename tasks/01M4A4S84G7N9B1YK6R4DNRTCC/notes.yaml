@@ -1,0 +1,10 @@
+notes:
+  - _ulid: 01M4A4S8FXGB88R0SXRCDB9C2D
+    content: "Confirmed running binary hash matches the new installed build. Source gates the panel on
+      facePrompt availability; screenshot lacks that field. Use the kspec task workflow. Add a
+      behavioral SimpleCreateControls fixture with missing/unavailable face control: model settings
+      visible and usable, enhancement blocked with guidance, no workflow mutation. No private studio
+      snapshot is inspected."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T02:58:48.957Z
