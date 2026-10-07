@@ -28,3 +28,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T04:19:46.015Z
+  - _ulid: 01M4A9KDN2PM39WE1VR0J4QG77
+    content: Independent exact code review approved b1a81ef5, including full stage live-event lifecycle.
+      Integrated into main537d0eeb; pending combined installation after parallel preview/enhancer
+      fixes are reviewed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T04:23:00.515Z
