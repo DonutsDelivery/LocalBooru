@@ -1203,6 +1203,13 @@ features:
           crop, mask, layout and outpainting capabilities through organized panels that remain
           usable on mobile.
         when: They use reference guidance or Edit Studio tools
+      - given: A bundled v5 recipe or saved copy includes a reduced workflow PNG sink and a full-resolution
+          first-pass preview
+        id: ac-full-first-pass
+        then: The app disables the reduced workflow PNG sink, exposes the original full-resolution
+          first-pass image as the stage result, preserves the separate workflow JSON and final image
+          output, and standalone exported recipes retain their original save behavior.
+        when: Create queues a run in either output destination
     tags: []
     requirements:
       - _ulid: 01M49YHS0SSQXCX7R7AGQE401X

@@ -1,0 +1,21 @@
+_ulid: 01M4A95AXMSPFS4XP675E8WD52
+slugs:
+  - create-full-first-pass
+title: Use full-resolution first-pass stage output in Create
+type: bug
+description: Remove runtime activation of the quarter-scale workflow PNG and expose its existing
+  full-resolution first-pass preview as the stage output. Preserve separate workflow JSON, final
+  saves, and standalone recipes; prove initial/fresh/reloaded recipes with synthetic executable
+  tests.
+spec_ref: "@donut-create-plugin"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+created_at: 2026-10-07T04:15:18.964Z
+todos: []
