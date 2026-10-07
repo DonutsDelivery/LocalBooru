@@ -1267,19 +1267,19 @@ async def studio_local(controller: Controller, session: dict[str, Any], route: s
             return JSONResponse(controller.enhancer.status(owner), headers={"Cache-Control": "no-store"})
         try:
             data = json.loads(await limited_body(request, 100000))
-            allowed = {"id"} if route.endswith("/cancel") else {"kind", "model", "image_brief", "face_brief"}
+            allowed = {"id"} if route.endswith("/cancel") else {"kind", "model", "image_brief", "face_brief", "seed"}
             if not isinstance(data, dict) or set(data) - allowed:
                 raise ValueError("Invalid enhancer request.")
             if route.endswith("/cancel"):
                 await controller.enhancer.cancel(owner, data.get("id"))
             else:
-                controller.enhancer.start(owner, data.get("kind"), data.get("model"), data.get("image_brief", ""), data.get("face_brief", ""))
+                controller.enhancer.start(owner, data.get("kind"), data.get("model"), data.get("image_brief", ""), data.get("face_brief", ""), data.get("seed", 0))
         except PermissionError:
             raise HTTPException(404, "Enhancer operation not found in this studio.") from None
         except RuntimeError as error:
             raise HTTPException(409, str(error)) from None
         except (ValueError, TypeError):
-            raise HTTPException(400, "Invalid enhancer request. Choose a model and supply a main brief of at most 16,000 characters and a face brief of at most 8,000 characters.") from None
+            raise HTTPException(400, "Invalid enhancer request. Choose a model, supply a main brief of at most 16,000 characters and a face brief of at most 8,000 characters, and use a nonnegative JavaScript-safe integer seed.") from None
         return JSONResponse(controller.enhancer.status(owner), headers={"Cache-Control": "no-store"})
     if route == "dmc/workflow" and request.method in {"GET", "HEAD"}:
         if set(request.query_params) - {"revision_only"}:

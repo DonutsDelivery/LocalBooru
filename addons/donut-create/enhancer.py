@@ -26,6 +26,15 @@ MAX_BRIEF = 16000
 MAX_FACE = 8000
 
 
+def inference_seed(seed):
+    if type(seed) is not int or not 0 <= seed < 2**53:
+        raise ValueError("The enhancer seed must be a nonnegative JavaScript-safe integer.")
+    # The pinned llama.cpp sampler uses uint32 seeds; UINT32_MAX requests a
+    # random seed. Fold wider image seeds deterministically without that sentinel.
+    # This finite mapping can collide; retain the original seed on the job.
+    return seed % 0xffffffff
+
+
 def messages(image_brief, face_brief):
     return [{"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": json.dumps({"image_brief": image_brief, "face_brief": face_brief}, ensure_ascii=False)}]
@@ -114,7 +123,7 @@ class Enhancer(VerifiedDownloads):
             result["job"] = copy.deepcopy(self.jobs[owner])
         return result
 
-    def start(self, owner, kind, model, image_brief="", face_brief=""):
+    def start(self, owner, kind, model, image_brief="", face_brief="", seed=0):
         if self.closing or self.task is not None and not self.task.done():
             raise RuntimeError("The enhancer is busy. Wait for the current operation to finish.")
         if model not in CATALOG["models"] or kind not in {"install", "enhance"}:
@@ -123,24 +132,27 @@ class Enhancer(VerifiedDownloads):
             raise ValueError("A managed enhancer runtime is not available for this platform.")
         if not isinstance(image_brief, str) or not isinstance(face_brief, str) or len(image_brief) > MAX_BRIEF or len(face_brief) > MAX_FACE:
             raise ValueError("The main brief must fit 16,000 characters and the face brief 8,000 characters.")
+        sampling_seed = inference_seed(seed)
         if kind == "enhance" and (not image_brief.strip() or not self.ready(model)):
             raise ValueError("Write an image brief and install the selected model first.")
         if len(self.jobs) >= 32:
             self.jobs.pop(next(iter(self.jobs)))
         job = {"id": uuid.uuid4().hex, "kind": kind, "model": model, "state": "running"}
+        if kind == "enhance":
+            job.update(seed=seed, inference_seed=sampling_seed)
         self.jobs[owner] = job
         self.current = (owner, job)
         self._cancel.clear()
         self._status = {}
-        self.task = asyncio.create_task(self._run(job, model, image_brief, face_brief))
+        self.task = asyncio.create_task(self._run(job, model, image_brief, face_brief, seed))
         return copy.deepcopy(job)
 
-    async def _run(self, job, model, image_brief, face_brief):
+    async def _run(self, job, model, image_brief, face_brief, seed):
         try:
             if job["kind"] == "install":
                 await asyncio.to_thread(self.install, model)
             else:
-                job["result"] = await self.infer(model, image_brief, face_brief)
+                job["result"] = await self.infer(model, image_brief, face_brief, seed)
             job["state"] = "complete"
         except (asyncio.CancelledError, SetupCancelled):
             job["state"] = "cancelled"
@@ -290,7 +302,8 @@ class Enhancer(VerifiedDownloads):
             except ProcessLookupError:
                 pass
 
-    async def infer(self, model, image_brief, face_brief):
+    async def infer(self, model, image_brief, face_brief, seed=0):
+        sampling_seed = inference_seed(seed)
         receipt = _read_json(self.state_dir / (model + "-ready.json"))
         executable = self.runtime_root / receipt["server"]
         key = uuid.uuid4().hex + uuid.uuid4().hex
@@ -342,7 +355,7 @@ class Enhancer(VerifiedDownloads):
                 if len(tokens.json()["tokens"]) + 4096 + 64 > 16384:
                     raise ValueError("These prompts exceed the model's context. Shorten them and retry; nothing has been truncated or applied.")
                 response = await client.post("/v1/chat/completions", json={
-                    "messages": conversation, "temperature": 0.25, "top_p": 0.9,
+                    "messages": conversation, "seed": sampling_seed, "temperature": 0.7, "top_p": 0.9,
                     "max_tokens": 4096, "stream": False, "cache_prompt": False,
                     "chat_template_kwargs": {"enable_thinking": False},
                     "response_format": {"type": "json_schema", "json_schema": {"name": "prompt_pair", "strict": True, "schema": {
