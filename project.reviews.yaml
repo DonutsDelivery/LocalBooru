@@ -16475,7 +16475,78 @@ reviews:
       - review-create-compat-09186b4
     title: Independent Decensor preset review ed58f12f..09186b4
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 09186b49fefd228ee02aa142416d08bb03e1fa62
+        evidence: Independently ran all 27 browser adapter tests on exact head 09186b49. Behavioral tests
+          cover all 13 presets x 3 raw Decensor compositions, weight preservation, Basic explicit
+          patch order, Simple/Advanced callbacks, reload, later explicit edits, and rollback.
+        name: browser-adapter-contract
+        required: true
+        runner: node --experimental-vm-modules --test
+        created_at: 2026-10-07T04:20:27.717Z
+        completed_at: 2026-10-07T04:20:27.717Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 09186b49fefd228ee02aa142416d08bb03e1fa62
+        evidence: Independently executed both public DonutNodes Fusion extension sources pinned at
+          2806ebe12caada993e6305e3f441ce61ab22a11c with synthetic live widgets and candidate
+          adapter. All 13 presets x 3 compositions x Simple/Advanced preserved raw Decensor mode and
+          2.37 strength and preset label. Temporary fixture
+          /tmp/create-review-actual-callbacks.test.mjs.
+        name: pinned-upstream-callback-integration
+        required: true
+        runner: node vm synthetic fixture
+        created_at: 2026-10-07T04:20:28.123Z
+        completed_at: 2026-10-07T04:20:28.123Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 09186b49fefd228ee02aa142416d08bb03e1fa62
+        evidence: Syntax and whitespace checks pass. JS digest
+          a0e633326571fd3d4d3d050849b5cf9b736808f545f430592c404fdf4f09978c matches runtime.json.
+          Exact base ed58f12f0b80d60e36e54d4310634766ca63830b; head
+          09186b49fefd228ee02aa142416d08bb03e1fa62. Full diff and interacting live
+          graph/load/patch/public upstream callback code read. Relevant AC annotations validate
+          executable behavior; no inherited traits.
+        name: syntax-diff-integrity
+        required: true
+        runner: node --check, git diff --check, sha256sum
+        created_at: 2026-10-07T04:20:28.522Z
+        completed_at: 2026-10-07T04:20:28.522Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 09186b49fefd228ee02aa142416d08bb03e1fa62
+        evidence: "Candidate 85/86 pass. Independently re-ran exact base ed58f12f Python suite: same sole
+          test_managed_port_occupant_is_not_adopted_as_owned_backend failure expects 18010 in
+          generic configured-port error. app.py, local_backend.py and controller test unchanged in
+          candidate."
+        name: python-suite-baseline
+        required: false
+        runner: PYTHONPATH=addons/donut-create python3 -m unittest discover
+        created_at: 2026-10-07T04:20:28.889Z
+        completed_at: 2026-10-07T04:20:28.889Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 09186b49fefd228ee02aa142416d08bb03e1fa62
+        evidence: Registry reports 130 existing schema errors and verify skill missing-description. This
+          code-only comparison modifies no registry metadata; relevant spec ACs read via CLI and
+          behavioral annotations checked. Registry diagnostics are unrelated to Decensor patch.
+        name: registry-validation
+        required: false
+        runner: KSPEC_NO_DAEMON=1 kspec validate
+        created_at: 2026-10-07T04:20:29.249Z
+        completed_at: 2026-10-07T04:20:29.249Z
     events:
       - _ulid: 01M4A9CS4WNJZN3SR8NDJAHK3V
         actor: DonutsDelivery
@@ -16483,9 +16554,68 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-07T04:19:22.909Z
+      - _ulid: 01M4A9ER56ENZ0FZRBY32DJPFA
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-07T04:20:27.430Z
+      - _ulid: 01M4A9ERHH8W7Q64EXS63C9BBF
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: browser-adapter-contract
+        timestamp: 2026-10-07T04:20:27.826Z
+      - _ulid: 01M4A9ERY17GKSNSC8C2F8X1D1
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: pinned-upstream-callback-integration
+        timestamp: 2026-10-07T04:20:28.225Z
+      - _ulid: 01M4A9ESA4RZ8783R2R3XG6EX4
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: syntax-diff-integrity
+        timestamp: 2026-10-07T04:20:28.612Z
+      - _ulid: 01M4A9ESNWQVFVB7AM5RCWX77T
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: python-suite-baseline
+        timestamp: 2026-10-07T04:20:28.988Z
+      - _ulid: 01M4A9ET15PY7Y7CQMR3TFQQD5
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: registry-validation
+        timestamp: 2026-10-07T04:20:29.350Z
+      - _ulid: 01M4A9ETD84FBX230RC5ZMT6PA
+        actor: independent-create-reviewer
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+            head_commit: 09186b49fefd228ee02aa142416d08bb03e1fa62
+          decision: approve
+        timestamp: 2026-10-07T04:20:29.737Z
+      - _ulid: 01M4A9ETD9DCR7Z8MG0MAABGWM
+        actor: independent-create-reviewer
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-07T04:20:29.737Z
     examined_commit: 09186b49fefd228ee02aa142416d08bb03e1fa62
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-compat-decensor-independent"
     subject:
@@ -16495,7 +16625,15 @@ reviews:
       head_branch: fix/create-compat-decensor-independent
       head_commit: 09186b49fefd228ee02aa142416d08bb03e1fa62
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 09186b49fefd228ee02aa142416d08bb03e1fa62
+        decision: approve
+        reviewer: independent-create-reviewer
+        role: reviewer
+        created_at: 2026-10-07T04:20:29.736Z
     created_at: 2026-10-07T04:19:22.909Z
-    updated_at: null
+    updated_at: 2026-10-07T04:20:29.737Z
     notes: []
