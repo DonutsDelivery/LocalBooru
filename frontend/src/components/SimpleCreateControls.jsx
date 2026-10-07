@@ -156,11 +156,13 @@ function EffectSection({ title, toggle, children }) {
 
 export default function SimpleCreateControls({
   snapshot, sessionId, activeTab, onTabChange, connected, connecting, busy, error, mobilePane,
-  onPatch, onGenerate, onUpload, onUploadMask, onRetry, onAdvanced,
+  onPatch, onGenerate, onLoadPreset, onUpload, onUploadMask, onRetry, onAdvanced,
   onReferenceTools, referenceUrls = {}, runInstant, onRunInstantChange, onDraftChange,
   children, historyContent, jobsContent, finalizeContent, navigation, mobileNavigation, exitNavigation, modeNavigation,
 }) {
   const [drafts, setDrafts] = useState({})
+  const [workflowPreset, setWorkflowPreset] = useState('base')
+  const [confirmReset, setConfirmReset] = useState(false)
   const [inputError, setInputError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [lowerExpanded, setLowerExpanded] = useState(false)
@@ -218,6 +220,19 @@ export default function SimpleCreateControls({
       draftReporter.current?.(false)
     }
   }, [])
+
+  async function resetWorkflow() {
+    if (locked || sliding) return
+    setSubmitting(true)
+    setInputError('')
+    onRunInstantChange?.(false)
+    try {
+      await onLoadPreset(workflowPreset)
+      if (controlsAlive.current) setConfirmReset(false)
+    } catch (error) {
+      if (controlsAlive.current) setInputError(error.message || 'The workflow preset could not be loaded.')
+    } finally { if (controlsAlive.current) setSubmitting(false) }
+  }
 
   function stage(key, nextValue) {
     const next = { ...draftRef.current, [key]: nextValue }
@@ -496,6 +511,19 @@ export default function SimpleCreateControls({
       <div className="create-controls-scroll" role="tabpanel" id={`create-panel-${activeTab}`} aria-labelledby={`create-tab-${activeTab}`}>
         <div className="create-controls-intro"><h2>{activeTab === 'edit' ? 'Shape your image' : activeTab === 'finalize' ? 'Save your images' : 'What do you imagine?'}</h2>
           <p>{activeTab === 'edit' ? 'Describe the whole finished image, then guide the changes.' : activeTab === 'finalize' ? 'Choose where completed images go.' : 'A subject, a setting, and a little atmosphere.'}</p></div>
+        {onLoadPreset && <details className="create-prompt-options">
+          <summary>Workflow preset</summary>
+          <label className="create-field">Fresh workflow preset<select value={workflowPreset} disabled={locked || sliding || confirmReset}
+            onChange={event => setWorkflowPreset(event.target.value)}>
+            <option value="base">Neutral starter</option><option value="workflow">Original v5</option>
+          </select></label>
+          {confirmReset ? <div>
+            <p className="create-control-note">Replace current prompts, references, and workflow settings with {workflowPreset === 'base' ? 'Neutral starter' : 'Original v5'}? Saved images and downloaded models are kept.</p>
+            <div className="create-enhancer-actions"><button type="button" disabled={locked || sliding} onClick={resetWorkflow}>Confirm reset</button>
+              <button type="button" disabled={submitting} onClick={() => setConfirmReset(false)}>Keep current workflow</button></div>
+          </div> : <button type="button" disabled={locked || sliding} onClick={() => setConfirmReset(true)}>Reset workflow</button>}
+          <p className="create-control-note">Loads fresh controls. Original v5 uses its original model and LoRA choices, which must be installed to generate.</p>
+        </details>}
         {!connected && <div className="create-connection-note" role="status"><span className={connecting ? 'create-spinner' : 'create-connection-dot'} aria-hidden="true" />
           <div><strong>{connecting ? 'Preparing your studio…' : 'Studio not connected'}</strong><p>{error || snapshot?.error || 'Waiting for ComfyUI and the workflow to finish loading. This can take up to five minutes. You can close the studio while it starts.'}</p>
             {!connecting && <button type="button" onClick={onRetry}>Retry connection</button>}</div>

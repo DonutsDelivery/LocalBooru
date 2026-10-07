@@ -736,8 +736,13 @@
     const signature = value => JSON.stringify({ nodes: (value.nodes || []).map(node => [node.id, node.type, node.widgets_values]), links: value.links || [] });
     return signature(graph) === signature(defaultGraph);
   }
-  async function preset() {
-    const response = await fetch(new URL('workflow.json', base));
+  async function preset(presetId) {
+    const url = new URL('workflow.json', base);
+    if (presetId !== undefined) {
+      if (!['base', 'workflow'].includes(presetId)) throw new Error('Choose an available workflow preset.');
+      url.searchParams.set('preset', presetId);
+    }
+    const response = await fetch(url);
     if (!response.ok) throw new Error('The v5 workflow could not be loaded. Retry setup.');
     const workflow = await response.json();
     presetControlsRevision = workflow.extra?.donut_workflow?.controls_revision;
@@ -802,43 +807,62 @@
   // Add only the missing face branch to recognized pre-face v5 recipes. Never
   // replace a saved recipe or reinterpret custom/partially upgraded face wiring.
   function upgradeLegacyFacePrompt(workflow, template) {
-    if (workflow.extra?.donut_workflow?.release !== 'V5') return null;
     const clone = value => JSON.parse(JSON.stringify(value));
-    const node = (graph, id) => graph.nodes?.find(item => item.id === id);
-    const sourcesNode = node(workflow, 1138), bodyNode = node(workflow, 1014), panel = node(workflow, 1140);
+    const sameId = (left, right) => String(left) === String(right);
+    const node = (graph, id) => graph.nodes?.find(item => sameId(item.id, id));
+    const panels = (workflow.nodes || []).filter(item => item.properties?.donut_app_controls?.groups);
+    const controls = panels.flatMap(panel => panel.properties.donut_app_controls.groups.flatMap(group => group.controls || []));
+    const sceneControls = controls.filter(control => control.widget === 'Text' && control.title === 'Whole-image prompt · subject and scene' && control.path?.length === 2);
+    const detailControls = controls.filter(control => control.mode === 'bypass' && control.title === 'Face detail' && control.path?.length === 2);
+    if (sceneControls.length !== 1 || detailControls.length !== 1) return null;
+    const sceneControl = sceneControls[0], detailControl = detailControls[0];
+    const sourcesNode = node(workflow, sceneControl.path[0]), bodyNode = node(workflow, detailControl.path[0]);
+    const panel = panels.find(item => item.properties.donut_app_controls.groups.some(group => group.controls?.includes(sceneControl)));
     const graph = (value, id) => value.definitions?.subgraphs?.find(item => item.id === id);
-    if (sourcesNode?.type !== '5186050a-13ae-4d2e-bfd6-359e1311b90e'
-      || bodyNode?.type !== 'bb3f06a1-a0c6-496d-b024-ca94ecf046f3') return null;
+    if (!sourcesNode || !bodyNode) return null;
     const sources = graph(workflow, sourcesNode.type), body = graph(workflow, bodyNode.type);
-    const sourceTemplate = graph(template, sourcesNode.type), bodyTemplate = graph(template, bodyNode.type);
+    const sourceTemplate = graph(template, node(template, 1138).type), bodyTemplate = graph(template, node(template, 1014).type);
     const groups = panel?.properties?.donut_app_controls?.groups;
     const allGraphs = [workflow, ...(workflow.definitions?.subgraphs || [])];
-    if (!sources || !body || !groups?.[0]?.controls || !node(sources, 1137)?.outputs?.[0]
-      || allGraphs.some(item => item.nodes?.some(n => [1178, 1179, 1180].includes(n.id)))
+    const seeds = sources?.nodes?.filter(item => item.type === 'SeedNode' && item.outputs?.[0]?.name === 'seed') || [];
+    const detail = body && node(body, detailControl.path[1]);
+    if (!sources || !body || !groups?.[0]?.controls || seeds.length !== 1
+      || node(sources, sceneControl.path[1])?.type !== 'DF_Text_Box' || detail?.type !== 'DonutFaceDetailer'
       || sources.outputs.some(port => port.name === 'face_instruction')
       || body.inputs.some(port => port.name === 'face_instruction')
       || sourcesNode.outputs.length !== sources.outputs.length) return null;
-    const routes = [[984, 'edit_prompt', 1, 0], [1118, 'conditioning_in_2', 4, 3]].map(([id, name, oldSlot, newSlot]) => {
-      const target = node(body, id), targetSlot = target?.inputs?.findIndex(input => input.name === name);
-      const edge = body.links.find(item => item.target_id === id && item.target_slot === targetSlot);
-      return edge?.origin_id === 996 && edge.origin_slot === oldSlot
-        && target.inputs[targetSlot].link === edge.id && node(body, 996)?.outputs?.[oldSlot]?.links?.includes(edge.id)
+    const detailSlot = detail.inputs?.findIndex(input => input.name === 'edit_prompt');
+    const detailEdge = body.links.find(edge => sameId(edge.target_id, detail.id) && edge.target_slot === detailSlot);
+    const conditioning = detailEdge && node(body, detailEdge.origin_id);
+    if (conditioning?.type !== 'DonutPromptConditioning' || conditioning.outputs?.[1]?.name !== 'face_text'
+      || conditioning.outputs?.[4]?.name !== 'face_positive') return null;
+    const fusionEdges = body.links.filter(edge => sameId(edge.origin_id, conditioning.id) && edge.origin_slot === 4
+      && node(body, edge.target_id)?.type === 'DonutKrea2FusionControl'
+      && node(body, edge.target_id).inputs?.[edge.target_slot]?.name === 'conditioning_in_2');
+    if (fusionEdges.length !== 1) return null;
+    const routes = [[detailEdge, 1, 0], [fusionEdges[0], 4, 3]].map(([edge, oldSlot, newSlot]) => {
+      const target = node(body, edge.target_id);
+      return sameId(edge.origin_id, conditioning.id) && edge.origin_slot === oldSlot
+        && target.inputs[edge.target_slot].link === edge.id && conditioning.outputs[oldSlot].links?.includes(edge.id)
         ? {edge, oldSlot, newSlot} : null;
     });
-    if (routes.some(route => !route) || node(body, 996)?.type !== 'DonutPromptConditioning'
-      || node(body, 984)?.type !== 'DonutFaceDetailer') return null;
+    if (routes.some(route => !route)) return null;
     const faceEdges = bodyTemplate.links.filter(edge => edge.target_id === 1180);
     if (faceEdges.some(edge => edge.origin_id === -10
       && bodyTemplate.inputs[edge.origin_slot].name !== 'face_instruction'
       && !body.inputs.some(port => port.name === bodyTemplate.inputs[edge.origin_slot].name))) return null;
 
     const result = clone(workflow), resultSources = graph(result, sourcesNode.type), resultBody = graph(result, bodyNode.type);
-    const resultSourcesNode = node(result, 1138), resultBodyNode = node(result, 1014);
+    const resultSourcesNode = node(result, sourcesNode.id), resultBodyNode = node(result, bodyNode.id);
+    const usedNodeIds = new Set(allGraphs.flatMap(item => (item.nodes || []).map(n => String(n.id))));
+    let nextNode = Math.max(1180, ...[...usedNodeIds].map(Number).filter(Number.isFinite));
+    const nodeIds = new Map([1178, 1179, 1180].map(id => [id, usedNodeIds.has(String(id)) ? ++nextNode : id]));
+    const remapNode = id => nodeIds.get(id) ?? id;
     let nextLink = Math.max(result.last_link_id || 0, ...allGraphs.flatMap(item => (item.links || []).map(edge => Array.isArray(edge) ? edge[0] : edge.id)));
     const ids = new Map();
     const newId = id => { if (!ids.has(id)) ids.set(id, ++nextLink); return ids.get(id); };
     const addNode = (targetGraph, templateGraph, id) => {
-      const added = clone(node(templateGraph, id));
+      const added = clone(node(templateGraph, id)); added.id = remapNode(id);
       for (const input of added.inputs || []) if (input.link != null) input.link = newId(input.link);
       for (const output of added.outputs || []) output.links = [];
       targetGraph.nodes.push(added); return added;
@@ -847,8 +871,8 @@
     addNode(resultSources, sourceTemplate, 1179);
     const faceConditioning = addNode(resultBody, bodyTemplate, 1180);
     // Keep the recipe's conditioning options rather than copying preset values.
-    faceConditioning.widgets_values = clone(node(body, 996).widgets_values);
-    if (node(body, 996).widgets_values_named) faceConditioning.widgets_values_named = clone(node(body, 996).widgets_values_named);
+    faceConditioning.widgets_values = clone(conditioning.widgets_values);
+    if (conditioning.widgets_values_named) faceConditioning.widgets_values_named = clone(conditioning.widgets_values_named);
     const outputSlot = resultSources.outputs.length, inputSlot = resultBody.inputs.length;
     const sourcePort = clone(sourceTemplate.outputs.find(port => port.name === 'face_instruction'));
     sourcePort.linkIds = sourcePort.linkIds.map(newId); resultSources.outputs.push(sourcePort);
@@ -860,14 +884,14 @@
       else targetGraph.inputs[edge.origin_slot].linkIds.push(edge.id);
     };
     for (const original of sourceTemplate.links.filter(edge => [1178, 1179].includes(edge.origin_id) || edge.target_id === 1179)) {
-      const edge = {...original, id: newId(original.id)};
+      const edge = {...original, id: newId(original.id), origin_id: original.origin_id === 1137 ? seeds[0].id : remapNode(original.origin_id), target_id: remapNode(original.target_id)};
       if (edge.target_id === -20) edge.target_slot = outputSlot;
       connect(resultSources, edge);
     }
     // New interface ports already contain their own link references.
     bodyPort.linkIds = [];
     for (const original of faceEdges) {
-      const edge = {...original, id: newId(original.id)};
+      const edge = {...original, id: newId(original.id), origin_id: original.origin_id === 996 ? conditioning.id : original.origin_id, target_id: remapNode(original.target_id)};
       if (edge.origin_id === -10) {
         const name = bodyTemplate.inputs[edge.origin_slot].name;
         edge.origin_slot = name === 'face_instruction' ? inputSlot : resultBody.inputs.findIndex(port => port.name === name);
@@ -876,19 +900,20 @@
     }
     for (const {edge: original, oldSlot, newSlot} of routes) {
       const edge = resultBody.links.find(item => item.id === original.id);
-      node(resultBody, 996).outputs[oldSlot].links = node(resultBody, 996).outputs[oldSlot].links.filter(id => id !== edge.id);
-      edge.origin_id = 1180; edge.origin_slot = newSlot;
+      node(resultBody, conditioning.id).outputs[oldSlot].links = node(resultBody, conditioning.id).outputs[oldSlot].links.filter(id => id !== edge.id);
+      edge.origin_id = faceConditioning.id; edge.origin_slot = newSlot;
       faceConditioning.outputs[newSlot].links.push(edge.id);
     }
     const rootLink = ++nextLink;
-    result.links.push([rootLink, 1138, resultSourcesNode.outputs.length, 1014, resultBodyNode.inputs.length, 'STRING']);
+    result.links.push([rootLink, sourcesNode.id, resultSourcesNode.outputs.length, bodyNode.id, resultBodyNode.inputs.length, 'STRING']);
     resultSourcesNode.outputs.push({name: 'face_instruction', type: 'STRING', links: [rootLink]});
     resultBodyNode.inputs.push({name: 'face_instruction', type: 'STRING', link: rootLink});
     const faceControl = node(template, 1140).properties.donut_app_controls.groups.flatMap(group => group.controls).find(control => control.path?.at(-1) === 1178);
-    node(result, 1140).properties.donut_app_controls.groups[0].controls.push(clone(faceControl));
-    result.last_node_id = Math.max(result.last_node_id || 0, 1180); result.last_link_id = nextLink;
+    const addedControl = clone(faceControl); addedControl.path = [sourcesNode.id, remapNode(1178)];
+    node(result, panel.id).properties.donut_app_controls.groups[0].controls.push(addedControl);
+    result.last_node_id = Math.max(result.last_node_id || 0, nextNode); result.last_link_id = nextLink;
     for (const updated of [resultSources, resultBody]) {
-      updated.state.lastNodeId = Math.max(updated.state.lastNodeId, 1180);
+      updated.state.lastNodeId = Math.max(updated.state.lastNodeId, nextNode);
       updated.state.lastLinkId = nextLink;
     }
     return result;
@@ -912,10 +937,12 @@
     catch (error) { showError(error); }
     saveDraft();
   }
-  async function loadPreset() {
+  async function loadPreset(payload) {
     if (!ready) throw new Error('The ComfyUI editor is still loading.');
+    const before = (app.rootGraph || app.graph).serialize();
     loading = true;
-    try { if (await app._donutCreateLoadGraphData(await preset()) === false) throw new Error('The setup workflow could not be loaded. Check the Advanced editor.'); }
+    try { if (await app._donutCreateLoadGraphData(await preset(payload?.preset)) === false) throw new Error('The setup workflow could not be loaded. Check the Advanced editor.'); }
+    catch (error) { await app._donutCreateLoadGraphData(before); throw error; }
     finally { loading = false; }
     await finishLoad();
   }
@@ -1106,7 +1133,7 @@
     for (const [key, [name, path, kind, title]] of Object.entries(basicFields)) {
       const samePath = item => item.path?.length === path.length && item.path.every((id, index) => String(id) === String(path[index]));
       const control = controls.find(item => (name === '$mode' ? item.mode === 'bypass' : item.widget === name) && samePath(item))
-        || (title && controls.find(item => item.widget === name && item.title === title));
+        || (title && controls.find(item => (name === '$mode' ? item.mode === 'bypass' : item.widget === name) && item.title === title));
       let node = resolveControl(control?.path || path);
       if (!node && control?.fallback_type) {
         const graph = resolveControl(control.path.slice(0, -1))?.subgraph;
@@ -1711,7 +1738,7 @@
         else if (message.action === 'generate') await generate();
         else if (message.action === 'upload-reference') mutationChanged = await uploadReference(message.payload);
         else if (message.action === 'upload-mask') mutationChanged = await uploadMask(message.payload);
-        else if (message.action === 'load-preset') await loadPreset();
+        else if (message.action === 'load-preset') await loadPreset(message.payload);
         else if (message.action === 'load-latest') await loadLatest();
         else if (message.action === 'load-workflow') await loadWorkflow(message.payload);
         else if (message.action === 'drop-file') imported = await dropFile(message.payload);
