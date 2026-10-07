@@ -56,8 +56,11 @@ Open **Prompt enhancer** below the image/face descriptions in the simple Create
 or Edit controls. Choose **Download model**, then enable **Enhance every run**.
 **Preserver** is MiniCPM5-2B mondk Abliterated **Q6_K** (2.07 GB); **Rewriter** is
 Qwen3.5-4B HauhauCS Aggressive **Q4_K_M** (2.71 GB). Each Create, Edit, Advanced,
-and Run Instant submission supplies the original scene and face briefs to the
-selected local model using that image's actual execution seed. Larger image
+and Run Instant submission resolves the scene and face briefs through the
+backend wildcard processor before supplying them to the selected local model.
+Inline choices such as `{red|blue}` and nested choices select their options
+using that image's actual execution seed, so alternatives become one scene
+before enhancement. The LLM uses the same seed. Larger image
 seeds map deterministically into llama.cpp's 32-bit sampling range. Fixed briefs,
 model and seed repeat sampling; changing the seed allows new variations.
 
@@ -79,7 +82,7 @@ Newly inferred single-face runs also require exactly one detected face. Gaze dir
 
 Managed setup installs the owned detailer automatically. Existing external
 backends retain ordinary workflows but need the DMC detailer for new inferred
-face routing. Multi-face identity editing/references, wildcards and custom
+face routing. Multi-face identity editing/references, detailer wildcards and custom
 conditioning hooks currently report an unsupported-mode error; there is no
 implicit identity-reference matching. Original prompts stay editable and the
 ordered descriptions used by a run remain in its workflow metadata.

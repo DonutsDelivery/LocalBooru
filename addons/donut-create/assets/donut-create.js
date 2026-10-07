@@ -1605,11 +1605,31 @@
       })();
       return Promise.race([operation, cancelled]);
     }
+    async function expandBrief(text, limit, allowEmpty = false) {
+      if (!text) return '';
+      const operation = (async () => {
+        const response = await api.fetchApi('/donut/wildcards/preview', {method: 'POST',
+          headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text, seed})});
+        if (!response.ok) throw new Error('Wildcard processing failed. Check the choices and retry this run.');
+        const resolved = await response.json();
+        if (!object(resolved) || typeof resolved.text !== 'string' || resolved.text.length > limit
+          || (!allowEmpty && !resolved.text.trim()) || /\{[^{}]*\}|<random:[^>]*>/.test(resolved.text)) {
+          throw new Error('Wildcard processing returned an incomplete or oversized brief. Check the choices and retry this run.');
+        }
+        return resolved.text;
+      })();
+      const resolved = await Promise.race([operation, cancelled]); valid();
+      return resolved;
+    }
     try {
+      // Use the same pinned processor as image conditioning, before asking the
+      // LLM to rewrite. Keep authored choice lists in the widgets and recipe.
+      const resolvedImageBrief = await expandBrief(imageBrief, 16000);
+      const resolvedFaceBrief = await expandBrief(faceBrief, 8000, true);
       const availability = await request(); valid();
       if (!availability.models?.some(model => model.id === settings.model && model.ready) || availability.busy) throw new Error('The selected prompt enhancer is not ready or is busy. Install it or wait before running.');
       let status = await request({method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({kind: 'enhance', model: settings.model, image_brief: imageBrief, face_brief: faceBrief, seed})}, true);
+        body: JSON.stringify({kind: 'enhance', model: settings.model, image_brief: resolvedImageBrief, face_brief: resolvedFaceBrief, seed})}, true);
       while (true) {
         valid();
         const job = status.job;
@@ -1623,7 +1643,7 @@
       if (!object(result) || typeof result.main_prompt !== 'string' || !result.main_prompt.trim() || result.main_prompt.length > 16000
         || typeof result.face_prompt !== 'string' || result.face_prompt.length > 8000
         || !validFacePrompts(result.face_prompts, result.face_prompt)) throw new Error('The enhancer returned incomplete or ambiguous face prompts. Retry this image run.');
-      if (result.face_prompts?.length === 0 && !result.face_prompt.trim() && faceBrief.trim()) throw new Error('The supplied face instructions could not be matched unambiguously. Clarify their character positions before running.');
+      if (result.face_prompts?.length === 0 && !result.face_prompt.trim() && resolvedFaceBrief.trim()) throw new Error('The supplied face instructions could not be matched unambiguously. Clarify their character positions before running.');
       const updates = [{binding: scene, source: imageBrief, generated: result.main_prompt}, {binding: face, source: faceBrief, generated: result.face_prompt}];
       let enhanced;
       compilingEnhancement = true;
