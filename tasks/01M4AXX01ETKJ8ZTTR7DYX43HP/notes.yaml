@@ -69,3 +69,16 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T10:51:49.948Z
+  - _ulid: 01M4B05S4B6HERQ14MTJPCB7C0
+    content: "Runtime review-gap fix: string position plans now require every adjacent x-center gap to
+      exceed 0.25 of the smaller bounding-box width before returning ordered detections.
+      Equal/near-equal horizontal positions no longer use y or detector index to assign left/right
+      descriptions; actionable ambiguity asks for above/below relations. Existing all-batch
+      preflight prevents first-image encoding or refinement when a later image is ambiguous.
+      Reproduced reviewer equal-X case with failing tests before fix; replaced previous tie
+      acceptance and added near-threshold, reversed detection order, later-batch tie, and
+      16-position ordinal conditioning checks. All 22 Python runtime/installer tests pass; syntax
+      and diff checks pass. Root owns review-thread disposition and integration."
+    supersedes: null
+    author: Booru Node Maintainers
+    created_at: 2026-10-07T10:57:30.763Z
