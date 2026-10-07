@@ -1,0 +1,19 @@
+_ulid: 01M4AXKEKHASWDZ6PEK2VCZRPD
+slugs:
+  - create-default-save-output
+title: Default Create to saving into an automatic output directory
+type: task
+description: Enable Save output by default and create/select a dedicated output destination at
+  generation runtime if none chosen; preserve explicit destinations and opt-out.
+spec_ref: "@donut-create-plugin"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+created_at: 2026-10-07T10:12:33.009Z
+todos: []

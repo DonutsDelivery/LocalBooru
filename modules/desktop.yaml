@@ -1223,6 +1223,12 @@ features:
           do not stack error notifications, drafts and session results remain, and polling resumes
           when readiness returns without submitting generation.
         when: ComfyUI is stopped or restarted, including while a session poll is in flight
+      - given: A studio opens without an explicit automatic-saving preference
+        id: ac-default-save-output
+        then: Saving defaults to enabled; the runtime creates and selects a dedicated Images output
+          directory once, saves completed output with metadata there, preserves explicit
+          destinations, and honors an explicit saving-disabled choice.
+        when: The user generates with Save output enabled and no destination chosen
     tags: []
     requirements:
       - _ulid: 01M49YHS0SSQXCX7R7AGQE401X
@@ -1290,6 +1296,12 @@ features:
               literal triggers, and keeps the generated face description tied to the same subject
               and consistent with that run.
             when: The enhancer constructs a per-run prompt
+          - given: Per-run enhancement is enabled and the user leaves the face description empty
+            id: ac-infer-empty-face
+            then: It derives a face-only prompt for that subject from the scene, keeps it consistent with the
+              rewritten scene and any scoped creative directions, and leaves it empty for faceless,
+              hidden-face or ambiguous multi-face scenes; a supplied face brief retains priority.
+            when: The enhancer rewrites a scene with one identifiable visible face
         tags: []
         created: 2026-10-07T01:09:52.281Z
         notes: []

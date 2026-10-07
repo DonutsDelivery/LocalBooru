@@ -2634,3 +2634,31 @@ tasks:
     todos_count: 0
     created_at: 2026-10-07T10:08:31.074Z
     started_at: 2026-10-07T10:08:32.621Z
+  - _ulid: 01M4AXKEDEE3EJST746QDARAR8
+    slugs:
+      - create-infer-empty-face
+    title: Infer a face-only prompt when the user leaves it empty
+    type: task
+    spec_ref: "@create-managed-prompt-enhancer"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 2
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-07T10:12:32.814Z
+  - _ulid: 01M4AXKEKHASWDZ6PEK2VCZRPD
+    slugs:
+      - create-default-save-output
+    title: Default Create to saving into an automatic output directory
+    type: task
+    spec_ref: "@donut-create-plugin"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 2
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-07T10:12:33.009Z

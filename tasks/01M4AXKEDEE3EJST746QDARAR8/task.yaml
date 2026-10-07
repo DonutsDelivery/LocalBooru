@@ -1,0 +1,19 @@
+_ulid: 01M4AXKEDEE3EJST746QDARAR8
+slugs:
+  - create-infer-empty-face
+title: Infer a face-only prompt when the user leaves it empty
+type: task
+description: Derive one visible character face from the rewritten scene when no face brief is
+  supplied, preserving supplied face priority and avoiding ambiguous or hidden-face guesses.
+spec_ref: "@create-managed-prompt-enhancer"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+created_at: 2026-10-07T10:12:32.814Z
+todos: []
