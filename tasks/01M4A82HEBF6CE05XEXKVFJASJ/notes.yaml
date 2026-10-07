@@ -1,1 +1,8 @@
-notes: []
+notes:
+  - _ulid: 01M4A82SX5DBSYE4TWAWVFTR9F
+    content: Cosmetic labels in existing selector with original IDs and model identities intact.
+      Worktree fix/create-enhancer-role-labels based on local main. Existing focused component suite
+      and lint; no new copy-mirroring tests.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T03:56:27.429Z
