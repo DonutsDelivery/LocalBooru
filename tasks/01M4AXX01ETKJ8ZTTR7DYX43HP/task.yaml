@@ -9,12 +9,24 @@ description: Implement ordered per-character enhancer outputs, review display an
 spec_ref: "@create-multiple-face-prompts"
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
 priority: 2
 tags: []
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-07T10:19:24.844Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-07T10:19:24.844Z
 created_at: 2026-10-07T10:17:45.774Z
+started_at: 2026-10-07T10:19:24.844Z
 todos: []
