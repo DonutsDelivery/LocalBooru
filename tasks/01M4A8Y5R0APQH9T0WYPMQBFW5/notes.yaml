@@ -8,3 +8,17 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T04:11:38.049Z
+  - _ulid: 01M4A99M7RQGE559C41F590FA4
+    content: "Implemented in fix/create-compat-decensor-independent (/tmp/dmc-compat-decensor): Basic
+      captures raw Decensor composition/weight around promoted and inner preset callbacks, waits for
+      preset microtasks, restores without firing callbacks, then explicit patch fields win. Extended
+      exact DonutKrea2FusionControl preset widget callback guard to Advanced too, attached after
+      load/node creation and refreshed for replaced callbacks. Guard preserves raw Advanced-only
+      composition, keeps preset labels, and honors explicit subsequent Decensor callbacks over
+      queued preset work. Synthetic adapter regression failed before fix (weight reset to 1), now
+      all 27 tests pass: all 13 preset choices × 3 raw compositions in Basic and Simple/Advanced,
+      explicit toggle/weight/TAP edits, workflow reload, and rollback after failure; no user data or
+      native builds used. Updated browser asset checksum."
+    supersedes: null
+    author: Booru Node Maintainers
+    created_at: 2026-10-07T04:17:39.576Z
