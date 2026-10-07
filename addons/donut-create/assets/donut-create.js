@@ -697,6 +697,7 @@
   let presetControlsRevision = null;
   let outputDestination = 'preview';
   let pendingEnhancement = null, queueInFlight = false, compilingEnhancement = false, lastEnhancement = null, queueCancellationRevision = 0;
+  let outputPreparation = null, outputRequestSequence = 0;
   let nodeInfo = {}, loraNames = [], lastQueuedPromptIds = [];
   const uploadedReferences = new Set();
   const uploadedMasks = new Map();
@@ -1440,10 +1441,29 @@
   }
   function cancelGeneration(message = 'The image run was cancelled before submission.') {
     queueCancellationRevision++;
+    if (outputPreparation) outputPreparation.finish(new Error(message));
     const token = pendingEnhancement;
     if (!token || token.cancelled) return;
     token.cancelled = new Error(message); token.reject(token.cancelled);
     void cancelOwnedEnhancement(token);
+  }
+  function prepareOutputDestination() {
+    // An unembedded studio keeps its existing ComfyUI behavior. In DMC the
+    // host owns library destinations and must prepare saving before any Run.
+    if (!window.parent || window.parent === window) return Promise.resolve(outputDestination);
+    if (!parentOrigin) return Promise.reject(new Error('Wait for the studio connection before generating.'));
+    const requestId = 'output-' + (++outputRequestSequence);
+    return new Promise((resolve, reject) => {
+      const finish = (error, destination) => {
+        if (outputPreparation?.requestId !== requestId) return;
+        clearTimeout(outputPreparation.timer); outputPreparation = null;
+        if (error) reject(error); else resolve(destination);
+      };
+      const timer = setTimeout(() => finish(new Error('The output directory could not be prepared in time. Check Save destination and generate again.')), 30000);
+      outputPreparation = { requestId, timer, finish };
+      try { window.parent.postMessage({ channel: 'donut-create-output-v1', sessionId: config.sessionId, requestId, action: 'prepare-output' }, parentOrigin); }
+      catch (error) { finish(error); }
+    });
   }
   function executionSeed(output) {
     const samplers = Object.values(output || {}).filter(node => node.class_type === 'DonutSampler');
@@ -1935,6 +1955,13 @@
   }, true);
   window.addEventListener('message', event => {
     const message = event.data;
+    if (event.source === window.parent && event.origin === parentOrigin && object(message)
+      && message.channel === 'donut-create-output-v1' && message.sessionId === config.sessionId
+      && message.requestId === outputPreparation?.requestId) {
+      if (message.ok === true && ['preview', 'comfy'].includes(message.outputDestination)) outputPreparation.finish(null, message.outputDestination);
+      else outputPreparation.finish(new Error(typeof message.error === 'string' ? message.error : 'Choose a valid save destination before generating.'));
+      return;
+    }
     // Tauri/Wry's registered native scheme uses a tuple origin, like HTTP.
     // Keep the exact observed origin; opaque parents cannot receive a reply.
     if (event.source !== window.parent || !object(message) || message.channel !== channel || message.sessionId !== config.sessionId
@@ -2039,6 +2066,7 @@
     const originalQueue = api.queuePrompt.bind(api);
     api.queuePrompt = async function (...args) {
       const attempt = queueAttempt, cancellationRevision = queueCancellationRevision;
+      const authored = recipe((app.rootGraph || app.graph).serialize());
       if (queueInFlight) throw new Error('An image submission is already in progress.');
       queueInFlight = true;
       try {
@@ -2047,9 +2075,12 @@
         args[1] = await enhanceRun(args[1]);
         if (cancellationRevision !== queueCancellationRevision) throw new Error('The image run was cancelled before submission.');
         if (pendingEnhancement?.cancelled) throw pendingEnhancement.cancelled;
+        const preparedDestination = await prepareOutputDestination();
+        if (cancellationRevision !== queueCancellationRevision) throw new Error('The image run was cancelled before submission.');
+        if (recipe((app.rootGraph || app.graph).serialize()) !== authored) throw new Error('The workflow changed while preparing output. Generate again with the current settings.');
         // Attach per-run storage intent without changing the editable graph.
         if (object(args[1]?.workflow)) args[1] = {...args[1], workflow: {...args[1].workflow,
-          extra: {...args[1].workflow.extra, dmc_output_destination: outputDestination}}};
+          extra: {...args[1].workflow.extra, dmc_output_destination: preparedDestination}}};
         const result = await originalQueue(...args);
         if (result?.error || result?.node_errors && Object.keys(result.node_errors).length) throw new Error(result.error?.message || 'The backend rejected this workflow. Check the Advanced editor for node errors.');
         if (attempt && result?.prompt_id) attempt.accepted++;
