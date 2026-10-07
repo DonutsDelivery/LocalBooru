@@ -324,7 +324,9 @@ class Installer(VerifiedDownloads):
     def _safe_node_target(self, root, target):
         if not (root / "main.py").is_file() or not (root / "comfy").is_dir():
             raise SetupError("Choose the connected ComfyUI installation before updating DonutNodes.")
-        if root.is_symlink() or target.parent.is_symlink() or target.is_symlink() or (target / ".git").is_symlink():
+        if (target / ".git").is_symlink():
+            raise SetupError("DonutNodes Git metadata is a symlink. It was preserved; update this checkout on the ComfyUI host.")
+        if root.is_symlink() or target.parent.is_symlink() or target.is_symlink():
             message = "The linked DonutNodes path is not a verified source checkout. It was preserved; update it on the ComfyUI host."
             resolved = target.resolve()
             if not resolved.is_dir() or not (resolved / ".git").exists():
@@ -333,6 +335,8 @@ class Installer(VerifiedDownloads):
             try:
                 top = Path(self._run([*command, "rev-parse", "--show-toplevel"], timeout=30).strip()).resolve()
                 origin = self._run([*command, "remote", "get-url", "origin"], timeout=30).strip().rstrip("/").removesuffix(".git")
+            except SetupCancelled:
+                raise
             except SetupError:
                 raise SetupError(message) from None
             repo = self.required_donutnodes()["repo"]

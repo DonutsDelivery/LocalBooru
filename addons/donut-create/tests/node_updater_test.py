@@ -292,6 +292,29 @@ class SourceUpdates(unittest.TestCase):
         self.assertEqual((repo / "__init__.py").read_text(), "old")
         self.assertEqual(list(other.iterdir()), [])
 
+    # AC: @create-multiple-face-prompts ac-existing-backend-node
+    def test_linked_git_metadata_is_rejected_before_commands(self):
+        self.target.mkdir(parents=True)
+        metadata = self.root / "metadata"
+        metadata.mkdir()
+        (self.target / ".git").symlink_to(metadata, target_is_directory=True)
+        with patch.object(self.installer, "_run") as commands, self.assertRaisesRegex(SetupError, "Git metadata is a symlink"):
+            self.installer._safe_node_target(self.comfy, self.target)
+        commands.assert_not_called()
+        self.assertTrue((self.target / ".git").is_symlink())
+
+    # AC: @create-multiple-face-prompts ac-existing-backend-node
+    def test_cancelled_link_verification_remains_cancelled(self):
+        repo = self.root / "source"
+        repo.mkdir(); (repo / ".git").mkdir()
+        self.target.parent.mkdir(parents=True)
+        self.target.symlink_to(repo, target_is_directory=True)
+        for responses in ([SetupCancelled("cancelled")], [str(repo), SetupCancelled("cancelled")]):
+            with patch.object(self.installer, "_run", side_effect=responses):
+                self.installer._update_nodes(self.comfy, "idle")
+            self.assertEqual(self.installer.status()["node_update"]["state"], "cancelled")
+            self.assertNotIn("not a verified", self.installer.status()["node_update"]["error"])
+
     def test_git_checkout_fast_forwards_to_pin_and_preserves_dirty_source(self):
         remote = self.root / "git-source"
         env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
