@@ -961,7 +961,7 @@
   const referenceFields = new Set(['referenceA', 'referenceB', 'guidanceReferenceA', 'guidanceReferenceB']);
   const cropReferences = {cropA: 'referenceA', cropB: 'referenceB', guidanceCropA: 'guidanceReferenceA', guidanceCropB: 'guidanceReferenceB'};
   const channel = 'donut-create-basic-v1';
-  const actions = new Set(['snapshot', 'patch', 'generate', 'upload-reference', 'upload-mask', 'load-preset', 'load-latest', 'load-workflow', 'drop-file']);
+  const actions = new Set(['snapshot', 'patch', 'enhance-prompts', 'generate', 'upload-reference', 'upload-mask', 'load-preset', 'load-latest', 'load-workflow', 'drop-file']);
   const referencePattern = /^donutref:[a-f0-9]{64}$/;
   const maskPattern = /^donutmask:[a-f0-9]{64}$/;
   const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -1592,6 +1592,17 @@
           }
         }
         else if (message.action === 'patch') mutationChanged = await applyPatch(message.payload);
+        else if (message.action === 'enhance-prompts') {
+          const {fields, expected} = message.payload || {};
+          const current = bindings();
+          if (!object(fields) || !object(expected) || Object.keys(fields).length !== 2
+            || !Object.hasOwn(fields, 'facePrompt') || !['prompt', 'editPrompt'].some(key => Object.hasOwn(fields, key))
+            || Object.keys(expected).length !== 2 || Object.keys(fields).some(key => !Object.hasOwn(expected, key)
+              || !current[key] || current[key].widget.value !== expected[key])) {
+            throw new Error('Your prompts changed in the workflow. Enhance again before applying.');
+          }
+          mutationChanged = await applyPatch(fields);
+        }
         else if (message.action === 'generate') await generate();
         else if (message.action === 'upload-reference') mutationChanged = await uploadReference(message.payload);
         else if (message.action === 'upload-mask') mutationChanged = await uploadMask(message.payload);

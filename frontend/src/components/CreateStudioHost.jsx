@@ -515,7 +515,7 @@ export default function CreateStudioHost() {
         const nextSnapshot = await currentBridge.request(action, payload, { timeout: ['upload-reference', 'upload-mask', 'drop-file'].includes(action) ? 120000 : ['generate', 'load-workflow'].includes(action) ? 60000 : 15000 })
         if (!mounted.current || generation.current !== requestGeneration || bridge.current !== currentBridge) throw new DOMException('The studio session changed.', 'AbortError')
         acceptSnapshot(nextSnapshot)
-        if (['patch', 'upload-reference', 'upload-mask', 'drop-file'].includes(action) && nextSnapshot.mutationChanged === true) {
+        if (['patch', 'enhance-prompts', 'upload-reference', 'upload-mask', 'drop-file'].includes(action) && nextSnapshot.mutationChanged === true) {
           authoredRevision.current += 1
           setGraphRevision(authoredRevision.current)
         }
@@ -565,7 +565,9 @@ export default function CreateStudioHost() {
     if (opened && workflowPending && snapshot?.ready && status?.backend?.ready && !bridgeConnecting && !bridgeBusy && !switchingServer) loadPendingWorkflow()
   }, [opened, workflowPending, snapshot?.ready, status?.backend?.ready, bridgeConnecting, bridgeBusy, switchingServer, loadPendingWorkflow])
 
-  const patchStudio = useCallback(patch => studioAction('patch', patch), [studioAction])
+  const patchStudio = useCallback((patch, expected) => expected
+    ? studioAction('enhance-prompts', { fields: patch, expected })
+    : studioAction('patch', patch), [studioAction])
   const generateImage = useCallback(async (instantRequest) => {
     if (generateLock.current) throw new Error('An image is already being added to the queue.')
     const requestGeneration = generation.current
@@ -1246,7 +1248,7 @@ export default function CreateStudioHost() {
         <div className={'create-studio-body create-view-' + (showSetup ? 'setup' : studioView) + ' create-mobile-' + mobilePane}>
           {waitingForStudio && <CreateStudioLoading opening={opening} backendReady={!!status?.backend?.ready} connectionFailed={connectionFailed && !opening} />}
           {session && <div className="create-controls-slot" hidden={!simpleView}>
-            <SimpleCreateControls key={session.id + ':' + controlsRevision} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
+            <SimpleCreateControls key={session.id + ':' + controlsRevision} sessionId={session.id} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
               connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : dropPending ? bridgeBusy || 'drop-file' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
               onPatch={patchStudio} onGenerate={generateImage} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={retryConnection} onAdvanced={showAdvancedStudio}
               runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null} jobsContent={simpleView ? jobsContent : null} finalizeContent={simpleView ? finalizeContent : null}

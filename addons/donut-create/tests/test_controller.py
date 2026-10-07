@@ -167,6 +167,31 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["prompt_id"]
 
+    # AC: @create-managed-prompt-enhancer ac-owned-private
+    async def test_enhancer_capability_routes_are_local_and_owner_scoped(self):
+        owner, other = await self.new_session(), await self.new_session()
+        route = f'/studio/{owner}/dmc/enhancer'
+        response = await self.http.get('/studio/not-a-capability/dmc/enhancer')
+        self.assertEqual(response.status_code, 404)
+        with patch.object(self.controller.enhancer, 'ready', return_value=True), patch.object(self.controller.enhancer, 'infer', new=AsyncMock(return_value={'main_prompt': 'Synthetic owl.', 'face_prompt': 'The owl looks left.'})):
+            response = await self.http.post(route, json={'kind': 'enhance', 'model': 'minicpm', 'image_brief': 'Synthetic owl.', 'face_brief': 'The owl looks left.'})
+            self.assertEqual(response.status_code, 200)
+            job_id = response.json()['job']['id']
+            await self.controller.enhancer.task
+            response = await self.http.get(route)
+            self.assertEqual(response.json()['job']['result']['face_prompt'], 'The owl looks left.')
+            self.assertEqual(response.headers['cache-control'], 'no-store')
+            response = await self.http.get(f'/studio/{other}/dmc/enhancer')
+            self.assertNotIn('job', response.json())
+            response = await self.http.post(f'/studio/{other}/dmc/enhancer/cancel', json={'id': job_id})
+            self.assertEqual(response.status_code, 404)
+            response = await self.http.post(route + '/cancel', json={'id': job_id})
+            self.assertEqual(response.json()['job']['state'], 'cancelled')
+        self.assertFalse(any('enhancer' in url for _, url, _, _ in self.backend.requests))
+        for data in ({'kind': 'enhance', 'model': []}, {'kind': 'enhance', 'model': 'minicpm', 'image_brief': 'x' * 16001}, {'url': 'http://other.invalid'}):
+            response = await self.http.post(route, json=data)
+            self.assertEqual(response.status_code, 400)
+
     async def test_progress_and_completed_polling_do_not_rewrite_or_rescan_history(self):
         sid = await self.new_session()
         own = await self.submit(sid)

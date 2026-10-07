@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import CreatePromptEnhancer from './CreatePromptEnhancer'
 import useCreatePanelSizes from './useCreatePanelSizes'
 
 const LABELS = {
@@ -154,7 +155,7 @@ function EffectSection({ title, toggle, children }) {
 }
 
 export default function SimpleCreateControls({
-  snapshot, activeTab, onTabChange, connected, connecting, busy, error, mobilePane,
+  snapshot, sessionId, activeTab, onTabChange, connected, connecting, busy, error, mobilePane,
   onPatch, onGenerate, onUpload, onUploadMask, onRetry, onAdvanced,
   onReferenceTools, referenceUrls = {}, runInstant, onRunInstantChange, onDraftChange,
   children, historyContent, jobsContent, finalizeContent, navigation, mobileNavigation, exitNavigation, modeNavigation,
@@ -229,7 +230,7 @@ export default function SimpleCreateControls({
     setInputError('')
   }
 
-  const commit = useCallback(async patch => {
+  const commit = useCallback(async (patch, expected) => {
     const normalized = {}
     try {
       for (const [key, raw] of Object.entries(patch)) {
@@ -263,7 +264,8 @@ export default function SimpleCreateControls({
       throw validationError
     }
     if (!Object.keys(normalized).length) return
-    await onPatch(normalized)
+    if (expected) await onPatch(normalized, expected)
+    else await onPatch(normalized)
     const remaining = { ...draftRef.current }
     for (const [key, raw] of Object.entries(patch)) if (Object.is(remaining[key], raw)) delete remaining[key]
     draftRef.current = remaining
@@ -501,6 +503,14 @@ export default function SimpleCreateControls({
         {activeTab !== 'finalize' && <>
           {textField(activeTab === 'edit' ? 'editPrompt' : 'prompt', 'Describe your image', activeTab === 'edit' ? 'The finished image: keep the subject, change the background to a sunny beach…' : 'A cozy cabin beside a lake, morning mist, warm sunlight…', 6)}
           {value('faceDetail') === true && textField('facePrompt', 'Describe only the face', 'Expression, facial features, makeup…', 3)}
+          {sessionId && available(activeTab === 'edit' ? 'editPrompt' : 'prompt') && available('facePrompt') && <CreatePromptEnhancer
+            sessionId={sessionId} imageBrief={value(activeTab === 'edit' ? 'editPrompt' : 'prompt')} faceBrief={value('facePrompt')} disabled={locked}
+            onPauseInstant={() => onRunInstantChange?.(false)} onApply={async (result, originals) => {
+              const key = activeTab === 'edit' ? 'editPrompt' : 'prompt'
+              const latest = field => draftRef.current[field] ?? (field === key ? draftRef.current[key === 'prompt' ? 'editPrompt' : 'prompt'] : undefined) ?? fields[field]?.value ?? ''
+              if (latest(key) !== originals.imageBrief || latest('facePrompt') !== originals.faceBrief) throw new Error('Your prompts changed. Enhance again before applying.')
+              await commit({ [key]: result.main_prompt, facePrompt: result.face_prompt }, { [key]: fields[key].value, facePrompt: fields.facePrompt.value })
+            }} />}
           {(available('stylePrompt') || showNegativePrompt) && <details className="create-prompt-options"><summary>Style & exclusions <span>Optional</span></summary>
             {textField('stylePrompt', 'Style prompt', 'Lighting, colors, artistic style…')}{showNegativePrompt && textField('negativePrompt', 'Avoid in the image', 'Things you want to leave out…')}
           </details>}
