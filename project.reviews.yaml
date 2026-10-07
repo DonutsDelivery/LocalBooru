@@ -16997,7 +16997,74 @@ reviews:
       - review-create-enhancer-d0e0a9d4
     title: Independent enhancer expansion review ed58f12f..d0e0a9d4
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: d0e0a9d4a00c5421e10f7ad0f8c7610f8eb89617
+        evidence: Independently35/35pass on exact head. Production inference request mock verifies exact
+          scene/face JSON sent unchanged to template and completion; strict separate-field schema,
+          thinking off, cache disabled, exact expanded returned model strings preserved without
+          shortening or combining. Parser including complete MiniCPM reasoning prefix passes.
+          Existing context overflow, loopback isolation, cancellation/helper cleanup, verified
+          install/repair tests pass.
+        name: enhancer-installer-behavior
+        required: true
+        runner: PYTHONPATH=addons/donut-create:addons/donut-create/tests python3 -m unittest test_enhancer
+          test_installer
+        created_at: 2026-10-07T04:36:23.421Z
+        completed_at: 2026-10-07T04:36:23.421Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: d0e0a9d4a00c5421e10f7ad0f8c7610f8eb89617
+        evidence: Exact base ed58f12f0b80d60e36e54d4310634766ca63830b; head
+          d0e0a9d4a00c5421e10f7ad0f8c7610f8eb89617. Read all3changed files before task notes;
+          inspected messages/production infer/parser/catalog/UI result handoff. Sparse instructions
+          require2to4compatible missing rendering cues and forbid invented
+          action/pose/location/setting/time/weather/objects/faces; facts, restrictions, tokens,
+          exact quotes and supplied face association take priority; detailed input need not be
+          rewritten. No canned fallback or production output postprocessing added. Behavioral AC
+          annotations @create-managed-prompt-enhancer ac-enhance-preview/ac-owned-private checked,
+          requirement has no traits. Diff whitespace clean.
+        name: prompt-and-AC-alignment
+        required: true
+        runner: complete diff/context/spec/behavioral annotation review
+        created_at: 2026-10-07T04:36:23.802Z
+        completed_at: 2026-10-07T04:36:23.802Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: d0e0a9d4a00c5421e10f7ad0f8c7610f8eb89617
+        evidence: "Default scoped discovery13pass/3opt-in skips. Inspected full opt-in implementation:
+          disposable verified pinned model/runtime and direct production Enhancer.infer calls;
+          sparse cabin expansion/no subjects, sparse owl expansion/no action/facial invention, rich
+          fact/token/exact-quote preservation, identity-only face; no source-scanning tests. Worker
+          task notes report final Qwen3/3actual CPU cases and default MiniCPM2/2actual CPU cases
+          passed, detailed source retained verbatim; owned4.85GBfixtures/artifacts removed. Reviewer
+          did not rerun real inference or redownload models, per parent instruction; model evidence
+          is worker-reported Linux CPU only."
+        name: real-inference-independent-rerun
+        required: false
+        runner: opt-in test_enhancer_inference.py
+        created_at: 2026-10-07T04:36:24.155Z
+        completed_at: 2026-10-07T04:36:24.155Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: d0e0a9d4a00c5421e10f7ad0f8c7610f8eb89617
+        evidence: Independent validation retains same130schema errors and verify skill missing-description,
+          unrelated to code-only comparison. Same baseline diagnostic established in previous three
+          independent reviews. No metadata changed by worker.
+        name: registry-validation-baseline
+        required: false
+        runner: KSPEC_NO_DAEMON=1 kspec validate
+        created_at: 2026-10-07T04:36:24.512Z
+        completed_at: 2026-10-07T04:36:24.512Z
     events:
       - _ulid: 01M4AAAW90Q5RP3JFGDBDG4MZM
         actor: DonutsDelivery
@@ -17005,9 +17072,61 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-07T04:35:49.152Z
+      - _ulid: 01M4AABXEFPDN644Z3NJP8WXK1
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-07T04:36:23.119Z
+      - _ulid: 01M4AABXV9XA09SCT0PGRSYERT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: enhancer-installer-behavior
+        timestamp: 2026-10-07T04:36:23.529Z
+      - _ulid: 01M4AABY6Q8D3YM945XQVMKD60
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: prompt-and-AC-alignment
+        timestamp: 2026-10-07T04:36:23.895Z
+      - _ulid: 01M4AABYHWCHYA587ZMG8VTF84
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: real-inference-independent-rerun
+        timestamp: 2026-10-07T04:36:24.252Z
+      - _ulid: 01M4AABYWW2KTSNWPRH2CNMDSC
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: registry-validation-baseline
+        timestamp: 2026-10-07T04:36:24.604Z
+      - _ulid: 01M4AABZ8BEC4VKVX2SXTV9NWJ
+        actor: independent-create-reviewer
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+            head_commit: d0e0a9d4a00c5421e10f7ad0f8c7610f8eb89617
+          decision: approve
+        timestamp: 2026-10-07T04:36:24.971Z
+      - _ulid: 01M4AABZ8BZ47R6TR4MZ15KQNM
+        actor: independent-create-reviewer
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-07T04:36:24.972Z
     examined_commit: d0e0a9d4a00c5421e10f7ad0f8c7610f8eb89617
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@fix-managed-enhancer-expansion"
     subject:
@@ -17017,7 +17136,15 @@ reviews:
       head_branch: fix/create-enhancer-expansion
       head_commit: d0e0a9d4a00c5421e10f7ad0f8c7610f8eb89617
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: d0e0a9d4a00c5421e10f7ad0f8c7610f8eb89617
+        decision: approve
+        reviewer: independent-create-reviewer
+        role: reviewer
+        created_at: 2026-10-07T04:36:24.971Z
     created_at: 2026-10-07T04:35:49.152Z
-    updated_at: null
+    updated_at: 2026-10-07T04:36:24.971Z
     notes: []
