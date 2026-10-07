@@ -10,11 +10,17 @@ function checkRequest(signal) {
 
 export async function getCreateStatus(signal) {
   const revision = backendStatusRevision
-  try {
-    return (await apiClient.get(`${CREATE_API}/status`, { signal, background: true })).data
-  } finally {
+  const ensureCurrent = () => {
     checkRequest(signal)
     if (revision !== backendStatusRevision) throw new DOMException('Backend status was superseded.', 'AbortError')
+  }
+  try {
+    const response = await apiClient.get(`${CREATE_API}/status`, { signal, background: true })
+    ensureCurrent()
+    return response.data
+  } catch (error) {
+    ensureCurrent()
+    throw error
   }
 }
 
