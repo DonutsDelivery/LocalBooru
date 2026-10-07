@@ -59,7 +59,9 @@ is MiniCPM5-2B mondk Abliterated **Q6_K** (2.07 GB); Qwen3.5-4B HauhauCS Aggress
 the user-written face description are supplied separately. Review the two outputs
 and choose **Apply both prompts**, or discard them. Originals remain available in
 the preview. Applying changes neither starts generation nor enables face detail;
-Run Instant is paused. Changed inputs require a new enhancement.
+Run Instant is paused. Changed inputs require a new enhancement. Model setup stays
+available when an older or custom workflow lacks a prompt control; the enhancer
+shows guidance and disables enhancement/apply until both controls are exposed.
 
 The add-on downloads its own pinned llama.cpp **b11457** CPU runtime and GGUF
 weights using the byte counts, revisions, and SHA-256 checksums in
