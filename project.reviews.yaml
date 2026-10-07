@@ -17987,7 +17987,143 @@ reviews:
       - review-create-per-run-862ff96a
     title: Independent per-run enhancer fix-cycle review 862ff96a
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
+        evidence: "Independent fresh node --experimental-vm-modules --test tests/browser_adapter.test.mjs:
+          38/38 pass on exact862ff96aa945553ee52d60bfec3153a27a7dcb44. Includes valid identical pair
+          submitted twice, source graph and saved draft unchanged, both compiled leaves and
+          model/seed/output metadata, all original cancellation/stale/seed/Edit/Create/Advanced
+          paths. /tmp/dmc-per-run-cycle2-adapter.txt"
+        name: browser-adapter-38
+        required: true
+        runner: node
+        created_at: 2026-10-07T07:47:34.057Z
+        completed_at: 2026-10-07T07:47:34.057Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
+        evidence: Independent adversarial fixture /tmp/dmc-per-run-review-adversarial.mjs loads candidate
+          assets dynamically from current worktree. Same test failed exact08388370 at1479; now1/1
+          passes on exact862ff96a, queues valid identical pair and preserves originals.
+          /tmp/dmc-per-run-cycle2-adversarial.txt
+        name: independent-identical-pair-reproduction
+        required: true
+        runner: node
+        created_at: 2026-10-07T07:47:34.469Z
+        completed_at: 2026-10-07T07:47:34.469Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
+        evidence: Inspected full3-file fix delta from08388370 and whole original AC context. Every binding
+          now gets matching evidence from unchanged enhanced.output; only deep cloned
+          restored[id].inputs is changed. Canonical comparison and execution seed/source guards
+          remain intact. No new findings; prior sole blocker resolved. All7ACs assessed in first
+          round, same backend/UI/policy/docs remain unchanged.
+        name: fix-and-full-ac-review
+        required: true
+        runner: manual
+        created_at: 2026-10-07T07:47:34.868Z
+        completed_at: 2026-10-07T07:47:34.868Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
+        evidence: Fresh node --check assets/donut-create.js passes,
+          SHA2565b556d829b4d4ae7f22e88463560e72a8df041d04df80755f2ea535f2648171d matches runtime
+          browser asset pin; git diff --check clean.
+        name: adapter-syntax-checksum
+        required: true
+        runner: node/python/git
+        created_at: 2026-10-07T07:47:35.251Z
+        completed_at: 2026-10-07T07:47:35.251Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
+        evidence: "Verified git delta08388370..862ff96a contains only adapter verifier, adapter behavioral
+          regression and runtime asset checksum. Earlier independent results therefore apply
+          unchanged: Python17/17; frontendNode216/216; scoped Host/panel9pass; changed production
+          ESLint clean. Evidence /tmp/dmc-per-run-review-python.txt,
+          /tmp/dmc-per-run-review-node.txt, /tmp/dmc-per-run-review-focused.txt. No unnecessary
+          unchanged-suite rerun."
+        name: unchanged-backend-frontend-verification
+        required: true
+        runner: manual
+        created_at: 2026-10-07T07:47:35.662Z
+        completed_at: 2026-10-07T07:47:35.662Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
+        evidence: "Informational retained limitation: full Host/panel58pass2fail on unchanged frontend,
+          same2 failures independently reproduced on
+          exactbase56785c5e2bea66d85b7023d30bb9f052a83b73a3. Actual names: shows disabled backend
+          actions and management instructions for a URL-only connection; connects to an existing
+          backend without requesting managed downloads. Evidence
+          /tmp/dmc-per-run-review-components.txt and /tmp/dmc-per-run-review-base-host.txt. No
+          whole-suite pass claim."
+        name: host-panel-known-base-failures
+        required: false
+        runner: vitest
+        created_at: 2026-10-07T07:47:36.083Z
+        completed_at: 2026-10-07T07:47:36.083Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
+        evidence: "Retained public pinned frontend1.53.6 inspection: app.ts queue hooks surround initial
+          compilation/API acceptance; executionUtil.ts awaits live serializers without seed queue
+          hooks; ExecutableNodeDTO exposes live values and colon nested IDs. Paths
+          /tmp/dmc-review-public-app-1.53.6.ts /tmp/dmc-review-public-executionUtil-1.53.6.ts
+          /tmp/dmc-review-public-ExecutableNodeDTO.ts. Sources
+          https://github.com/Comfy-Org/ComfyUI_frontend/blob/v1.53.6/src/scripts/app.ts ;
+          https://github.com/Comfy-Org/ComfyUI_frontend/blob/v1.53.6/src/utils/executionUtil.ts ;
+          https://github.com/Comfy-Org/ComfyUI_frontend/blob/v1.53.6/src/lib/litegraph/src/subgraph\
+          /ExecutableNodeDTO.ts . No installed/private source accessed."
+        name: pinned-public-compiler-evidence
+        required: false
+        runner: manual
+        created_at: 2026-10-07T07:47:36.457Z
+        completed_at: 2026-10-07T07:47:36.457Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
+        evidence: Retained independent kspec validation130 existing schema errors and verify/SKILL.md
+          missing-description; unchanged repository metadata limitations.
+          /tmp/dmc-per-run-review-validate.txt. Not a candidate source blocker.
+        name: kspec-existing-schema-limitations
+        required: false
+        runner: kspec
+        created_at: 2026-10-07T07:47:36.850Z
+        completed_at: 2026-10-07T07:47:36.850Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
+        evidence: Review scope prohibits model downloads/inference. Existing17 production lightweight tests
+          verify sampling-seed passthrough and repeated request parameters, not real-model
+          deterministic text or creative quality. Policy preservation/scoped invention inspected in
+          prior round, unchanged. No real/private input accessed or canned fallback.
+        name: real-model-semantic-validation
+        required: false
+        runner: manual
+        created_at: 2026-10-07T07:47:37.236Z
+        completed_at: 2026-10-07T07:47:37.236Z
     events:
       - _ulid: 01M4AN8G8C19C0Q21W2TKX9BKP
         actor: DonutsDelivery
@@ -17995,9 +18131,89 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-07T07:46:45.645Z
+      - _ulid: 01M4AN9ZMJ0WHNH1K50B07WM49
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: browser-adapter-38
+        timestamp: 2026-10-07T07:47:34.162Z
+      - _ulid: 01M4ANA01VW0NH1YNRDRBY5EAT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-identical-pair-reproduction
+        timestamp: 2026-10-07T07:47:34.587Z
+      - _ulid: 01M4ANA0DPZN1EA5YCXAPH32J9
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: fix-and-full-ac-review
+        timestamp: 2026-10-07T07:47:34.966Z
+      - _ulid: 01M4ANA0TD5960YJ8WZRGJ26N0
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: adapter-syntax-checksum
+        timestamp: 2026-10-07T07:47:35.373Z
+      - _ulid: 01M4ANA16XYBYB3WN1EJKR8YJJ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: unchanged-backend-frontend-verification
+        timestamp: 2026-10-07T07:47:35.773Z
+      - _ulid: 01M4ANA1KRTS9175NAFCPKZTEB
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: host-panel-known-base-failures
+        timestamp: 2026-10-07T07:47:36.184Z
+      - _ulid: 01M4ANA1ZMC8AZERESGZ1S04SY
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: pinned-public-compiler-evidence
+        timestamp: 2026-10-07T07:47:36.564Z
+      - _ulid: 01M4ANA2BZQXX29YA5EJJH2ASX
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: kspec-existing-schema-limitations
+        timestamp: 2026-10-07T07:47:36.959Z
+      - _ulid: 01M4ANA2QQQPRVK59SXZXGX31X
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: real-model-semantic-validation
+        timestamp: 2026-10-07T07:47:37.335Z
+      - _ulid: 01M4ANA33625ZHEAD213RC2381
+        actor: independent-create-fix-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+            head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
+          decision: approve
+        timestamp: 2026-10-07T07:47:37.702Z
+      - _ulid: 01M4ANA3365JQYCZ54MNVRYDHZ
+        actor: independent-create-fix-review
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: closed
+        timestamp: 2026-10-07T07:47:37.702Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-per-run-enhancer"
     subject:
@@ -18007,7 +18223,15 @@ reviews:
       head_branch: feat/create-per-run-enhancer
       head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
+        decision: approve
+        reviewer: independent-create-fix-review
+        role: reviewer
+        created_at: 2026-10-07T07:47:37.702Z
     created_at: 2026-10-07T07:46:45.645Z
-    updated_at: null
+    updated_at: 2026-10-07T07:47:37.702Z
     notes: []
