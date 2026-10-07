@@ -55,3 +55,17 @@ notes:
     supersedes: null
     author: Booru Node Maintainers
     created_at: 2026-10-07T10:50:14.577Z
+  - _ulid: 01M4AZVC9WS5WGR7B3ZYWJRY9N
+    content: "Frozen combined candidate5b195f7159af3c9422e74a319d59f4858acd0d81 vs maina96dce9e:
+      reviewed face-only migration fixd48dc408, save defaults d6c24fb8, multi
+      enhancer/adapter/runtime relative relations with unique bounded bijection, strict single
+      detection guard, managed owned-node readiness and controller validation.
+      Focused70Python+62adapter+12panel pass; production lint pass; fullPython121 has sole
+      independently verified baseline port-message assertion; fullUI78 has2 independently verified
+      baseline Host failures. New controller relationship test demonstrated RED old parser then
+      GREEN relative implementation. No models/GPU/private data opened; real inference trials remain
+      opt-in skipped. Source clean; seeking exact aggregate independent review before
+      integration/build."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T10:51:49.948Z
