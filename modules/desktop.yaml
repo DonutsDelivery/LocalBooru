@@ -1217,6 +1217,12 @@ features:
           preserve intentional zoom.
         when: The user switches outputs or stages, a live image changes dimensions, or the preview pane
           resizes
+      - given: Create has an active studio session
+        id: ac-quiet-backend-stop
+        then: Background session polling pauses while the backend is unavailable, expected shutdown failures
+          do not stack error notifications, drafts and session results remain, and polling resumes
+          when readiness returns without submitting generation.
+        when: ComfyUI is stopped or restarted, including while a session poll is in flight
     tags: []
     requirements:
       - _ulid: 01M49YHS0SSQXCX7R7AGQE401X

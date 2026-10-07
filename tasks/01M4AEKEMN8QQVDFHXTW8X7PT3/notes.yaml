@@ -1,0 +1,10 @@
+notes:
+  - _ulid: 01M4AEKF06VZG6SFWCN73Q8ZEE
+    content: Reproduce with synthetic Host fixtures. Reuse backend lifecycle revision and add shutdown
+      events to abort in-flight polling without deleting the studio. Gate session reads on
+      readiness; background reads own their error reporting instead of generating global API toasts.
+      Verify stop race, external offline status, restart/resume, preserved graph/results and no
+      generation. Review, merge main, rebuild/install, isolated acceptance.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T05:50:24.774Z
