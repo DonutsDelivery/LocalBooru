@@ -15973,6 +15973,19 @@ reviews:
         runner: baseline comparison
         created_at: 2026-10-07T02:14:10.103Z
         completed_at: 2026-10-07T02:14:10.103Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+        evidence: "Locked focused native test passed on bfb5f520 after production frontend build:
+          creation_sources_deploy_with_nested_assets_and_matching_base_preset, 1 passed. Compiler
+          writer exited. Frontend build passed."
+        name: Native embedded deployment
+        required: true
+        runner: scripts/run-cargo.sh
+        created_at: 2026-10-07T02:23:59.958Z
+        completed_at: 2026-10-07T02:23:59.958Z
     events:
       - _ulid: 01M4A27EHQ5JM9E67XKC86JR5A
         actor: codex-self-review
@@ -16015,9 +16028,33 @@ reviews:
           status: fail
           name: Existing surrounding suite failures
         timestamp: 2026-10-07T02:14:10.188Z
+      - _ulid: 01M4A2SGHHFMBJHAQ9T55EBVJ9
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: pass
+          name: Native embedded deployment
+        timestamp: 2026-10-07T02:24:00.049Z
+      - _ulid: 01M4A2SGWWW2MP836XGP18X4JJ
+        actor: codex-self-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: db118f74
+            head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+          decision: approve
+        timestamp: 2026-10-07T02:24:00.412Z
+      - _ulid: 01M4A2SGWXSYGXQSFRRG2N28D6
+        actor: codex-self-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-07T02:24:00.413Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@integrate-create-prompt-enhancer"
     subject:
@@ -16027,7 +16064,15 @@ reviews:
       head_branch: feat/create-managed-enhancer
       head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+        decision: approve
+        reviewer: codex-self-review
+        role: reviewer
+        created_at: 2026-10-07T02:24:00.412Z
     created_at: 2026-10-07T02:14:08.183Z
-    updated_at: 2026-10-07T02:14:10.103Z
+    updated_at: 2026-10-07T02:24:00.413Z
     notes: []

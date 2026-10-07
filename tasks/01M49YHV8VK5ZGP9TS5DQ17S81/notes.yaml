@@ -55,3 +55,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T02:03:09.981Z
+  - _ulid: 01M4A2SH7D0TE6AYGZEAJ9318F
+    content: "Final self-review: focused Python 34, UI 4, adapter 12, both real synthetic models,
+      frontend build and native embedded source deployment pass. Existing surrounding suite failures
+      reproduced on unchanged main are informational. Native writer exited. Integration candidate
+      bfb5f520 approved by primary agent self-review; no independent review claimed."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T02:24:00.749Z
