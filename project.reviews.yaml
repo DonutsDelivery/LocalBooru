@@ -19112,3 +19112,32 @@ reviews:
     created_at: 2026-10-07T10:39:25.772Z
     updated_at: 2026-10-07T10:44:20.488Z
     notes: []
+  - _ulid: 01M4AZMC5HQQKP8081TF1D6ZZA
+    slugs:
+      - review-create-face-only-d48dc408
+    title: Independent face-only conditioning fix-cycle review d48dc408
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M4AZMC5H7EJTTNKA1MR5RV10
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T10:48:00.433Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@create-face-only-conditioning"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: bc6b602583728e291b63e4871ef640f866049181
+      head_branch: fix/create-face-only-conditioning
+      head_commit: d48dc40814d46cd83852474625a978c27e13d403
+    threads: []
+    verdicts: []
+    created_at: 2026-10-07T10:48:00.433Z
+    updated_at: null
+    notes: []
