@@ -202,7 +202,13 @@ def ordered_faces(module, image, inputs, expected, rows=None):
         raise ValueError(f"Face routing mismatch: expected {expected} characters but detected {len(faces)} faces. No character prompts were applied.")
     if rows and isinstance(rows[0]["position"], dict):
         return segs[0], relative_faces([item[3] for item in faces], rows)
-    return segs[0], [item[3] for item in sorted(faces, key=lambda item: item[:3])]
+    ordered = sorted(faces, key=lambda item: item[:3])
+    if rows:
+        for left, right in zip(ordered, ordered[1:]):
+            widths = [item[3].bbox[2] - item[3].bbox[0] for item in (left, right)]
+            if right[0] - left[0] <= .25 * min(widths):
+                raise ValueError("Face routing is ambiguous: horizontal descriptions need distinguishable left/right positions. Add above/below relationships; no face prompts were applied.")
+    return segs[0], [item[3] for item in ordered]
 
 
 class DMCFaceDetailer:
