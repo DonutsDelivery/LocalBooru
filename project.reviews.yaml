@@ -18436,7 +18436,108 @@ reviews:
       - review-infer-empty-face-bf0942a5
     title: "Independent review: infer one face from an empty face brief"
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b6025
+          head_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
+        evidence: "Exact bf0942a5: 18 backend tests pass. New owned HTTP/job fixture covers 12 synthetic
+          scene/face pairs, seed73, empty/whitespace face, visible human/animal, supplied
+          hidden/ambiguous priority, shared creative choice, strict parsing and owner-only result.
+          These are stubbed transport contracts, not live model face-selection evidence."
+        name: enhancer-backend-contracts
+        required: true
+        runner: python-unittest
+        created_at: 2026-10-07T10:22:09.359Z
+        completed_at: 2026-10-07T10:22:09.359Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b6025
+          head_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
+        evidence: "Exact bf0942a5: npx vitest run --config vitest.config.js
+          src/components/CreatePromptEnhancer.component.test.jsx; 9/9 rendered panel tests pass. New
+          empty-face/supplied-priority explanation is rendered; opening settings starts no
+          enhancement."
+        name: enhancer-rendered-panel
+        required: true
+        runner: vitest
+        created_at: 2026-10-07T10:22:09.753Z
+        completed_at: 2026-10-07T10:22:09.753Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b6025
+          head_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
+        evidence: "Exact bf0942a5: node --experimental-vm-modules --test
+          addons/donut-create/tests/browser_adapter.test.mjs; 38/38 pass, including distinct
+          scene/face routing, deliberate blank face output, per-run seed and original source
+          preservation."
+        name: adapter-routing-regression
+        required: true
+        runner: node-experimental-vm-modules
+        created_at: 2026-10-07T10:22:10.154Z
+        completed_at: 2026-10-07T10:22:10.154Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b6025
+          head_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
+        evidence: Reviewed all five changed files against bc6b6025 and unchanged request/parser/panel
+          context. Empty/whitespace inference permits only one identifiable visible subject with
+          minimal identity when no facial facts exist; visibility fallbacks apply only to empty face
+          input; supplied input wins without changing hidden visibility. Creative fixture uses one
+          consistent expression in both outputs. Single-face scope retained. git diff --check
+          passes; candidate HEAD is exact bf0942a53ce230d845d523874fc5afcd8f5b4ac0 and worktree is
+          clean. No applicable inherited traits or source-scanning tests introduced.
+        name: policy-alignment-and-clean-diff
+        required: true
+        runner: independent-analysis-and-git
+        created_at: 2026-10-07T10:22:10.539Z
+        completed_at: 2026-10-07T10:22:10.539Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b6025
+          head_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
+        evidence: Four opt-in real inference trials skipped; no models downloaded and no user
+          model/profile/prompt data read. New visible-portrait real test exists but was not
+          executed. Approval verifies policy coherence and deterministic transport/routing, not
+          actual Qwen/MiniCPM semantic adherence.
+        name: real-model-face-selection
+        required: false
+        runner: opt-in-python-unittest
+        created_at: 2026-10-07T10:22:10.931Z
+        completed_at: 2026-10-07T10:22:10.931Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b6025
+          head_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
+        evidence: "Full add-on discovery: 99 tests, one unrelated controller port error-string assertion
+          failure, four opt-in skips. Expected '18010' absent from existing generic occupied-port
+          error. app.py/test_controller.py are unchanged against base; same single failure
+          independently reproduced after restoring base bc6b6025 system prompt in memory."
+        name: full-python-baseline
+        required: false
+        runner: python-unittest
+        created_at: 2026-10-07T10:22:11.308Z
+        completed_at: 2026-10-07T10:22:11.308Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b6025
+          head_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
+        evidence: Global validation retains 130 legacy schema errors and one verify/SKILL.md
+          missing-description error outside these five code files. Reviewed linked spec AC
+          annotations; this requirement has no inherited traits. Candidate introduces no schema
+          edits.
+        name: kspec-global-validation-baseline
+        required: false
+        runner: kspec-validate
+        created_at: 2026-10-07T10:22:11.745Z
+        completed_at: 2026-10-07T10:22:11.745Z
     events:
       - _ulid: 01M4AY1RKFEVTJPBBAHRGWJGKD
         actor: DonutsDelivery
@@ -18444,9 +18545,82 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-07T10:20:22.000Z
+      - _ulid: 01M4AY5141QA9HXCZNZGGD12BZ
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-07T10:22:09.025Z
+      - _ulid: 01M4AY51HPSBVQC9R1WWJ6WZK2
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: enhancer-backend-contracts
+        timestamp: 2026-10-07T10:22:09.462Z
+      - _ulid: 01M4AY51YPRRAR9QRPMFF698FZ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: enhancer-rendered-panel
+        timestamp: 2026-10-07T10:22:09.878Z
+      - _ulid: 01M4AY52ADB3Y3CJ14TV2NPR0H
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: adapter-routing-regression
+        timestamp: 2026-10-07T10:22:10.253Z
+      - _ulid: 01M4AY52PGQS25W21RJQ5AVB7B
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: policy-alignment-and-clean-diff
+        timestamp: 2026-10-07T10:22:10.640Z
+      - _ulid: 01M4AY532NZP2KHFEMQNMZY23H
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: real-model-face-selection
+        timestamp: 2026-10-07T10:22:11.029Z
+      - _ulid: 01M4AY53F3W7QPAJ9H7P8R2N0M
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: full-python-baseline
+        timestamp: 2026-10-07T10:22:11.427Z
+      - _ulid: 01M4AY53WT0DT48T8VT91YYJW5
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: kspec-global-validation-baseline
+        timestamp: 2026-10-07T10:22:11.866Z
+      - _ulid: 01M4AY549B911S9BGZDB7W7SVD
+        actor: enhancer-expansion-independent-reviewer
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: bc6b6025
+            head_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
+          decision: approve
+        timestamp: 2026-10-07T10:22:12.267Z
+      - _ulid: 01M4AY549BJZGXE92J9AS2X2Z4
+        actor: enhancer-expansion-independent-reviewer
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-07T10:22:12.267Z
     examined_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-infer-empty-face"
     subject:
@@ -18456,7 +18630,15 @@ reviews:
       head_branch: fix/create-infer-empty-face
       head_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: bc6b6025
+          head_commit: bf0942a53ce230d845d523874fc5afcd8f5b4ac0
+        decision: approve
+        reviewer: enhancer-expansion-independent-reviewer
+        role: reviewer
+        created_at: 2026-10-07T10:22:12.267Z
     created_at: 2026-10-07T10:20:22.000Z
-    updated_at: null
+    updated_at: 2026-10-07T10:22:12.267Z
     notes: []
