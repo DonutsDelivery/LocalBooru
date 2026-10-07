@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getEnhancerStatus, startEnhancer, cancelEnhancer, createErrorMessage, formatCreateBytes } from '../services/donutCreate'
 
-export default function CreatePromptEnhancer({ sessionId, imageBrief, faceBrief, disabled, unavailableReason, onApply, onPauseInstant }) {
+export default function CreatePromptEnhancer({ sessionId, imageBrief, faceBrief, disabled, unavailableReason, onLoadPreset, loadPresetDisabled, onApply, onPauseInstant }) {
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState(null)
   const [model, setModel] = useState('minicpm')
@@ -110,7 +110,10 @@ export default function CreatePromptEnhancer({ sessionId, imageBrief, faceBrief,
       <label className="create-field">Enhancer model<select value={model} disabled={working} onChange={event => { setModel(event.target.value); setOriginals(null) }}>
         {(status?.models || [{ id: 'minicpm', name: 'MiniCPM5-2B · loading…' }]).map(item => <option key={item.id} value={item.id}>{item.name}{item.size ? ` · ${item.quantization} · ${formatCreateBytes(item.size)}` : ''}</option>)}
       </select></label>
-      {unavailableReason && <p role="status" className="create-control-note">{unavailableReason}</p>}
+      {unavailableReason && <div className="create-control-note"><p role="status">{unavailableReason}</p>
+        {onLoadPreset && <><p>Loading the preset replaces the current recipe and its prompt text.</p>
+          <button type="button" disabled={working || loadPresetDisabled} onClick={onLoadPreset}>Load latest v5 preset (replaces recipe)</button></>}
+      </div>}
       {status?.supported === false && <p role="alert">The managed enhancer is unavailable on this platform.</p>}
       <div className="create-enhancer-actions">
         <button type="button" disabled={!selected || working || !status.supported} onClick={() => start('install')}>{selected?.ready ? 'Repair / verify model' : 'Download model'}</button>

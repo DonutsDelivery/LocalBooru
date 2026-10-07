@@ -1250,7 +1250,7 @@ export default function CreateStudioHost() {
           {session && <div className="create-controls-slot" hidden={!simpleView}>
             <SimpleCreateControls key={session.id + ':' + controlsRevision} sessionId={session.id} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
               connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : dropPending ? bridgeBusy || 'drop-file' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
-              onPatch={patchStudio} onGenerate={generateImage} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={retryConnection} onAdvanced={showAdvancedStudio}
+              onPatch={patchStudio} onGenerate={generateImage} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={retryConnection} onAdvanced={showAdvancedStudio} onLoadUpdatedV5={loadUpdatedV5}
               runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null} jobsContent={simpleView ? jobsContent : null} finalizeContent={simpleView ? finalizeContent : null}
               exitNavigation={simpleView ? exitNavigation : null} modeNavigation={simpleView ? modeNavigation : null} navigation={simpleView ? workspaceNavigation : null} mobileNavigation={simpleView ? mobileNavigation : null}>
               {simpleView ? resultsContent : null}

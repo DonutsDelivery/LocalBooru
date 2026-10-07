@@ -62,6 +62,9 @@ the preview. Applying changes neither starts generation nor enables face detail;
 Run Instant is paused. Changed inputs require a new enhancement. Model setup stays
 available when an older or custom workflow lacks a prompt control; the enhancer
 shows guidance and disables enhancement/apply until both controls are exposed.
+**Load latest v5 preset (replaces recipe)** is available there even when no
+revision update banner appears. It is an explicit action that replaces the
+current recipe, including its prompt text; it never runs automatically.
 
 The add-on downloads its own pinned llama.cpp **b11457** CPU runtime and GGUF
 weights using the byte counts, revisions, and SHA-256 checksums in
