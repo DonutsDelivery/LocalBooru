@@ -11,3 +11,20 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T04:15:29.265Z
+  - _ulid: 01M4A9DFPZ1WCDSHFZR2SHETYX
+    content: "Implemented runtime-only structural replacement: the nonfinal quarter-scale SaveImage sink
+      is removed and its existing full-resolution PreviewImage is registered as a nonfinal stage. No
+      workflow asset, browser graph, final DonutImageSave, Rust save route, or standalone export
+      changes. Synthetic pipeline test exercises both bundled presets, both preview/comfy
+      destinations and legacy remapped IDs; full output stays 1024x1536, scaler never executes,
+      standalone original prompt still generates its 256x384 workflow PNG. Executed websocket test
+      exposes owned first-pass full preview before final completion and rejects nonexistent reduced
+      media. Custom half-scale saves, explicit final sinks and graphs without a matching full
+      preview remain unchanged. Validation: Python 88 tests, 87 pass, sole unchanged managed-port
+      wording assertion verified independently with ed58f12f code; browser adapter 22/22 pass; git
+      diff --check passes. kspec validate retains existing invalid Android/core spec records and
+      verify skill missing-description error. Evidence under /tmp/dmc-first-pass-*.txt. Native
+      build/desktop test left to parent as instructed."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T04:19:46.015Z
