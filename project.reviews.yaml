@@ -15679,6 +15679,13 @@ reviews:
           status: pass
           name: Real model acceptance
         timestamp: 2026-10-07T01:35:51.865Z
+      - _ulid: 01M4A0EQCMWRHSFEW90T3XG294
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: feat/create-managed-enhancer
+          previous_head: c97981a80c3d52883c8c463bf48888c79e30f40c
+        timestamp: 2026-10-07T01:43:09.461Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -15689,9 +15696,9 @@ reviews:
       base_branch: main
       base_commit: db118f74
       head_branch: feat/create-managed-enhancer
-      head_commit: c97981a80c3d52883c8c463bf48888c79e30f40c
+      head_commit: feat/create-managed-enhancer
     threads: []
     verdicts: []
     created_at: 2026-10-07T01:35:29.878Z
-    updated_at: 2026-10-07T01:35:51.747Z
+    updated_at: 2026-10-07T01:43:09.351Z
     notes: []
