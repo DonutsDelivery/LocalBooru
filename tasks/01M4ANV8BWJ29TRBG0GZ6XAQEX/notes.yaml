@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01M4ANVYZHDKVVKJ6Y4HKRN9PW
+    content: Reuse persistent create-generate-footer outside controls-scroll. Show local inputError or
+      bridge generation error there as one alert, bounded inner scroll for long details and
+      full-width mobile row. Verify invalid generation keeps draft without queueing; connected
+      backend error appears outside scroll and clears when error prop clears. Synthetic browser
+      fixture will check expanded long controls at desktop/mobile; no private profile.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T07:57:23.313Z
