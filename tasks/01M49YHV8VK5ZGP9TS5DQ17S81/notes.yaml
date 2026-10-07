@@ -34,3 +34,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T01:28:24.733Z
+  - _ulid: 01M4A00KWNZ4TPF2VZRK86257Q
+    content: "Candidate committed as c97981a8. Final focused checks: 34 Python
+      installer/enhancer/controller checks, 4 UI checks, 12 adapter checks, touched-component ESLint
+      and whitespace checks pass. Real CPU inference with token preflight passed for both models
+      (MiniCPM 8.87s, Qwen 14.10s). Synthetic browser preview/apply succeeded. Native build remains
+      queued behind the existing DonutStudio compiler; no lock was bypassed and unrelated processes
+      were preserved. Global kspec validation reports existing malformed Android records and
+      verify/SKILL.md missing-description; the new enhancer spec has five behaviorally annotated
+      ACs."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T01:35:27.125Z
