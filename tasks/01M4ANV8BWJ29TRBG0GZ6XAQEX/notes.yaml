@@ -30,3 +30,30 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T08:06:18.326Z
+  - _ulid: 01M4ART8V35G83R17WP99Q1958
+    content: "Authorized shipping child completed local app:install from exact main
+      bc6b602583728e291b63e4871ef640f866049181, build/install exit 0; Finished release in 5m09s and
+      Installed messages confirmed after waiting behind host gate. Built and installed
+      donutmediacenter SHA256 both 3f5689175a5167c89754f1ba323ade803bd82a08578e37099ce53ab9e826d17c;
+      built/installed frontend index SHA256 both
+      a82ee922ad38243324b523a9973486a4cc7c9543c7ac84c96872285f9c72bc5a. Footer marker is
+      Brotli-compressed in release: raw byte scan is false, but exact binary-embedded JS/CSS streams
+      decode to current built/installed assets and contain create-generation-error; compressed
+      offsets/hashes recorded. Owned Cargo/Rust writer PIDs 778504,778565,781135 plus cargo-tauri
+      778123 exited; unrelated compilers left untouched. Canonical npm run app:test-isolated used
+      exact installed binary and unused port18793, 120s readiness bound. /health healthy with own
+      isolated marker; /api/images total0/images[]. SIGTERM only to owned descendant canonical
+      launcher bash786535; npm exit143, disposable /tmp/localbooru-isolated.TcP6de removed and port
+      closed. Source unchanged before/after; preserved untracked MediaNavigation test SHA256
+      b24c881b634dca4490bf44874848f7c8bbfd33e41f67f310a083bc018de6405a. Receipts:
+      /tmp/dmc-visible-errors-install-verification.json,
+      /tmp/dmc-visible-errors-embedded-assets-verification.json,
+      /tmp/dmc-visible-errors-acceptance-result.json; own install/isolated logs retained in /tmp. No
+      new code changes, push, publication, private profile access, browser/screenshot, generation
+      API call, or user app/ComfyUI termination. This child verified
+      installation/startup/empty-library isolation/cleanup; parent already owns visible-layout
+      regression evidence. No unchanged component tests rerun. User must manually restart the
+      running app to load the installed fix; task completion remains with parent."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T08:48:53.603Z
