@@ -414,7 +414,7 @@
       "browser_assets": {
         "assets/base-workflow.json": "3dfd5bf4dd5a52341af08b0ede2b4713f6b8cadfe29008617a3d50f68bed03bc",
         "assets/donut-create.css": "45057b6e702e49117e69bf177205da386f96f0e4d796021ee1062e14a2b57fcb",
-        "assets/donut-create.js": "338d485507bb898cd2eb1907f8859f8ebe148ae6a95e10676cd21243888b44b5"
+        "assets/donut-create.js": "549520e5456555324c175f888749b596686bb73ec176545cc21a94c97dbed8fc"
       }
     }
   },
