@@ -107,9 +107,13 @@ internet access and free disk space for the selected model and runtime, verifies
 before activation, and retains partial downloads for retry. **Repair / verify
 model** reuses verified files. Inference works offline afterward. It runs on the
 computer hosting Create, including when controlled from a paired phone. CPU
-inference avoids unloading ComfyUI's GPU models. A temporary authenticated helper
-listens only on loopback and exits after completion, cancellation, or add-on
-shutdown. Cancellation targets only that studio's enhancer operation.
+inference avoids unloading ComfyUI's GPU models. An authenticated helper listens
+only on loopback. After a successful enhancement, one CPU model stays loaded in
+system RAM so later runs using that model skip loading its weights again. Switching
+models stops the previous helper before loading the next one. Repair, inference
+failure, cancellation, and add-on shutdown release it. Cancellation targets only
+that studio's current enhancer operation; discarding an older result cannot stop
+another studio's newer run.
 
 Enhancer inputs and outputs are held in bounded memory, not logged or saved by
 the enhancer. Submitted workflows retain original briefs and record that run's enhanced pair in workflow metadata.

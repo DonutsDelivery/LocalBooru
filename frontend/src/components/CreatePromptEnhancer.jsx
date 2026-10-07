@@ -102,7 +102,7 @@ export default function CreatePromptEnhancer({ sessionId, config, disabled, unav
   return <details className="create-enhancer" open={open} onToggle={event => setOpen(event.currentTarget.open)}>
     <summary>Prompt enhancer</summary>
     {open && <div>
-      <p className="create-control-note">Runs locally before every image run when enabled. Uses your image and face briefs with that run’s seed; your original inputs stay unchanged. Ask it to invent or vary details within your brief. Downloads once, then works offline.</p>
+      <p className="create-control-note">Runs locally before every image run when enabled. Uses your image and face briefs with that run’s seed; your original inputs stay unchanged. Ask it to invent or vary details within your brief. Downloads once, then works offline. Keeps the selected model in system RAM between runs for faster starts, leaving GPU memory for image generation.</p>
       <p className="create-control-note">Leave the face brief blank to derive one identifiable visible face from Describe your image. A supplied face brief takes priority; scenes with hidden or ambiguous faces keep the face prompt empty.</p>
       <p className="create-control-note">For multiple faces, describe which characters are left of or above others, or give facial descriptions explicitly from left to right. Each visible character keeps a separate face prompt.</p>
       <label className="create-field">Enhancer model<select value={model} disabled={working || !onConfigure} onChange={event => configure({ enabled, model: event.target.value })}>
@@ -110,6 +110,7 @@ export default function CreatePromptEnhancer({ sessionId, config, disabled, unav
       </select></label>
       <label className="create-instant-toggle"><input type="checkbox" checked={enabled} disabled={working || (!enabled && (disabled || !selected?.ready || status?.supported === false)) || !onConfigure} onChange={event => configure({ enabled: event.target.checked, model })} />Enhance every run</label>
       {unavailableReason && <p role="status" className="create-control-note">{unavailableReason}</p>}
+      {status?.loaded_model === model && !working && <p role="status" className="create-control-note">Model loaded in RAM · Ready for the next run.</p>}
       {status?.supported === false && <p role="alert">The managed enhancer is unavailable on this platform.</p>}
       <div className="create-enhancer-actions">
         <button type="button" disabled={!selected || working || !status.supported} onClick={install}>{selected?.ready ? 'Repair / verify model' : 'Download model'}</button>
