@@ -25,6 +25,21 @@ function nodeAt(workflow, wanted) {
   }
 }
 
+function outputParent(env, destination = 'preview', automatic = true) {
+  const replies = [], requests = [];
+  const parent = { postMessage(value) {
+    if (value.channel !== 'donut-create-output-v1') { replies.push(value); return; }
+    requests.push(value);
+    if (automatic) respond(value);
+  } };
+  const respond = (request = requests.at(-1), payload = {ok: true, outputDestination: destination}, override = {}) => {
+    env.events.get('message')({source: parent, origin: 'http://parent.test', ...override,
+      data: {channel: 'donut-create-output-v1', sessionId: 'synthetic-session', requestId: request.requestId, ...payload}});
+  };
+  env.context.parent = parent;
+  return {parent, replies, requests, respond};
+}
+
 const compatibilityPresets = ['Off', 'Custom', 'Bypass 2', 'Bypass 3', 'Rebalance', 'Enhancer', 'Rebalance + Enhancer',
   'Rebalance + Bypass 2', 'Rebalance + Bypass 3', 'Balanced', 'Balanced + raw NAG', 'Balanced + Enhancer', 'UncensorFix'];
 const fusionWidgets = ['compatibility_preset', 'tap_method', 'tap_profile', 'per_layer_weights', 'tap_strength',
@@ -195,9 +210,7 @@ test('empty first studio loads genuine v5, scopes API and queues edited panel pr
 // AC: @donut-create-plugin ac-save-gallery
 test('advanced queue uses the selected output destination without editing the saved graph',async()=>{
   const env=fixture(); await env.boot();
-  const replies=[];
-  const parent={postMessage(value){replies.push(value);}};
-  env.context.parent=parent;
+  const {replies,parent}=outputParent(env,'comfy');
   env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',
     sessionId:'synthetic-session',requestId:'destination',action:'snapshot',payload:{outputDestination:'comfy'}}});
   await env.settle();
@@ -681,7 +694,7 @@ test('explicit Advanced Decensor edits after selecting a preset win over queued 
 
 async function enhancerFixture(options = {}) {
   const env=fixture({livePrompts:true, ...options}); await env.boot();
-  const replies=[], parent={postMessage:value=>replies.push(value)}; env.context.parent=parent;
+  const {replies,parent}=outputParent(env);
   env.action=async (action,payload)=>{
     env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'run-'+replies.length,action,payload}});
     await env.settle(); return replies.at(-1);
@@ -912,4 +925,40 @@ test('identical scene and face briefs with identical generated prompts queue wit
   }
   assert.deepEqual(env.current(),before);
   assert.deepEqual(JSON.parse(env.store.get(draftKey('synthetic-device-a'))),before);
+});
+
+// AC: @donut-create-plugin ac-default-save-output
+test('Advanced Run awaits a scoped host output preparation and rejects forged replies',async()=>{
+  const env=fixture();await env.boot();
+  const host=outputParent(env,'comfy',false);
+  env.events.get('message')({source:host.parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'connect',action:'snapshot'}});
+  await env.settle();
+  const run=env.api.queuePrompt(0,await env.app.graphToPrompt());await env.settle();
+  assert.equal(host.requests.length,1);assert.equal(env.queued.length,0);
+  await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/already.*progress/i);
+  host.respond(undefined,undefined,{origin:'http://untrusted.test'});
+  host.respond(undefined,{ok:true,outputDestination:'comfy',sessionId:'wrong-session'});
+  host.respond(undefined,{ok:true,outputDestination:'comfy',requestId:'wrong-request'});
+  host.respond(undefined,undefined,{source:{}});
+  await env.settle();assert.equal(env.queued.length,0);
+  host.respond();await run;
+  assert.equal(env.queued[0][1].workflow.extra.dmc_output_destination,'comfy');
+  assert.equal(env.current().extra?.dmc_output_destination,undefined);
+});
+
+// AC: @donut-create-plugin ac-default-save-output
+test('host output failure, timeout, cancellation and changed draft prevent submission',async()=>{
+  for(const failure of ['host','timeout','cancel','pagehide','draft']){
+    const env=fixture();await env.boot();const host=outputParent(env,'preview',false);
+    env.events.get('message')({source:host.parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'connect',action:'snapshot'}});
+    await env.settle();
+    const run=env.api.queuePrompt(0,await env.app.graphToPrompt()), rejected=assert.rejects(run);
+    await env.settle();
+    if(failure==='host')host.respond(undefined,{ok:false,error:'Synthetic directory creation failed.'});
+    if(failure==='timeout')env.context.__fixtureTimers.find(timer=>timer.delay===30000&&timer.active).fn();
+    if(failure==='pagehide')env.events.get('pagehide')();
+    if(failure==='cancel')env.events.get('message')({source:host.parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'cancel',action:'cancel-generation'}});
+    if(failure==='draft'){env.editPrompt('A changed synthetic brief');host.respond();}
+    await rejected;host.respond();await env.settle();assert.equal(env.queued.length,0,failure);
+  }
 });
