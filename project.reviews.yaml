@@ -16288,3 +16288,32 @@ reviews:
     created_at: 2026-10-07T03:16:57.417Z
     updated_at: 2026-10-07T03:16:59.125Z
     notes: []
+  - _ulid: 01M4A84R3D1357GC73EPKGK7FG
+    slugs:
+      - create-enhancer-role-labels-review
+    title: Enhancer role labels self-review
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M4A84R3CV6J40Q43BQ3J5TDX
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T03:57:31.117Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@create-enhancer-role-labels"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 10b45af6
+      head_branch: fix/create-enhancer-role-labels
+      head_commit: fix/create-enhancer-role-labels
+    threads: []
+    verdicts: []
+    created_at: 2026-10-07T03:57:31.117Z
+    updated_at: null
+    notes: []
