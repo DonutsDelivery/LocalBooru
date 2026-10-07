@@ -10,13 +10,22 @@ description: Enhancer settings were hidden behind both main and face control ava
 spec_ref: "@create-managed-prompt-enhancer"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 2
 tags: []
 vcs_refs: []
+review_ref: "@create-enhancer-visibility-review"
+submission_linkage:
+  review_url: null
+  branch: splice/mac-pairing
+  captured_at: 2026-10-07T03:01:02.271Z
+  commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -28,6 +37,34 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-07T02:58:48.772Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-10-07T03:01:02.271Z
+          commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-07T03:01:02.275Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-07T03:01:02.275Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@create-enhancer-visibility-review"
+        previous: null
+    command: review-link
+    timestamp: 2026-10-07T03:01:02.681Z
 created_at: 2026-10-07T02:58:48.592Z
 started_at: 2026-10-07T02:58:48.772Z
+submitted_at: 2026-10-07T03:01:02.275Z
 todos: []

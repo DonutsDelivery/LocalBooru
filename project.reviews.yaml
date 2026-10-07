@@ -16099,3 +16099,87 @@ reviews:
     created_at: 2026-10-07T02:14:08.183Z
     updated_at: 2026-10-07T02:32:13.349Z
     notes: []
+  - _ulid: 01M4A4XAT1YBA2K9ZY5J7G2RXM
+    slugs:
+      - create-enhancer-visibility-review
+    title: Enhancer visibility self-review
+    author: codex-self-review
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 44f1feca
+          head_commit: 6fd937b25c8514b1dd8b7e5299542dfc06e22857
+        evidence: Six focused UI checks pass. New synthetic real SimpleCreateControls fixture initially
+          reproduces missing panel, then verifies setup access for ready and uninstalled models with
+          missing face control, disabled enhancement, useful guidance, no draft mutation or
+          generation. Existing preview/stale-guard/face routing/owned cancellation tests pass.
+          Touched-component lint and diff whitespace checks pass. No native/controller/model
+          changes.
+        name: UI regression and lint
+        required: true
+        runner: vitest + eslint
+        created_at: 2026-10-07T03:01:03.350Z
+        completed_at: 2026-10-07T03:01:03.350Z
+    events:
+      - _ulid: 01M4A4XAT15TWQZ94V62WVANJJ
+        actor: codex-self-review
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T03:01:02.401Z
+      - _ulid: 01M4A4XBG1G9VKZWNF6QGSVFKR
+        actor: codex-self-review
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-07T03:01:03.105Z
+      - _ulid: 01M4A4XBTG8A6PDGG6F257AGDV
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: pass
+          name: UI regression and lint
+        timestamp: 2026-10-07T03:01:03.440Z
+      - _ulid: 01M4A4XC5MTPMTG6VCWCRMFQMG
+        actor: codex-self-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 44f1feca
+            head_commit: 6fd937b25c8514b1dd8b7e5299542dfc06e22857
+          decision: approve
+        timestamp: 2026-10-07T03:01:03.796Z
+      - _ulid: 01M4A4XC5MRR8SH6FYXNPW7XTD
+        actor: codex-self-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-07T03:01:03.796Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: closed
+    related_refs:
+      - "@fix-create-enhancer-visibility"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 44f1feca
+      head_branch: fix/create-enhancer-visibility
+      head_commit: 6fd937b25c8514b1dd8b7e5299542dfc06e22857
+    threads: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 44f1feca
+          head_commit: 6fd937b25c8514b1dd8b7e5299542dfc06e22857
+        decision: approve
+        reviewer: codex-self-review
+        role: reviewer
+        created_at: 2026-10-07T03:01:03.796Z
+    created_at: 2026-10-07T03:01:02.401Z
+    updated_at: 2026-10-07T03:01:03.796Z
+    notes: []

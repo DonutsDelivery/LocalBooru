@@ -2442,12 +2442,14 @@ tasks:
     title: Keep enhancer settings visible when a workflow lacks face controls
     type: bug
     spec_ref: "@create-managed-prompt-enhancer"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 2
     tags: []
-    notes_count: 1
+    review_ref: "@create-enhancer-visibility-review"
+    notes_count: 2
     todos_count: 0
     created_at: 2026-10-07T02:58:48.592Z
     started_at: 2026-10-07T02:58:48.772Z
+    submitted_at: 2026-10-07T03:01:02.275Z
