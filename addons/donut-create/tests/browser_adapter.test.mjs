@@ -1089,3 +1089,70 @@ test('failed recognized face-route repair restores the complete broken saved rec
   const env=fixture({initial:workflow,livePrompts:true,failFaceUpgrade:true});await env.boot();
   assert.deepEqual(env.current(),before);assert.equal(env.queued.length,0);assert.match(env.notice(),/face prompt could not be added/);
 });
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+// AC: @donut-create-plugin ac-workflow-state
+test('recognized old face branches discard only inherited whole-image prompt sets, including copied IDs',async()=>{
+  for(const copied of [false,true]) {
+    for(const face of ['FACE ONLY: smile','']) {
+      let workflow=syntheticFaceBriefs(brokenFaceRecipe(),face);
+      const main=nodeAt(workflow,996),branch=nodeAt(workflow,1180),names=Object.keys(main.widgets_values_named);
+      const sets=JSON.stringify([{face:'WHOLE STYLE SET',scene:'WHOLE SCENE SET'}]);
+      for(const node of [main,branch]) {
+        for(const [name,value] of [['prompt_sets_json',sets],['prompt_set_index',2],['control_after_generate','increment']]) {
+          node.widgets_values[names.indexOf(name)]=value;node.widgets_values_named[name]=value;
+        }
+      }
+      branch.widgets_values[2]=123456;branch.widgets_values[3]=false;
+      const authored=copy(main.widgets_values),faceSettings=copy(branch.widgets_values);
+      if(copied) workflow=copiedFaceRecipe(workflow);
+      const env=fixture({initial:workflow,livePrompts:true});await env.boot();
+      assert.deepEqual(executeFaceText(env.current()),{edit:face,positive:face});
+      assert.equal(executeFaceText(env.current(),true),'WHOLE STYLE SETWHOLE SCENE SET');
+      assert.deepEqual(nodeAt(env.current(),996+(copied?5000:0)).widgets_values,authored);
+      const repaired=nodeAt(env.current(),1180+(copied?5000:0));
+      assert.deepEqual(repaired.widgets_values.slice(0,16),faceSettings.slice(0,16));
+      assert.equal(repaired.widgets_values_named.prompt_sets_json,'[]');
+      assert.equal(repaired.widgets_values_named.prompt_set_index,1);
+      assert.equal(repaired.widgets_values_named.control_after_generate,'fixed');
+      const reopened=fixture({initial:env.current(),livePrompts:true});await reopened.boot();
+      assert.deepEqual(reopened.current(),env.current());assert.equal(reopened.loaded.length,0);assert.equal(env.queued.length,0);
+    }
+  }
+});
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+test('recognized old face branches retain independently authored face prompt sets',async()=>{
+  for(const changed of ['prompt_sets_json','prompt_set_index','control_after_generate']) {
+    const workflow=syntheticFaceBriefs(brokenFaceRecipe(),'FACE ONLY: smile');
+    const main=nodeAt(workflow,996),branch=nodeAt(workflow,1180),names=Object.keys(main.widgets_values_named);
+    const sets=JSON.stringify([{face:'WHOLE STYLE SET',scene:'WHOLE SCENE SET'}]);
+    for(const node of [main,branch]) for(const [name,value] of [['prompt_sets_json',sets],['prompt_set_index',2],['control_after_generate','increment']]) {
+      node.widgets_values[names.indexOf(name)]=value;node.widgets_values_named[name]=value;
+    }
+    const values={prompt_sets_json:JSON.stringify([{face:'CUSTOM FACE SET',scene:'CUSTOM UNUSED SCENE'}]),prompt_set_index:1,control_after_generate:'fixed'};
+    branch.widgets_values[names.indexOf(changed)]=values[changed];branch.widgets_values_named[changed]=values[changed];
+    const authored=copy(branch.widgets_values),named=copy(branch.widgets_values_named);
+    const env=fixture({initial:workflow,livePrompts:true});await env.boot();
+    assert.deepEqual(nodeAt(env.current(),1180).widgets_values,authored);
+    assert.deepEqual(nodeAt(env.current(),1180).widgets_values_named,named);
+    const expected=changed==='prompt_sets_json'?'CUSTOM FACE SET':changed==='prompt_set_index'?'FACE ONLY: smile':'WHOLE STYLE SET';
+    assert.deepEqual(executeFaceText(env.current()),{edit:expected,positive:expected});
+  }
+});
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+test('recognized face routes repair when unused face output link arrays are null or absent',async()=>{
+  for(const missing of ['null','absent']) {
+    const workflow=syntheticFaceBriefs(brokenFaceRecipe(),'FACE ONLY: smile');
+    for(const slot of [1,4]) {
+      if(missing==='null') nodeAt(workflow,1180).outputs[slot].links=null;
+      else delete nodeAt(workflow,1180).outputs[slot].links;
+    }
+    const env=fixture({initial:workflow,livePrompts:true});await env.boot();
+    assert.deepEqual(executeFaceText(env.current()),{edit:'FACE ONLY: smile',positive:'FACE ONLY: smile'});
+    assert.equal(env.queued.length,0);
+    const reopened=fixture({initial:env.current(),livePrompts:true});await reopened.boot();
+    assert.deepEqual(reopened.current(),env.current());
+  }
+});
