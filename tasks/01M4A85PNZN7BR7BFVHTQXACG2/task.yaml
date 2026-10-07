@@ -1,0 +1,21 @@
+_ulid: 01M4A85PNZN7BR7BFVHTQXACG2
+slugs:
+  - create-face-binding-followup
+title: Repair missing face prompt after real workflow serialization
+type: bug
+description: User still sees Face detail enabled without face textbox after previous repair.
+  Investigate synthetic and public workflow shapes; keep existing recipes and private data intact;
+  rebuild and install verified fix.
+spec_ref: "@create-managed-prompt-enhancer"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+created_at: 2026-10-07T03:58:02.431Z
+todos: []
+automation: manual_only
