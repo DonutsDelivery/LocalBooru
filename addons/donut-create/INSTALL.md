@@ -262,3 +262,5 @@ writing a second permanent copy into its output folder. Temporary files remain
 subject to ComfyUI’s temporary-directory cleanup. Earlier permanent outputs are
 not deleted. Choosing a DMC directory later does not automatically copy existing
 permanent ComfyUI results; an explicit **Save to library** remains available.
+
+Older recognized v5 recipes gain the missing face-prompt textbox and face-only conditioning path in place when opened. Existing scene/style prompts, seeds, models, and generation settings remain intact; no image is generated. Custom face wiring and partial upgrades are left unchanged. When Face detail is enabled, the face textbox appears above Prompt enhancer, and its written draft is supplied alongside the main brief.
