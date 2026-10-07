@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { getEnhancerStatus, startEnhancer, cancelEnhancer, createErrorMessage, formatCreateBytes } from '../services/donutCreate'
 
+function facePositionText(position) {
+  if (typeof position === 'string') return position
+  const descriptions = []
+  if (position?.left_of?.length) descriptions.push(`left of ${position.left_of.join(', ')}`)
+  if (position?.above?.length) descriptions.push(`above ${position.above.join(', ')}`)
+  return descriptions.join('; ') || 'no additional position details'
+}
+
 export default function CreatePromptEnhancer({ sessionId, config, disabled, unavailableReason, onConfigure, onPauseInstant }) {
   const modelRoles = { qwen: 'Rewriter', minicpm: 'Preserver' }
   const [open, setOpen] = useState(false)
@@ -17,6 +25,7 @@ export default function CreatePromptEnhancer({ sessionId, config, disabled, unav
   const working = pending || status?.busy
   const result = config?.lastRun
   const faces = Array.isArray(result?.face_prompts) && result.face_prompts.length > 1 ? result.face_prompts : []
+  const relativeFaces = faces.length > 0 && typeof faces[0].position === 'object'
 
   useEffect(() => {
     alive.current = true
@@ -95,7 +104,7 @@ export default function CreatePromptEnhancer({ sessionId, config, disabled, unav
     {open && <div>
       <p className="create-control-note">Runs locally before every image run when enabled. Uses your image and face briefs with that run’s seed; your original inputs stay unchanged. Ask it to invent or vary details within your brief. Downloads once, then works offline.</p>
       <p className="create-control-note">Leave the face brief blank to derive one identifiable visible face from Describe your image. A supplied face brief takes priority; scenes with hidden or ambiguous faces keep the face prompt empty.</p>
-      <p className="create-control-note">For multiple faces, describe where each character is positioned from left to right, or give facial descriptions explicitly in that order. Each character keeps a separate face prompt.</p>
+      <p className="create-control-note">For multiple faces, describe which characters are left of or above others, or give facial descriptions explicitly from left to right. Each visible character keeps a separate face prompt.</p>
       <label className="create-field">Enhancer model<select value={model} disabled={working || !onConfigure} onChange={event => configure({ enabled, model: event.target.value })}>
         {(status?.models || [{ id: 'minicpm', name: 'MiniCPM5-2B · loading…' }]).map(item => <option key={item.id} value={item.id}>{modelRoles[item.id] ? `${modelRoles[item.id]} · ` : ''}{item.name}{item.size ? ` · ${item.quantization} · ${formatCreateBytes(item.size)}` : ''}</option>)}
       </select></label>
@@ -114,9 +123,9 @@ export default function CreatePromptEnhancer({ sessionId, config, disabled, unav
         <p className="create-control-note">{modelRoles[result.model] || result.model} · Seed {result.seed}</p>
         <label className="create-field">Enhanced image prompt<textarea readOnly rows={6} value={result.main_prompt} /></label>
         {faces.length ? <section aria-label="Ordered character face prompts">
-          <p className="create-control-note">Character face prompts, ordered from left to right.</p>
+          <p className="create-control-note">{relativeFaces ? 'Character face prompts with relative positions.' : 'Character face prompts, ordered from left to right.'}</p>
           {faces.map((face, index) => <div key={`${index}-${face.character}`}>
-            <h4>{face.character} · {face.position}</h4>
+            <h4>{face.character} · {facePositionText(face.position)}</h4>
             <label className="create-field">Enhanced face prompt for {face.character}<textarea readOnly rows={3} value={face.face_prompt} /></label>
           </div>)}
         </section> : <>

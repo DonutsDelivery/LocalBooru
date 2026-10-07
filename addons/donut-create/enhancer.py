@@ -43,6 +43,36 @@ def messages(image_brief, face_brief):
             {"role": "user", "content": json.dumps({"image_brief": image_brief, "face_brief": face_brief}, ensure_ascii=False)}]
 
 
+def _valid_relative_positions(plan):
+    labels = {record["character"] for record in plan}
+    for record in plan:
+        position = record["position"]
+        if not isinstance(position, dict) or set(position) != {"left_of", "above"}:
+            return False
+        for references in position.values():
+            if (not isinstance(references, list) or len(references) > 15
+                    or not all(isinstance(label, str) and label in labels and label != record["character"] for label in references)
+                    or len(references) != len(set(references))):
+                return False
+    for axis in ("left_of", "above"):
+        edges = {record["character"]: record["position"][axis] for record in plan}
+        visiting, complete = set(), set()
+        def visit(label):
+            if label in visiting:
+                return False
+            if label in complete:
+                return True
+            visiting.add(label)
+            if not all(visit(target) for target in edges[label]):
+                return False
+            visiting.remove(label)
+            complete.add(label)
+            return True
+        if not all(visit(label) for label in labels):
+            return False
+    return True
+
+
 def parse_result(text, finish_reason, supplied_face=False):
     if finish_reason != "stop" or not isinstance(text, str):
         raise ValueError("The model did not finish its response. Try again; your original prompts are unchanged.")
@@ -74,21 +104,26 @@ def parse_result(text, finish_reason, supplied_face=False):
             for item in plan:
                 if (not isinstance(item, dict) or set(item) != {"character", "position", "face_prompt"}
                         or not valid_text(item["character"], 200, True)
-                        or not valid_text(item["face_prompt"], MAX_FACE, True)
-                        or not isinstance(item["position"], str)):
+                        or not valid_text(item["face_prompt"], MAX_FACE, True)):
                     valid = False
                     break
                 labels.append(item["character"].strip().casefold())
                 positions.append(item["position"])
-            families = [family for family in (FACE_POSITIONS, FACE_ORDINALS) if all(position in family for position in positions)]
-            valid = valid and len(labels) == len(set(labels)) and bool(families)
+            valid = valid and len(labels) == len(set(labels))
             if valid and positions:
-                order = [families[0].index(position) for position in positions]
-                valid = all(first < second for first, second in zip(order, order[1:])) and not result["face_prompt"].strip()
+                if all(isinstance(position, str) for position in positions):
+                    families = [family for family in (FACE_POSITIONS, FACE_ORDINALS) if all(position in family for position in positions)]
+                    valid = bool(families)
+                    if valid:
+                        order = [families[0].index(position) for position in positions]
+                        valid = all(first < second for first, second in zip(order, order[1:]))
+                else:
+                    valid = _valid_relative_positions(plan)
+                valid = valid and not result["face_prompt"].strip()
         if not valid:
-            raise ValueError("The model returned an invalid ordered face plan. Try again; your original prompts are unchanged.")
+            raise ValueError("The model returned an invalid spatial face plan. Try again; your original prompts are unchanged.")
         if supplied_face and not plan and not result["face_prompt"].strip():
-            raise ValueError("The model could not resolve the supplied facial descriptions. Specify character positions or left-to-right face order and retry; your original prompts are unchanged.")
+            raise ValueError("The model could not resolve the supplied facial descriptions. Specify which characters are left of or above others, or give left-to-right face order and retry; your original prompts are unchanged.")
     elif supplied_face and not result["face_prompt"].strip():
         raise ValueError("The model returned an incomplete or unsafe prompt pair. Try again; your original prompts are unchanged.")
     return result
@@ -393,7 +428,10 @@ class Enhancer(VerifiedDownloads):
                             "face_prompt": {"type": "string", "maxLength": 32000},
                             "face_prompts": {"type": "array", "maxItems": 16, "items": {
                                 "type": "object", "properties": {"character": {"type": "string", "minLength": 1, "maxLength": 200},
-                                    "position": {"type": "string", "enum": list(FACE_POSITIONS + FACE_ORDINALS)},
+                                    "position": {"oneOf": [{"type": "string", "enum": list(FACE_POSITIONS + FACE_ORDINALS)},
+                                        {"type": "object", "properties": {axis: {"type": "array", "maxItems": 15, "uniqueItems": True,
+                                            "items": {"type": "string", "minLength": 1, "maxLength": 200}} for axis in ("left_of", "above")},
+                                         "required": ["left_of", "above"], "additionalProperties": False}]},
                                     "face_prompt": {"type": "string", "minLength": 1, "maxLength": MAX_FACE}},
                                 "required": ["character", "position", "face_prompt"], "additionalProperties": False}}},
                         "required": ["main_prompt", "face_prompt", "face_prompts"], "additionalProperties": False}}}})
