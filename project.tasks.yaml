@@ -2497,7 +2497,7 @@ tasks:
     title: Keep decensor toggle and weight independent of compatibility presets
     type: bug
     spec_ref: "@donut-create-plugin"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 2
@@ -2506,6 +2506,7 @@ tasks:
     todos_count: 0
     created_at: 2026-10-07T04:11:24.288Z
     started_at: 2026-10-07T04:11:25.763Z
+    submitted_at: 2026-10-07T04:18:08.347Z
     automation: manual_only
   - _ulid: 01M4A95AXMSPFS4XP675E8WD52
     slugs:
