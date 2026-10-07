@@ -28,11 +28,13 @@ def face_prompts(value):
         raise ValueError("Face descriptions must be a JSON array.") from error
     if not isinstance(rows, list) or len(rows) > 16:
         raise ValueError("Face descriptions must be a JSON array of at most 16 characters.")
+    if len(rows) == 1:
+        raise ValueError("A character face plan needs at least two descriptions. Use the single face prompt control for one character.")
     names = set()
     for row in rows:
         if (not isinstance(row, dict) or set(row) != {"character", "position", "face_prompt"}
                 or not isinstance(row["character"], str) or not row["character"].strip() or len(row["character"]) > 200
-                or not isinstance(row["position"], str) or row["position"] not in ["left", "center", "right", *ORDINALS]
+                or not isinstance(row["position"], (str, dict))
                 or not isinstance(row["face_prompt"], str) or not row["face_prompt"].strip() or len(row["face_prompt"]) > 8000):
             raise ValueError("Each face description needs a character, resolved position and face-only prompt.")
         name = row["character"].strip().casefold()
@@ -41,11 +43,115 @@ def face_prompts(value):
         names.add(name)
     if rows:
         positions = [row["position"] for row in rows]
-        family = ["left", "center", "right"] if positions[0] in {"left", "center", "right"} else ORDINALS
-        if any(position not in family for position in positions) or any(
-                family.index(left) >= family.index(right) for left, right in zip(positions, positions[1:])):
-            raise ValueError("Face positions must use one strictly increasing left-to-right order.")
+        if isinstance(positions[0], dict):
+            labels = {row["character"] for row in rows}
+            for row in rows:
+                position = row["position"]
+                if not isinstance(position, dict) or set(position) != {"left_of", "above"}:
+                    raise ValueError("Relative face positions require left_of and above arrays without mixing position formats.")
+                for refs in position.values():
+                    if (not isinstance(refs, list) or len(refs) > 15 or any(not isinstance(ref, str) for ref in refs)
+                            or len(set(refs)) != len(refs) or any(ref not in labels or ref == row["character"] for ref in refs)):
+                        raise ValueError("Relative face positions must reference distinct existing characters, without self references.")
+            for axis in ("left_of", "above"):
+                graph = {row["character"]: row["position"][axis] for row in rows}
+                visiting, visited = set(), set()
+                def visit(label):
+                    if label in visiting:
+                        raise ValueError("Relative face positions cannot contain cycles on either axis.")
+                    if label in visited:
+                        return
+                    visiting.add(label)
+                    for other in graph[label]:
+                        visit(other)
+                    visiting.remove(label); visited.add(label)
+                for label in graph:
+                    visit(label)
+        else:
+            family = ["left", "center", "right"] if positions[0] in {"left", "center", "right"} else ORDINALS
+            if any(not isinstance(position, str) or position not in family for position in positions) or any(
+                    family.index(left) >= family.index(right) for left, right in zip(positions, positions[1:])):
+                raise ValueError("Face positions must use one strictly increasing left-to-right order.")
     return rows
+
+
+def relative_faces(segments, rows, budget=100000):
+    """Prove a unique position-only bijection without assuming a fixed grid.
+
+    Relations need a center gap strictly greater than one quarter of the
+    smaller face's width/height. This scale-relative margin rejects near ties.
+    Search and propagation share a fixed work budget; exhausting it never
+    accepts a partial uniqueness proof, even after finding one solution.
+    """
+    size = len(segments)
+    boxes = [seg.bbox for seg in segments]
+    labels = {row["character"]: index for index, row in enumerate(rows)}
+    edges = []
+    for axis, coordinate in (("left_of", 0), ("above", 1)):
+        centers = [(bbox[coordinate] + bbox[coordinate + 2]) / 2 for bbox in boxes]
+        lengths = [bbox[coordinate + 2] - bbox[coordinate] for bbox in boxes]
+        supports = [sum(1 << right for right in range(size) if
+            centers[right] - centers[left] > .25 * min(lengths[left], lengths[right])) for left in range(size)]
+        reverse = [sum(1 << left for left in range(size) if supports[left] & (1 << right)) for right in range(size)]
+        for index, row in enumerate(rows):
+            edges.extend((index, labels[other], supports, reverse) for other in row["position"][axis])
+    solutions = []
+    work = 0
+    def spend():
+        nonlocal work
+        work += 1
+        if work > budget:
+            raise ValueError("Face routing reached its search limit without proving a unique match. Clarify the characters' relative positions; no face prompts were applied.")
+    def bits(mask):
+        while mask:
+            bit = mask & -mask
+            yield bit.bit_length() - 1
+            mask -= bit
+    def propagate(domains):
+        changed = True
+        while changed:
+            spend()
+            changed = False
+            singles = [mask for mask in domains if mask.bit_count() == 1]
+            if len(set(singles)) != len(singles):
+                return None
+            occupied = sum(singles)
+            for index, mask in enumerate(domains):
+                narrowed = mask if mask.bit_count() == 1 else mask & ~occupied
+                if not narrowed:
+                    return None
+                if narrowed != mask:
+                    domains[index] = narrowed; changed = True
+            for left, right, supports, reverse in edges:
+                spend()
+                for owner, other, allowed in ((left, right, supports), (right, left, reverse)):
+                    narrowed = sum(1 << face for face in bits(domains[owner]) if allowed[face] & domains[other])
+                    if not narrowed:
+                        return None
+                    if narrowed != domains[owner]:
+                        domains[owner] = narrowed; changed = True
+        return domains
+    def search(domains):
+        spend()
+        domains = propagate(domains)
+        if domains is None:
+            return
+        undecided = [index for index, mask in enumerate(domains) if mask.bit_count() > 1]
+        if not undecided:
+            solutions.append([mask.bit_length() - 1 for mask in domains])
+            return
+        index = min(undecided, key=lambda index: (domains[index].bit_count(), index))
+        for face in bits(domains[index]):
+            branch = list(domains); branch[index] = 1 << face
+            search(branch)
+            if len(solutions) >= 2:
+                return
+    search([(1 << size) - 1] * size)
+    if not solutions:
+        raise ValueError("Face routing cannot match the described relative positions with sufficient separation. Clarify the layout; no face prompts were applied.")
+    if len(solutions) != 1:
+        raise ValueError("Face routing is ambiguous: several faces fit the relative descriptions. Add left/right or above/below relationships; no face prompts were applied.")
+    return [segments[index] for index in solutions[0]]
 
 
 class SingleFaceDetector:
@@ -59,7 +165,7 @@ class SingleFaceDetector:
         return self.dimensions, [self.segment]
 
 
-def ordered_faces(module, image, inputs, expected):
+def ordered_faces(module, image, inputs, expected, rows=None):
     detector = inputs["bbox_detector"]
     detector.setAux("face")
     try:
@@ -94,6 +200,8 @@ def ordered_faces(module, image, inputs, expected):
         if expected == 1:
             raise ValueError(f"A single face prompt cannot be matched to {len(faces)} detected faces. Provide separate character descriptions or turn off Face detail. No face prompts were applied.")
         raise ValueError(f"Face routing mismatch: expected {expected} characters but detected {len(faces)} faces. No character prompts were applied.")
+    if rows and isinstance(rows[0]["position"], dict):
+        return segs[0], relative_faces([item[3] for item in faces], rows)
     return segs[0], [item[3] for item in sorted(faces, key=lambda item: item[:3])]
 
 
@@ -121,13 +229,13 @@ class DMCFaceDetailer:
             raise ValueError("The single-face routing option must be a boolean.")
         rows = face_prompts(face_prompts_json)
         upstream = self.upstream()
-        if len(rows) <= 1 and not require_single_face:
+        if not rows and not require_single_face:
             return upstream().doit(*args, **kwargs)
         bound = inspect.signature(upstream().doit).bind(*args, **kwargs)
         bound.apply_defaults()
         inputs = dict(bound.arguments)
         inputs.update(inputs.pop("nag_options", {}))
-        if len(rows) <= 1:
+        if not rows:
             module = sys.modules[upstream.__module__]
             module._ensure_impact()
             module.offload_model_for_auxiliary_stage(inputs["model"], module.comfy.model_management)
@@ -146,7 +254,7 @@ class DMCFaceDetailer:
         images = [image.unsqueeze(0) for image in inputs["image"]]
         # Validate every batch image before the first refinement pass. Never
         # truncate detections by size, which would shift positional identities.
-        detections = [ordered_faces(module, image, inputs, len(rows)) for image in images]
+        detections = [ordered_faces(module, image, inputs, len(rows), rows) for image in images]
         import nodes
         positives = []
         for row in rows:
