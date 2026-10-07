@@ -369,10 +369,11 @@ function faceInstruction(workflow) {
   const target = body.links.find(edge => edge.target_id === 984 && nodeAt(workflow,984).inputs[edge.target_slot].name === 'edit_prompt');
   assert.equal(target.origin_id,1180);
   const positive = body.links.find(edge => edge.target_id === 1118 && nodeAt(workflow,1118).inputs[edge.target_slot].name === 'conditioning_in_2');
-  assert.equal(positive.origin_id,1180); assert.equal(positive.origin_slot,3);
-  const context = body.links.find(edge => edge.target_id === 1180 && edge.target_slot === 1);
+  assert.equal(target.origin_slot,1);
+  assert.equal(positive.origin_id,1180); assert.equal(positive.origin_slot,4);
+  const context = body.links.find(edge => edge.target_id === 1180 && edge.target_slot === 2);
   assert.equal(context.origin_id,996); assert.equal(context.origin_slot,0);
-  const face = body.links.find(edge => edge.target_id === 1180 && edge.target_slot === 2);
+  const face = body.links.find(edge => edge.target_id === 1180 && edge.target_slot === 1);
   assert.equal(body.inputs[face.origin_slot].name,'face_instruction');
   const root = workflow.links.find(edge => edge[3] === 1014 && nodeAt(workflow,1014).inputs[edge[4]].name === 'face_instruction');
   assert.equal(root[1],1138);
@@ -912,4 +913,179 @@ test('identical scene and face briefs with identical generated prompts queue wit
   }
   assert.deepEqual(env.current(),before);
   assert.deepEqual(JSON.parse(env.store.get(draftKey('synthetic-device-a'))),before);
+});
+
+
+// Execute the relevant serialized graph edges with pinned DonutNodes text/
+// conditioning semantics (2806ebe12caada993e6305e3f441ce61ab22a11c
+// donut_prompt.py); synthetic CLIP records the actual encoded text.
+function executeFaceText(workflow, wholeImage = false) {
+  const controls=workflow.nodes.flatMap(node=>(node.properties?.donut_app_controls?.groups||[]).flatMap(group=>group.controls||[]));
+  const path=controls.find(control=>control.title==='Face detail').path;
+  const rootNode=nodeAt(workflow,path[0]);
+  const body=workflow.definitions.subgraphs.find(graph=>graph.id===rootNode.type);
+  const detail=body.nodes.find(node=>node.id===path[1]);
+  function output(graph,parent,id,slot) {
+    if(id===-10) {
+      const parentGraph=[workflow,...workflow.definitions.subgraphs].find(candidate=>candidate.nodes.includes(parent));
+      const edge=parentGraph.links.find(edge=>Array.isArray(edge)?edge[3]===parent.id && edge[4]===slot:edge.target_id===parent.id && edge.target_slot===slot);
+      if(!edge) return ''; // Unconnected optional text ports are empty.
+      return output(parentGraph,parentGraph===workflow?null:workflow.nodes.find(node=>node.type===parentGraph.id),Array.isArray(edge)?edge[1]:edge.origin_id,Array.isArray(edge)?edge[2]:edge.origin_slot);
+    }
+    const node=graph.nodes.find(node=>node.id===id);assert.ok(node,'Connected source node must exist');
+    const nested=workflow.definitions.subgraphs.find(child=>child.id===node.type);
+    if(nested) {
+      const edge=nested.links.find(edge=>edge.id===nested.outputs[slot].linkIds[0]);
+      return output(nested,node,edge.origin_id,edge.origin_slot);
+    }
+    const input=name=>{
+      const index=node.inputs.findIndex(port=>port.name===name), port=node.inputs[index];
+      const edge=graph.links.find(edge=>edge.id===port?.link);
+      return edge?output(graph,parent,edge.origin_id,edge.origin_slot):'';
+    };
+    if(node.type==='DF_Text_Box') return node.widgets_values[0];
+    if(node.type==='DonutText') return input('prefix')+input('text')+input('suffix');
+    if(node.type==='DonutPromptConditioning') {
+      let face=input('face'),scene=input('scene');
+      const names=Object.keys(node.widgets_values_named||{}),rows=JSON.parse(node.widgets_values[names.indexOf('prompt_sets_json')]||'[]');
+      const index=Number(node.widgets_values[names.indexOf('prompt_set_index')]||1),position=rows.length?Math.max(0,index-1)%(rows.length+1):0;
+      if(position){face=rows[position-1].face??face;scene=rows[position-1].scene??scene;}
+      const full=face+(node.widgets_values[1]||'')+scene;
+      return [full,face,'',{encoded:full},{encoded:face}][slot];
+    }
+    if(node.type==='DonutKrea2FusionControl') return input('conditioning_in_'+slot);
+    throw new Error('Unexpected text/conditioning source '+node.type);
+  }
+  const value=name=>{
+    const port=detail.inputs.find(input=>input.name===name),edge=body.links.find(edge=>edge.id===port.link);
+    return output(body,rootNode,edge.origin_id,edge.origin_slot);
+  };
+  if(wholeImage) {
+    const branch=body.links.find(edge=>edge.id===detail.inputs.find(port=>port.name==='edit_prompt').link).origin_id;
+    const main=body.nodes.find(node=>node.type==='DonutPromptConditioning' && node.id!==branch);
+    return output(body,rootNode,main.id,0);
+  }
+  return {edit:value('edit_prompt'),positive:value('positive').encoded};
+}
+function brokenFaceRecipe() {
+  const workflow=copy(preset),body=workflow.definitions.subgraphs.find(graph=>graph.nodes.some(node=>node.id===1180));
+  const conditioning=nodeAt(workflow,1180);
+  const input=body.links.find(edge=>edge.target_id===1180 && edge.origin_id===996);
+  const face=body.links.find(edge=>edge.target_id===1180 && edge.origin_id===-10 && body.inputs[edge.origin_slot].name==='face_instruction');
+  input.target_slot=1;face.target_slot=2;
+  conditioning.inputs[1].link=input.id;conditioning.inputs[2].link=face.id;
+  for(const [target,oldSlot] of [[984,0],[1118,3]]) {
+    const edge=body.links.find(edge=>edge.origin_id===1180 && edge.target_id===target);
+    for(const port of conditioning.outputs) port.links=(port.links||[]).filter(id=>id!==edge.id);
+    edge.origin_slot=oldSlot;conditioning.outputs[oldSlot].links.push(edge.id);
+  }
+  return workflow;
+}
+function copiedFaceRecipe(workflow) {
+  const copyRecipe=copy(workflow),remap=id=>id>=0?id+5000:id;
+  for(const graph of [copyRecipe,...copyRecipe.definitions.subgraphs]) {
+    for(const node of graph.nodes) {
+      node.id=remap(node.id);
+      for(const group of node.properties?.donut_app_controls?.groups||[])
+        for(const control of group.controls||[]) control.path=control.path.map(remap);
+    }
+    for(const edge of graph.links) {
+      if(Array.isArray(edge)){edge[1]=remap(edge[1]);edge[3]=remap(edge[3]);}
+      else {edge.origin_id=remap(edge.origin_id);edge.target_id=remap(edge.target_id);}
+    }
+  }
+  const remapLink=id=>id==null?id:id+7000000;
+  for(const graph of [copyRecipe,...copyRecipe.definitions.subgraphs]) {
+    for(const edge of graph.links) {if(Array.isArray(edge)) edge[0]=remapLink(edge[0]);else edge.id=remapLink(edge.id);}
+    for(const node of graph.nodes) {
+      for(const port of node.inputs||[]) if('link' in port) port.link=remapLink(port.link);
+      for(const port of node.outputs||[]) if(port.links) port.links=port.links.map(remapLink);
+    }
+    for(const port of [...(graph.inputs||[]),...(graph.outputs||[])]) if(port.linkIds) port.linkIds=port.linkIds.map(remapLink);
+  }
+  const ids=new Map(copyRecipe.definitions.subgraphs.map(graph=>[graph.id,'synthetic-copy-'+graph.id]));
+  for(const graph of [copyRecipe,...copyRecipe.definitions.subgraphs]) {
+    if(ids.has(graph.id)) graph.id=ids.get(graph.id);
+    for(const node of graph.nodes) if(ids.has(node.type)) node.type=ids.get(node.type);
+  }
+  return copyRecipe;
+}
+function syntheticFaceBriefs(workflow,face) {
+  nodeAt(workflow,1126).widgets_values[0]='WHOLE SCENE: a boat on a lake';
+  nodeAt(workflow,1125).widgets_values[0]='WHOLE STYLE: watercolor and golden light';
+  if(nodeAt(workflow,1178)) nodeAt(workflow,1178).widgets_values[0]=face;
+  nodeAt(workflow,984).mode=0;
+  return workflow;
+}
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+test('both bundled presets execute only their separate face text through edit and positive conditioning',()=>{
+  for(const original of [preset,JSON.parse(fs.readFileSync(path.join(root,'assets/base-workflow.json'),'utf8'))]) {
+    for(const face of ['FACE ONLY: freckles and a calm expression','']) {
+      const workflow=syntheticFaceBriefs(copy(original),face);
+      assert.deepEqual(executeFaceText(workflow),{edit:face,positive:face});
+      assert.equal(executeFaceText(workflow,true),'WHOLE STYLE: watercolor and golden lightWHOLE SCENE: a boat on a lake');
+    }
+  }
+});
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+// AC: @donut-create-plugin ac-workflow-state
+test('recognized saved broken face branches repair atomically, preserve settings, and are idempotent including copied IDs',async()=>{
+  for(const copied of [false,true]) {
+    for(const face of ['FACE ONLY: blue eyes','']) {
+      let workflow=syntheticFaceBriefs(brokenFaceRecipe(),face);
+      nodeAt(workflow,1180).widgets_values[2]=123456;nodeAt(workflow,1180).widgets_values[3]=false;
+      if(copied) workflow=copiedFaceRecipe(workflow);
+      const before=copy(workflow),env=fixture({initial:workflow,livePrompts:true});await env.boot();
+      assert.deepEqual(executeFaceText(env.current()),{edit:face,positive:face});
+      for(const id of [1126,1125,1178,1137,1180,984,1014]) assert.deepEqual(nodeAt(env.current(),id+(copied?5000:0)).widgets_values,nodeAt(before,id+(copied?5000:0)).widgets_values);
+      assert.equal(env.queued.length,0);
+      const reopened=fixture({initial:env.current(),livePrompts:true});await reopened.boot();
+      assert.deepEqual(reopened.current(),env.current());assert.equal(reopened.loaded.length,0);
+    }
+  }
+});
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+test('legacy missing branches upgrade to executable face-only routes without falling back to whole scene/style',async()=>{
+  const env=fixture({initial:legacyFaceRecipe(),livePrompts:true});await env.boot();
+  assert.deepEqual(executeFaceText(env.current()),{edit:'',positive:''});
+  env.editFace('FACE ONLY: green eyes');
+  assert.deepEqual(executeFaceText(env.current()),{edit:'FACE ONLY: green eyes',positive:'FACE ONLY: green eyes'});
+});
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+test('custom face text or conditioning wiring is preserved when a branch resembles the broken preset',async()=>{
+  for(const target of ['edit_prompt','conditioning_in_2']) {
+    const workflow=syntheticFaceBriefs(brokenFaceRecipe(),'FACE ONLY: preserve custom wiring');
+    const body=workflow.definitions.subgraphs.find(graph=>graph.nodes.some(node=>node.id===1180));
+    const edge=body.links.find(edge=>edge.origin_id===1180 && nodeAt(workflow,edge.target_id).inputs[edge.target_slot].name===target);
+    nodeAt(workflow,1180).outputs[edge.origin_slot].links=nodeAt(workflow,1180).outputs[edge.origin_slot].links.filter(id=>id!==edge.id);
+    edge.origin_id=996;nodeAt(workflow,996).outputs[edge.origin_slot].links.push(edge.id);
+    const before=copy(workflow),env=fixture({initial:workflow,livePrompts:true});await env.boot();
+    assert.deepEqual(env.current(),before);assert.equal(env.loaded.length,0);assert.equal(env.queued.length,0);
+  }
+});
+
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+test('new legacy face branches do not inherit selected whole-image prompt sets',async()=>{
+  const workflow=legacyFaceRecipe(),main=nodeAt(workflow,996),before=copy(main.widgets_values);
+  const names=Object.keys(main.widgets_values_named),sets=JSON.stringify([{face:'WHOLE STYLE SET',scene:'WHOLE SCENE SET'}]);
+  main.widgets_values[names.indexOf('prompt_sets_json')]=sets;main.widgets_values[names.indexOf('prompt_set_index')]=2;
+  main.widgets_values_named.prompt_sets_json=sets;main.widgets_values_named.prompt_set_index=2;
+  const authored=copy(main.widgets_values),env=fixture({initial:workflow,livePrompts:true});await env.boot();
+  assert.deepEqual(executeFaceText(env.current()),{edit:'',positive:''});
+  env.editFace('FACE ONLY: smile');assert.deepEqual(executeFaceText(env.current()),{edit:'FACE ONLY: smile',positive:'FACE ONLY: smile'});
+  assert.deepEqual(nodeAt(env.current(),996).widgets_values,authored);
+  assert.notDeepEqual(authored,before);
+  assert.equal(executeFaceText(env.current(),true),'WHOLE STYLE SETWHOLE SCENE SET');
+});
+
+// AC: @donut-create-plugin ac-workflow-state
+test('failed recognized face-route repair restores the complete broken saved recipe without generating',async()=>{
+  const workflow=syntheticFaceBriefs(brokenFaceRecipe(),'FACE ONLY: preserve draft'),before=copy(workflow);
+  const env=fixture({initial:workflow,livePrompts:true,failFaceUpgrade:true});await env.boot();
+  assert.deepEqual(env.current(),before);assert.equal(env.queued.length,0);assert.match(env.notice(),/face prompt could not be added/);
 });

@@ -174,7 +174,7 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
             response = await self.http.get(f"/studio/{sid}/workflow.json?preset={preset}")
             self.assertEqual(response.status_code, 200, response.text)
             workflow = response.json()
-            self.assertEqual(workflow["extra"]["donut_workflow"]["controls_revision"], 1)
+            self.assertEqual(workflow["extra"]["donut_workflow"]["controls_revision"], 2)
             face = [node for graph in workflow["definitions"]["subgraphs"] for node in graph["nodes"]
                     if node.get("properties", {}).get("dmc_prompt_role") == "face" and node["type"] == "DF_Text_Box"]
             self.assertEqual(len(face), 1)

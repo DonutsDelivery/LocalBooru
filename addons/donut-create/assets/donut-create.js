@@ -805,7 +805,7 @@
       throw new Error(['Missing node types: ' + [...missingNodes].join(', '), 'Missing models: ' + [...missingModels].join(', ')].filter(value => !value.endsWith(': ')).join('. ') + '. Install the selected models and node packs before generating.');
     }
   }
-  // Add only the missing face branch to recognized pre-face v5 recipes. Never
+  // Repair recognized stock face routes or add a missing legacy branch. Never
   // replace a saved recipe or reinterpret custom/partially upgraded face wiring.
   function upgradeLegacyFacePrompt(workflow, template) {
     const clone = value => JSON.parse(JSON.stringify(value));
@@ -827,6 +827,53 @@
     const allGraphs = [workflow, ...(workflow.definitions?.subgraphs || [])];
     const seeds = sources?.nodes?.filter(item => item.type === 'SeedNode' && item.outputs?.[0]?.name === 'seed') || [];
     const detail = body && node(body, detailControl.path[1]);
+    if (sources && body && detail?.type === 'DonutFaceDetailer'
+      && sources.outputs.some(port => port.name === 'face_instruction')
+      && body.inputs.some(port => port.name === 'face_instruction')) {
+      const edgeTo = (target, name) => body.links.filter(edge => sameId(edge.target_id, target.id)
+        && target.inputs?.[edge.target_slot]?.name === name);
+      const edits = edgeTo(detail, 'edit_prompt');
+      if (edits.length !== 1) return null;
+      const edit = edits[0], branch = node(body, edit.origin_id);
+      if (branch?.type !== 'DonutPromptConditioning' || branch.outputs?.[edit.origin_slot]?.name !== 'full_text') return null;
+      const faceEdges = edgeTo(branch, 'face'), sceneEdges = edgeTo(branch, 'scene');
+      if (faceEdges.length !== 1 || sceneEdges.length !== 1) return null;
+      const context = faceEdges[0], instruction = sceneEdges[0], whole = node(body, context.origin_id);
+      if (whole?.type !== 'DonutPromptConditioning' || whole.outputs?.[context.origin_slot]?.name !== 'full_text'
+        || instruction.origin_id !== -10 || body.inputs[instruction.origin_slot]?.name !== 'face_instruction') return null;
+      const positives = body.links.filter(edge => sameId(edge.origin_id, branch.id)
+        && branch.outputs[edge.origin_slot]?.name === 'positive'
+        && node(body, edge.target_id)?.type === 'DonutKrea2FusionControl'
+        && node(body, edge.target_id).inputs[edge.target_slot]?.name === 'conditioning_in_2');
+      if (positives.length !== 1) return null;
+      const positive = positives[0], fusion = node(body, positive.target_id), detailPositive = edgeTo(detail, 'positive');
+      if (detailPositive.length !== 1 || !sameId(detailPositive[0].origin_id, fusion.id)
+        || fusion.outputs[detailPositive[0].origin_slot]?.name !== 'conditioning_out_2') return null;
+      // Only recognize the complete old stock branch: input/output link metadata
+      // must agree and no extra consumers may be silently reinterpreted.
+      const expected = new Set([edit.id, positive.id]);
+      if ([context, instruction, edit, positive, detailPositive[0]].some(edge =>
+        node(body, edge.target_id)?.inputs[edge.target_slot]?.link !== edge.id
+        || (edge.origin_id === -10 ? !body.inputs[edge.origin_slot].linkIds?.includes(edge.id)
+          : !node(body, edge.origin_id)?.outputs[edge.origin_slot]?.links?.includes(edge.id)))
+        || body.links.some(edge => sameId(edge.origin_id, branch.id) && !expected.has(edge.id))
+        || branch.outputs.some(output => (output.links || []).some(id => !expected.has(id)))) return null;
+      const result = clone(workflow), updatedBody = graph(result, bodyNode.type), updatedBranch = node(updatedBody, branch.id);
+      const updatedContext = updatedBody.links.find(edge => edge.id === context.id);
+      const updatedInstruction = updatedBody.links.find(edge => edge.id === instruction.id);
+      updatedContext.target_slot = instruction.target_slot; updatedInstruction.target_slot = context.target_slot;
+      updatedBranch.inputs[context.target_slot].link = instruction.id;
+      updatedBranch.inputs[instruction.target_slot].link = context.id;
+      for (const original of [edit, positive]) {
+        const edge = updatedBody.links.find(edge => edge.id === original.id), name = original === edit ? 'face_text' : 'face_positive';
+        const slot = updatedBranch.outputs.findIndex(output => output.name === name);
+        if (slot < 0) return null;
+        updatedBranch.outputs[edge.origin_slot].links = updatedBranch.outputs[edge.origin_slot].links.filter(id => id !== edge.id);
+        edge.origin_slot = slot; updatedBranch.outputs[slot].links.push(edge.id);
+      }
+      updatedBranch.title = 'Face-only conditioning · separate face instruction';
+      return result;
+    }
     if (!sources || !body || !groups?.[0]?.controls || seeds.length !== 1
       || node(sources, sceneControl.path[1])?.type !== 'DF_Text_Box' || detail?.type !== 'DonutFaceDetailer'
       || sources.outputs.some(port => port.name === 'face_instruction')
@@ -841,7 +888,7 @@
       && node(body, edge.target_id)?.type === 'DonutKrea2FusionControl'
       && node(body, edge.target_id).inputs?.[edge.target_slot]?.name === 'conditioning_in_2');
     if (fusionEdges.length !== 1) return null;
-    const routes = [[detailEdge, 1, 0], [fusionEdges[0], 4, 3]].map(([edge, oldSlot, newSlot]) => {
+    const routes = [[detailEdge, 1, 1], [fusionEdges[0], 4, 4]].map(([edge, oldSlot, newSlot]) => {
       const target = node(body, edge.target_id);
       return sameId(edge.origin_id, conditioning.id) && edge.origin_slot === oldSlot
         && target.inputs[edge.target_slot].link === edge.id && conditioning.outputs[oldSlot].links?.includes(edge.id)
@@ -871,9 +918,17 @@
     addNode(resultSources, sourceTemplate, 1178);
     addNode(resultSources, sourceTemplate, 1179);
     const faceConditioning = addNode(resultBody, bodyTemplate, 1180);
-    // Keep the recipe's conditioning options rather than copying preset values.
+    // Keep conditioning options, but a new face branch must not inherit the
+    // whole-image prompt-set overrides in place of its separate face input.
+    const defaults = clone(faceConditioning.widgets_values), defaultNamed = clone(faceConditioning.widgets_values_named);
+    const names = Object.keys(defaultNamed);
     faceConditioning.widgets_values = clone(conditioning.widgets_values);
     if (conditioning.widgets_values_named) faceConditioning.widgets_values_named = clone(conditioning.widgets_values_named);
+    for (const name of ['prompt_sets_json', 'prompt_set_index', 'control_after_generate']) {
+      const slot = names.indexOf(name);
+      if (slot >= 0) faceConditioning.widgets_values[slot] = defaults[slot];
+      faceConditioning.widgets_values_named[name] = defaultNamed[name];
+    }
     const outputSlot = resultSources.outputs.length, inputSlot = resultBody.inputs.length;
     const sourcePort = clone(sourceTemplate.outputs.find(port => port.name === 'face_instruction'));
     sourcePort.linkIds = sourcePort.linkIds.map(newId); resultSources.outputs.push(sourcePort);
