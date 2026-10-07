@@ -31,3 +31,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T03:16:57.275Z
+  - _ulid: 01M4A62FR3WAK291XEPXM4A1BS
+    content: Repair merged to main at 10b45af6. Native installer is queued behind DonutStudio builds
+      under the shared host gate, session 67304 / installer PID 204776, log
+      /tmp/dmc-face-prompt-install.log. Owned finish-shipping watcher session 11118 waits for that
+      installer, verifies embedded adapter and binary checksum, runs only canonical
+      app:test-isolated against exact installed binary on 18791, cleans its disposable profile, and
+      completes this task only after success. Shipping result goes to
+      /tmp/dmc-face-prompt-shipping-result.json. Normal user app and prompt lab remain untouched.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T03:21:19.875Z
