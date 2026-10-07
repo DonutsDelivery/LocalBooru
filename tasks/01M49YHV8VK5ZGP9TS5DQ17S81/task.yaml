@@ -13,8 +13,13 @@ description: Implement pinned verified llama.cpp runtime and MiniCPM Q6_K defaul
 spec_ref: "@create-managed-prompt-enhancer"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Managed enhancer integrated into main at 44f1feca and installed. Both existing image
+  and face descriptions feed MiniCPM/Qwen; original-preserving preview and guarded pair apply,
+  pinned verified local runtime/downloads and scoped cleanup implemented. Focused tests, both real
+  synthetic models, frontend, native deployment and isolated installed startup pass. Existing
+  surrounding suite failures documented against unchanged main. No push/publication.
 depends_on: []
 context: []
 priority: 2
@@ -74,7 +79,26 @@ history:
         previous: "@create-enhancer-review"
     command: review-link
     timestamp: 2026-10-07T02:14:08.461Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Managed enhancer integrated into main at 44f1feca and installed. Both existing image and face
+          descriptions feed MiniCPM/Qwen; original-preserving preview and guarded pair apply, pinned
+          verified local runtime/downloads and scoped cleanup implemented. Focused tests, both real
+          synthetic models, frontend, native deployment and isolated installed startup pass.
+          Existing surrounding suite failures documented against unchanged main. No
+          push/publication.
+        previous: null
+      completed_at:
+        new: 2026-10-07T02:32:13.661Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-07T02:32:13.668Z
 created_at: 2026-10-07T01:09:54.587Z
 started_at: 2026-10-07T01:09:54.765Z
 submitted_at: 2026-10-07T01:35:28.543Z
+completed_at: 2026-10-07T02:32:13.661Z
 todos: []

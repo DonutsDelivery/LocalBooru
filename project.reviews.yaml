@@ -15986,6 +15986,22 @@ reviews:
         runner: scripts/run-cargo.sh
         created_at: 2026-10-07T02:23:59.958Z
         completed_at: 2026-10-07T02:23:59.958Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+        evidence: Merged unchanged product into local main 44f1feca. Release compile and atomic installation
+          passed. Installed and build binaries both SHA256
+          1a76fa743d6553d96670cf84f858a5566858266deb17b10cfd3ce6ccd3e9a5bd. Exact installed binary
+          passed canonical isolated readiness/healthy instance identity and empty gallery UI
+          startup. Test session stopped and disposable root removed. Normal app/library and private
+          prompt comparison untouched. Compiler writers exited.
+        name: Installed Linux startup
+        required: true
+        runner: npm run app:install + app:test-isolated
+        created_at: 2026-10-07T02:32:13.349Z
+        completed_at: 2026-10-07T02:32:13.349Z
     events:
       - _ulid: 01M4A27EHQ5JM9E67XKC86JR5A
         actor: codex-self-review
@@ -16052,6 +16068,13 @@ reviews:
           from: open
           to: closed
         timestamp: 2026-10-07T02:24:00.413Z
+      - _ulid: 01M4A38JC01A0VRJ5225B2EZD9
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: pass
+          name: Installed Linux startup
+        timestamp: 2026-10-07T02:32:13.441Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -16074,5 +16097,5 @@ reviews:
         role: reviewer
         created_at: 2026-10-07T02:24:00.412Z
     created_at: 2026-10-07T02:14:08.183Z
-    updated_at: 2026-10-07T02:24:00.413Z
+    updated_at: 2026-10-07T02:32:13.349Z
     notes: []
