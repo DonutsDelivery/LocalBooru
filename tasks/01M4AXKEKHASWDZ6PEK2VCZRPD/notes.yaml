@@ -8,3 +8,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T10:14:51.622Z
+  - _ulid: 01M4AYMKQWM052CNY52J40HT33
+    content: Candidate d6c24fb8158b58f788c65a99bfd1c2ed8e1a69b8 defaults saving on absent explicit
+      preference; remembers opt-out; lazily prepares library-owned destination for
+      Basic/Edit/Instant/Advanced before queue. Scoped handshake/cancellation epoch handles
+      close/reopen/stale/server/choice changes; errors visible near Generate. 14 focused Host
+      and40adapter tests pass, ESLint/diff clean. Two existing Host URL-only management failures
+      independently reproduced atbc6b6025; four source/testpaths only.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T10:30:39.612Z
