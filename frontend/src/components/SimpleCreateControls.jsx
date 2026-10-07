@@ -157,7 +157,7 @@ function EffectSection({ title, toggle, children }) {
 export default function SimpleCreateControls({
   snapshot, sessionId, activeTab, onTabChange, connected, connecting, busy, error, mobilePane,
   onPatch, onGenerate, onEnhancerConfig, onLoadPreset, onUpload, onUploadMask, onRetry, onAdvanced,
-  onReferenceTools, referenceUrls = {}, runInstant, onRunInstantChange, onDraftChange,
+  onReferenceTools, referenceUrls = {}, runInstant, onRunInstantChange, onPauseInstant, onDraftChange, runPending = false,
   children, historyContent, jobsContent, finalizeContent, navigation, mobileNavigation, exitNavigation, modeNavigation,
 }) {
   const [drafts, setDrafts] = useState({})
@@ -165,10 +165,14 @@ export default function SimpleCreateControls({
   const [confirmReset, setConfirmReset] = useState(false)
   const [inputError, setInputError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const [lowerExpanded, setLowerExpanded] = useState(false)
   const [sliding, setSliding] = useState(false)
   const panels = useCreatePanelSizes(lowerExpanded, setLowerExpanded)
   const draftRef = useRef({})
+  const draftVersions = useRef({})
+  const enhancerDraftPending = useRef(false)
+  const [enhancerPending, setEnhancerPending] = useState(false)
   const sliderInteractions = useRef(new Set())
   const controlsAlive = useRef(true)
   const draftReporter = useRef(onDraftChange)
@@ -184,7 +188,9 @@ export default function SimpleCreateControls({
     return fields[key]?.value ?? ''
   }
   const options = key => Array.isArray(fields[key]?.options) ? fields[key].options : []
-  const locked = !connected || submitting || (!!busy && busy !== 'patch')
+  const stagingRun = submitting || runPending || busy === 'generate'
+  const draftLocked = resetting || (!connected && !stagingRun) || (!!busy && !['patch', 'generate'].includes(busy))
+  const locked = draftLocked || stagingRun || enhancerPending
   const editing = value('editing') === true
   const merging = value('modelMode') === 'Merge two models'
   const independentEditing = editing && value('geometryMode') === 'Independent crops'
@@ -200,8 +206,13 @@ export default function SimpleCreateControls({
   const fixedSeed = /fixed|custom|manual|keep/i.test(String(value('seedMode')))
   const hasReference = key => /^donutref:[a-f0-9]{64}$/.test(String(value(key)))
   const notifyDrafts = useCallback(next => {
-    if (controlsAlive.current) onDraftChange?.(submission.current || sliderInteractions.current.size > 0 || Object.keys(next).length > 0)
+    if (controlsAlive.current) onDraftChange?.(submission.current || enhancerDraftPending.current || sliderInteractions.current.size > 0 || Object.keys(next).length > 0)
   }, [onDraftChange])
+  const reportEnhancerDraft = useCallback(pending => {
+    enhancerDraftPending.current = pending
+    setEnhancerPending(pending)
+    notifyDrafts(draftRef.current)
+  }, [notifyDrafts])
   const sliderInteraction = useCallback((id, active) => {
     if (!controlsAlive.current) return
     if (active) sliderInteractions.current.add(id)
@@ -223,7 +234,7 @@ export default function SimpleCreateControls({
 
   async function resetWorkflow() {
     if (locked || sliding) return
-    setSubmitting(true)
+    setResetting(true)
     setInputError('')
     onRunInstantChange?.(false)
     try {
@@ -231,7 +242,7 @@ export default function SimpleCreateControls({
       if (controlsAlive.current) setConfirmReset(false)
     } catch (error) {
       if (controlsAlive.current) setInputError(error.message || 'The workflow preset could not be loaded.')
-    } finally { if (controlsAlive.current) setSubmitting(false) }
+    } finally { if (controlsAlive.current) setResetting(false) }
   }
 
   function stage(key, nextValue) {
@@ -239,13 +250,17 @@ export default function SimpleCreateControls({
     // The genuine shared-prompt graph executes one scene field in both tabs.
     if (key === 'prompt') delete next.editPrompt
     if (key === 'editPrompt') delete next.prompt
+    draftVersions.current[key] = (draftVersions.current[key] || 0) + 1
     draftRef.current = next
     setDrafts(next)
     notifyDrafts(next)
     setInputError('')
   }
 
-  const commit = useCallback(async (patch, expected) => {
+  const commit = useCallback(async (patch, expected, submitDraft = false) => {
+    // Next-run changes stay local until the captured run (including cancellation) settles.
+    if (!submitDraft && (submission.current || runPending || busy === 'generate')) return
+    const versions = { ...draftVersions.current }
     const normalized = {}
     try {
       for (const [key, raw] of Object.entries(patch)) {
@@ -282,20 +297,20 @@ export default function SimpleCreateControls({
     if (expected) await onPatch(normalized, expected)
     else await onPatch(normalized)
     const remaining = { ...draftRef.current }
-    for (const [key, raw] of Object.entries(patch)) if (Object.is(remaining[key], raw)) delete remaining[key]
+    for (const [key, raw] of Object.entries(patch)) if (Object.is(remaining[key], raw) && draftVersions.current[key] === versions[key]) delete remaining[key]
     draftRef.current = remaining
     setDrafts(remaining)
     notifyDrafts(remaining)
-  }, [fields, onPatch, onRunInstantChange, notifyDrafts])
+  }, [fields, onPatch, onRunInstantChange, notifyDrafts, runPending, busy])
 
   useEffect(() => {
-    if (!runInstant || !connected || busy || submitting || sliding || !Object.keys(drafts).length) return
+    if (!runInstant || !connected || busy || submitting || runPending || enhancerPending || sliding || !Object.keys(drafts).length) return
     const timer = setTimeout(() => {
       if (sliderInteractions.current.size || submission.current) return
       commit({ ...draftRef.current }).catch(() => {})
     }, 450)
     return () => clearTimeout(timer)
-  }, [runInstant, connected, busy, submitting, sliding, drafts, commit])
+  }, [runInstant, connected, busy, submitting, runPending, enhancerPending, sliding, drafts, commit])
 
   function commitField(key) {
     if (Object.hasOwn(draftRef.current, key)) return commit({ [key]: draftRef.current[key] }).catch(() => {})
@@ -312,8 +327,14 @@ export default function SimpleCreateControls({
       onTabChange(tab)
       return
     }
+    if (stagingRun) {
+      stage('editing', tab === 'edit')
+      onTabChange(tab)
+      return
+    }
+    stage('editing', tab === 'edit')
     try {
-      await commit({ ...draftRef.current, editing: tab === 'edit' })
+      await commit({ ...draftRef.current })
       onTabChange(tab)
     } catch { /* The host keeps the actionable bridge error visible. */ }
   }
@@ -326,7 +347,7 @@ export default function SimpleCreateControls({
     notifyDrafts(draftRef.current)
     setInputError('')
     try {
-      await commit({ ...draftRef.current })
+      await commit({ ...draftRef.current }, undefined, true)
       await onGenerate()
     } catch { /* Keep drafts and the host's error for a deliberate retry. */ }
     finally {
@@ -356,7 +377,7 @@ export default function SimpleCreateControls({
     const published = choices.some(option => Object.is(option, current))
     const isModel = /model|lora|vae/i.test(key) && key !== 'modelMode'
     return <label className="create-field" key={key}>{label}
-      <select value={String(current)} disabled={locked || choices.length === 0} onChange={event => {
+      <select value={String(current)} disabled={draftLocked || choices.length === 0} onChange={event => {
         const selected = choices.find(option => String(option) === event.target.value)
         if (selected != null) choose(key, selected)
       }}>
@@ -369,7 +390,7 @@ export default function SimpleCreateControls({
   function textField(key, label = LABELS[key], placeholder, rows = 3) {
     if (!available(key)) return null
     return <label className="create-field" key={key}>{label}
-      <textarea rows={rows} value={value(key)} placeholder={placeholder} disabled={locked}
+      <textarea rows={rows} value={value(key)} placeholder={placeholder} disabled={draftLocked}
         onChange={event => stage(key, event.target.value)} onBlur={() => commitField(key)} />
     </label>
   }
@@ -377,10 +398,10 @@ export default function SimpleCreateControls({
   function numberField(key, label = LABELS[key]) {
     if (!available(key)) return null
     const field = fields[key]
-    if (SLIDER_FIELDS.has(key)) return <SliderNumberField key={key} label={label} value={value(key)} bounds={field} sliderStep={['megapixels', 'cropAX', 'cropAY', 'cropBX', 'cropBY', 'maskBThreshold'].includes(key) ? field.step : Math.max(field.step || 0, 0.05)} disabled={locked}
+    if (SLIDER_FIELDS.has(key)) return <SliderNumberField key={key} label={label} value={value(key)} bounds={field} sliderStep={['megapixels', 'cropAX', 'cropAY', 'cropBX', 'cropBY', 'maskBThreshold'].includes(key) ? field.step : Math.max(field.step || 0, 0.05)} disabled={draftLocked}
       onChange={next => stage(key, next)} onCommit={() => commitField(key)} onInteraction={sliderInteraction} />
     return <label className="create-field" key={key}>{label}
-      <input type="number" value={displayNumber(value(key))} min={field.min ?? undefined} max={field.max ?? undefined} step={field.step ?? 'any'} disabled={locked}
+      <input type="number" value={displayNumber(value(key))} min={field.min ?? undefined} max={field.max ?? undefined} step={field.step ?? 'any'} disabled={draftLocked}
         onChange={event => stage(key, event.target.value)} onBlur={() => commitField(key)} />
     </label>
   }
@@ -388,14 +409,14 @@ export default function SimpleCreateControls({
   function switchField(key, label) {
     if (!available(key)) return null
     return <label className="create-toggle" key={key}><span>{label}</span>
-      <input type="checkbox" role="switch" checked={value(key) === true} disabled={locked} onChange={event => choose(key, event.target.checked)} />
+      <input type="checkbox" role="switch" checked={value(key) === true} disabled={draftLocked} onChange={event => choose(key, event.target.checked)} />
     </label>
   }
 
   function feature(key, title, contents, note) {
     if (!available(key)) return null
     return <EffectSection key={key} title={title}
-      toggle={<input type="checkbox" role="switch" aria-label={title} checked={value(key) === true} disabled={locked}
+      toggle={<input type="checkbox" role="switch" aria-label={title} checked={value(key) === true} disabled={draftLocked}
         onChange={event => choose(key, event.target.checked)} />}>
       {contents}{note && <p className="create-control-note">{note}</p>}
     </EffectSection>
@@ -406,7 +427,7 @@ export default function SimpleCreateControls({
     const active = Number(value(key)) !== 0
     return <EffectSection key={key} title={title}
       toggle={<><small className="create-effect-value">{active ? displayNumber(value(key)) : 'Off'}</small>
-        <input type="checkbox" role="switch" aria-label={title} checked={active} disabled={locked} onChange={event => {
+        <input type="checkbox" role="switch" aria-label={title} checked={active} disabled={draftLocked} onChange={event => {
           if (!event.target.checked) rememberedStrength.current[key] = value(key)
           const initial = rememberedStrength.current[key] || fields[key].default || Math.min(fields[key].max ?? 1, Math.max(fields[key].min ?? 0, 1))
           choose(key, event.target.checked ? Number(initial) : 0)
@@ -439,7 +460,7 @@ export default function SimpleCreateControls({
   function sizing() {
     return <>
       {ratios.length > 0 && <fieldset className="create-shape-field"><legend>Image shape</legend>
-        <div className="create-shape-options">{ratios.map(shape => <button type="button" key={String(shape.value)} disabled={locked}
+        <div className="create-shape-options">{ratios.map(shape => <button type="button" key={String(shape.value)} disabled={draftLocked}
           aria-pressed={value('aspectRatio') === shape.value && usesShape} onClick={() => {
             const patch = { aspectRatio: shape.value }
             stage('aspectRatio', shape.value)
@@ -464,23 +485,23 @@ export default function SimpleCreateControls({
     const choices = options('loras'), bounds = fields.loras
     const update = (index, key, next) => choose('loras', rows.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: next } : row))
     return <section className="create-lora-section">
-      <header><div><h3>LoRAs</h3><p>Mix a style or subject into the current model recipe.</p></div><button type="button" disabled={locked || !choices.length} onClick={() => choose('loras', [...rows, {
+      <header><div><h3>LoRAs</h3><p>Mix a style or subject into the current model recipe.</p></div><button type="button" disabled={draftLocked || !choices.length} onClick={() => choose('loras', [...rows, {
         id: globalThis.crypto?.randomUUID?.() || `lora-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         enabled: true, lora_name: choices[0], model_weight: 1, clip_weight: 1,
       }])}>＋ Add LoRA</button></header>
       {rows.length === 0 && <p className="create-control-note">No LoRAs selected. Add one from the backend’s installed models.</p>}
       <div className="create-lora-rows">{rows.map((row, index) => <div className={`create-lora-row${row.enabled === false ? ' is-disabled' : ''}`} key={row.id || index}>
-        <label className="create-lora-enabled"><input type="checkbox" checked={row.enabled !== false} disabled={locked} aria-label={`Enable LoRA ${index + 1}`} onChange={event => update(index, 'enabled', event.target.checked)} /></label>
-        <label className="create-field create-lora-name">LoRA<select value={row.lora_name || ''} disabled={locked || row.enabled === false || !choices.length} onChange={event => update(index, 'lora_name', event.target.value)}>
+        <label className="create-lora-enabled"><input type="checkbox" checked={row.enabled !== false} disabled={draftLocked} aria-label={`Enable LoRA ${index + 1}`} onChange={event => update(index, 'enabled', event.target.checked)} /></label>
+        <label className="create-field create-lora-name">LoRA<select value={row.lora_name || ''} disabled={draftLocked || row.enabled === false || !choices.length} onChange={event => update(index, 'lora_name', event.target.value)}>
           {!choices.includes(row.lora_name) && <option value={row.lora_name || ''}>{row.lora_name ? modelLabel(row.lora_name) : 'Choose an installed LoRA'}</option>}
           {choices.map(choice => <option value={choice} key={choice}>{modelLabel(choice)}</option>)}
         </select></label>
         {row.enabled !== false && ['model_weight', 'clip_weight'].map((key, strengthIndex) => <SliderNumberField key={key}
           className={`create-lora-strength create-lora-${strengthIndex === 0 ? 'model' : 'text'}-strength`} label={strengthIndex === 0 ? 'Model strength' : 'Text strength'} context={`LoRA ${index + 1}`}
-          value={row[key] ?? 1} bounds={{ min: bounds.min ?? -1000, max: bounds.max ?? 1000, step: bounds.step ?? 0.01 }} sliderBounds={[-2, 2]} sliderStep={0.05} disabled={locked}
+          value={row[key] ?? 1} bounds={{ min: bounds.min ?? -1000, max: bounds.max ?? 1000, step: bounds.step ?? 0.01 }} sliderBounds={[-2, 2]} sliderStep={0.05} disabled={draftLocked}
           onChange={next => stage('loras', rows.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: next } : item))}
           onCommit={() => commitField('loras')} onInteraction={sliderInteraction} />)}
-        <button type="button" className="create-lora-remove" disabled={locked} aria-label={`Remove LoRA ${index + 1}`} onClick={() => choose('loras', rows.filter((_, rowIndex) => rowIndex !== index))}>×</button>
+        <button type="button" className="create-lora-remove" disabled={draftLocked} aria-label={`Remove LoRA ${index + 1}`} onClick={() => choose('loras', rows.filter((_, rowIndex) => rowIndex !== index))}>×</button>
       </div>)}</div>
     </section>
   }
@@ -501,7 +522,7 @@ export default function SimpleCreateControls({
       {panels.desktop && exitNavigation}
       <div className="create-control-tabs" role="tablist" aria-label="Studio controls">
         {['create', 'edit', 'finalize'].map(tab => <button type="button" role="tab" id={`create-tab-${tab}`} key={tab}
-          aria-selected={activeTab === tab} aria-controls={`create-panel-${tab}`} tabIndex={activeTab === tab ? 0 : -1} disabled={submitting || sliding || !!busy}
+          aria-selected={activeTab === tab} aria-controls={`create-panel-${tab}`} tabIndex={activeTab === tab ? 0 : -1} disabled={resetting || sliding || (!!busy && !['patch', 'generate'].includes(busy))}
           onKeyDown={event => {
             const tabs = ['create', 'edit', 'finalize'], index = tabs.indexOf(tab)
             const next = event.key === 'ArrowRight' ? tabs[(index + 1) % tabs.length] : event.key === 'ArrowLeft' ? tabs[(index + tabs.length - 1) % tabs.length] : event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs.at(-1) : null
@@ -520,23 +541,23 @@ export default function SimpleCreateControls({
           {confirmReset ? <div>
             <p className="create-control-note">Replace current prompts, references, and workflow settings with {workflowPreset === 'base' ? 'Neutral starter' : 'Original v5'}? Saved images and downloaded models are kept.</p>
             <div className="create-enhancer-actions"><button type="button" disabled={locked || sliding} onClick={resetWorkflow}>Confirm reset</button>
-              <button type="button" disabled={submitting} onClick={() => setConfirmReset(false)}>Keep current workflow</button></div>
+              <button type="button" disabled={resetting} onClick={() => setConfirmReset(false)}>Keep current workflow</button></div>
           </div> : <button type="button" disabled={locked || sliding} onClick={() => setConfirmReset(true)}>Reset workflow</button>}
           <p className="create-control-note">Loads fresh controls. Original v5 uses its original model and LoRA choices, which must be installed to generate.</p>
         </details>}
         {!connected && <div className="create-connection-note" role="status"><span className={connecting ? 'create-spinner' : 'create-connection-dot'} aria-hidden="true" />
           <div><strong>{connecting ? 'Preparing your studio…' : 'Studio not connected'}</strong><p>{error || snapshot?.error || 'Waiting for ComfyUI and the workflow to finish loading. This can take up to five minutes. You can close the studio while it starts.'}</p>
-            {!connecting && <button type="button" onClick={onRetry}>Retry connection</button>}</div>
+            {!connecting && <button type="button" disabled={stagingRun || resetting} onClick={onRetry}>Retry connection</button>}</div>
         </div>}
-        {activeTab !== 'finalize' && <>
+        <div hidden={activeTab === 'finalize'}>
           {textField(activeTab === 'edit' ? 'editPrompt' : 'prompt', 'Describe your image', activeTab === 'edit' ? 'The finished image: keep the subject, change the background to a sunny beach…' : 'A cozy cabin beside a lake, morning mist, warm sunlight…', 6)}
           {value('faceDetail') === true && textField('facePrompt', 'Describe only the face', 'Expression, facial features, makeup…', 3)}
           {sessionId && <CreatePromptEnhancer
-            sessionId={sessionId} disabled={locked || !available(activeTab === 'edit' ? 'editPrompt' : 'prompt') || !available('facePrompt')}
+            sessionId={sessionId} runPending={stagingRun} disabled={draftLocked || !available(activeTab === 'edit' ? 'editPrompt' : 'prompt') || !available('facePrompt')}
             unavailableReason={connected && (!available(activeTab === 'edit' ? 'editPrompt' : 'prompt') || !available('facePrompt'))
               ? 'This custom workflow does not expose both prompt controls. Expose the image and face prompts in Advanced before enhancing.' : ''}
             config={snapshot?.enhancer} onConfigure={onEnhancerConfig}
-            onPauseInstant={() => onRunInstantChange?.(false)} />}
+            onPauseInstant={onPauseInstant || (() => onRunInstantChange?.(false))} onDraftChange={reportEnhancerDraft} />}
           {(available('stylePrompt') || showNegativePrompt) && <details className="create-prompt-options"><summary>Style & exclusions <span>Optional</span></summary>
             {textField('stylePrompt', 'Style prompt', 'Lighting, colors, artistic style…')}{showNegativePrompt && textField('negativePrompt', 'Avoid in the image', 'Things you want to leave out…')}
           </details>}
@@ -567,7 +588,7 @@ export default function SimpleCreateControls({
             </details>
             {value('inpaint') === true && numberField('maskFeather')}{sizing()}
           </>}
-        </>}
+        </div>
         {activeTab === 'create' && <details className="create-prompt-options"><summary>Sampling <span>Steps, seed & more</span></summary>
           <div className="create-control-pair">{numberField('steps')}{numberField('guidance')}</div>
           {selectField('sampler')}{selectField('scheduler')}{numberField('batchSize')}{selectField('seedMode')}{fixedSeed && numberField('seed')}
@@ -589,6 +610,7 @@ export default function SimpleCreateControls({
         <button type="submit" className="create-primary create-generate" disabled={locked || sliding || (!!busy && busy !== 'patch') || (editing && !hasReference('referenceA'))}>
           <SparkIcon /><span>{busy === 'generate' ? 'Adding to queue…' : editing ? 'Generate edit' : 'Generate image'}</span>{Number(value('batchSize')) > 1 && <small>×{value('batchSize')}</small>}
         </button>
+        {stagingRun && <p role="status">You can prepare the next run while this request finishes.</p>}
         <p>{busy === 'generate' && snapshot?.enhancer?.enabled ? 'Enhancing prompts with this run’s seed, then queueing the image…' : busy === 'patch' ? 'Updating workflow…' : editing && !hasReference('referenceA') ? 'Add Reference A to begin.' : runInstant ? 'Runs the latest acknowledged draft when the queue is empty.' : connected ? 'Generate uses the current workflow.' : 'Connect the studio to generate.'}</p>
       </footer>
     </aside>

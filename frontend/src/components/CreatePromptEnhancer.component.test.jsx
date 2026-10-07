@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import CreatePromptEnhancer from './CreatePromptEnhancer'
 import SimpleCreateControls from './SimpleCreateControls'
 import { getEnhancerStatus, startEnhancer, cancelEnhancer } from '../services/donutCreate'
@@ -58,9 +58,9 @@ test('enables once without enhancing or applying either source input', async () 
   const onConfigure = vi.fn().mockResolvedValue(undefined)
   render(<CreatePromptEnhancer sessionId="synthetic" config={{enabled:false,model:'minicpm'}} onConfigure={onConfigure} />)
   fireEvent.click(screen.getByText('Prompt enhancer'))
-  const toggle = await screen.findByRole('checkbox',{name:'Enhance every run'})
+  const toggle = await screen.findByRole('checkbox',{name:'Enable prompt enhancement'})
   await waitFor(()=>expect(toggle.disabled).toBe(false)); fireEvent.click(toggle)
-  await waitFor(()=>expect(onConfigure).toHaveBeenCalledWith({enabled:true,model:'minicpm'}))
+  await waitFor(()=>expect(onConfigure).toHaveBeenCalledWith({enabled:true,model:'minicpm',timing:'always'}))
   expect(startEnhancer).not.toHaveBeenCalled()
   expect(screen.queryByRole('button',{name:'Enhance prompts'})).toBeNull()
   expect(screen.queryByRole('button',{name:'Apply both prompts'})).toBeNull()
@@ -103,7 +103,7 @@ test.each([false,true])('setup accessible but automatic enhancement disabled wit
   render(<SimpleCreateControls sessionId="synthetic" activeTab="create" connected snapshot={{fields:{prompt:{kind:'text',value:'A synthetic owl.'},facePrompt:{kind:'text',value:null,available:false},faceDetail:{kind:'boolean',value:true}}}} onPatch={vi.fn()} onGenerate={vi.fn()} onEnhancerConfig={vi.fn()} />)
   fireEvent.click(screen.getByText('Prompt enhancer')); const name=ready?'Repair / verify model':'Download model'
   await waitFor(()=>expect(screen.getByRole('button',{name}).disabled).toBe(false))
-  expect(screen.getByRole('checkbox',{name:'Enhance every run'}).disabled).toBe(true)
+  expect(screen.getByRole('checkbox',{name:'Enable prompt enhancement'}).disabled).toBe(true)
   expect(screen.getByText(/This custom workflow does not expose both prompt controls/)).toBeTruthy()
 })
 // AC: @create-managed-prompt-enhancer ac-per-run-seed
@@ -113,7 +113,7 @@ test('model selection changes future runs without enhancing a draft',async()=>{
   fireEvent.click(screen.getByText('Prompt enhancer'))
   await waitFor(()=>expect(screen.getByLabelText('Enhancer model').options.length).toBe(2))
   fireEvent.change(screen.getByLabelText('Enhancer model'),{target:{value:'qwen'}})
-  await waitFor(()=>expect(onConfigure).toHaveBeenCalledWith({enabled:true,model:'qwen'}))
+  await waitFor(()=>expect(onConfigure).toHaveBeenCalledWith({enabled:true,model:'qwen',timing:'always'}))
   expect(startEnhancer).not.toHaveBeenCalled()
 })
 
@@ -123,9 +123,9 @@ test('can disable automatic enhancement if the configured model or workflow beco
   const onConfigure=vi.fn().mockResolvedValue(undefined)
   render(<CreatePromptEnhancer sessionId="synthetic" config={{enabled:true,model:'minicpm'}} disabled unavailableReason="Synthetic missing binding" onConfigure={onConfigure} />)
   fireEvent.click(screen.getByText('Prompt enhancer'))
-  const toggle=await screen.findByRole('checkbox',{name:'Enhance every run'})
+  const toggle=await screen.findByRole('checkbox',{name:'Enable prompt enhancement'})
   expect(toggle.disabled).toBe(false); fireEvent.click(toggle)
-  await waitFor(()=>expect(onConfigure).toHaveBeenCalledWith({enabled:false,model:'minicpm'}))
+  await waitFor(()=>expect(onConfigure).toHaveBeenCalledWith({enabled:false,model:'minicpm',timing:'always'}))
 })
 
 
@@ -137,4 +137,50 @@ test.each(['minicpm','qwen'])('reports a warm selected model without starting a 
   await waitFor(()=>expect(screen.getByLabelText('Enhancer model').options.length).toBe(2))
   expect(Boolean(screen.queryByText('Model loaded in RAM · Ready for the next run.'))).toBe(model==='minicpm')
   expect(startEnhancer).not.toHaveBeenCalled()
+})
+
+// AC: @create-managed-prompt-enhancer ac-enhance-on-change
+test('defaults legacy settings to Every run and identifies the inference seed for reused prompts', async () => {
+  const onConfigure = vi.fn().mockResolvedValue(undefined)
+  render(<CreatePromptEnhancer sessionId="synthetic" config={{ enabled: true, model: 'minicpm', lastRun: { model: 'minicpm', seed: 73, enhancement_seed: 42, reused: true, main_prompt: 'Synthetic reused owl.', face_prompt: '' } }} onConfigure={onConfigure} />)
+  fireEvent.click(screen.getByText('Prompt enhancer'))
+  expect((await screen.findByLabelText('Timing')).value).toBe('always')
+  expect(screen.getByText('Preserver · Image seed 73 · Reused enhancement from seed 42')).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('Timing'), { target: { value: 'changed' } })
+  await waitFor(() => expect(onConfigure).toHaveBeenCalledWith({ enabled: true, model: 'minicpm', timing: 'changed' }))
+  expect(startEnhancer).not.toHaveBeenCalled()
+})
+
+// AC: @create-managed-prompt-enhancer ac-next-draft-editing
+test('keeps newer enhancer configuration when an earlier configuration acknowledgement arrives', async () => {
+  let resolve
+  const held = new Promise(done => { resolve = done })
+  const onConfigure = vi.fn().mockImplementationOnce(() => held).mockResolvedValue(undefined)
+  const config = { enabled: true, model: 'minicpm', timing: 'always' }
+  const view = render(<CreatePromptEnhancer sessionId="synthetic" config={config} onConfigure={onConfigure} />)
+  fireEvent.click(screen.getByText('Prompt enhancer'))
+  await waitFor(() => expect(screen.getByLabelText('Enhancer model').options.length).toBe(2))
+  fireEvent.change(screen.getByLabelText('Timing'), { target: { value: 'changed' } })
+  await waitFor(() => expect(onConfigure).toHaveBeenCalledTimes(1))
+  fireEvent.change(screen.getByLabelText('Enhancer model'), { target: { value: 'qwen' } })
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Enable prompt enhancement' }))
+  view.rerender(<CreatePromptEnhancer sessionId="synthetic" config={{ ...config, timing: 'changed' }} onConfigure={onConfigure} />)
+  await act(async () => { resolve(); await held })
+  await waitFor(() => expect(onConfigure).toHaveBeenLastCalledWith({ enabled: false, model: 'qwen', timing: 'changed' }))
+  expect(onConfigure).toHaveBeenCalledTimes(2)
+  expect(cancelEnhancer).not.toHaveBeenCalled()
+})
+
+// AC: @create-managed-prompt-enhancer ac-next-draft-editing
+test('preserves failed next settings for a deliberate retry without repeating requests', async () => {
+  const onConfigure = vi.fn().mockRejectedValueOnce(new Error('Synthetic settings failure')).mockResolvedValue(undefined)
+  render(<CreatePromptEnhancer sessionId="synthetic" config={{ enabled: true, model: 'minicpm' }} onConfigure={onConfigure} />)
+  fireEvent.click(screen.getByText('Prompt enhancer'))
+  fireEvent.change(await screen.findByLabelText('Timing'), { target: { value: 'changed' } })
+  await screen.findByText('Synthetic settings failure')
+  expect(onConfigure).toHaveBeenCalledTimes(1)
+  expect(screen.getByLabelText('Timing').value).toBe('changed')
+  fireEvent.click(screen.getByRole('button', { name: 'Retry enhancer settings' }))
+  await waitFor(() => expect(onConfigure).toHaveBeenCalledTimes(2))
+  expect(onConfigure).toHaveBeenLastCalledWith({ enabled: true, model: 'minicpm', timing: 'changed' })
 })

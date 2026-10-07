@@ -257,16 +257,164 @@ describe('Donut Create studio', () => {
     const generate = await screen.findByRole('button', { name: 'Generate image', exact: true })
     await waitFor(() => expect(generate.disabled).toBe(false))
     fireEvent.click(screen.getByText('Prompt enhancer'))
-    const toggle = await screen.findByRole('checkbox', { name: 'Enhance every run' })
+    const toggle = await screen.findByRole('checkbox', { name: 'Enable prompt enhancement' })
     await waitFor(() => expect(toggle.disabled).toBe(false)); fireEvent.click(toggle)
     await waitFor(() => expect(toggle.checked).toBe(true))
-    expect(request).toHaveBeenCalledWith('enhancer-config', { enabled: true, model: 'minicpm' }, expect.any(Object))
+    expect(request).toHaveBeenCalledWith('enhancer-config', { enabled: true, model: 'minicpm' , timing: 'always' }, expect.any(Object))
     fireEvent.click(generate)
     await waitFor(() => expect(request).toHaveBeenCalledWith('generate', expect.any(Object), { timeout: 600000 }))
     await screen.findByText('Last run’s enhanced prompts')
     expect(screen.getByLabelText('Describe your image').value).toBe('Invent a room containing one owl.')
     expect(screen.getByLabelText('Enhanced image prompt').value).toBe('One owl in a blue room.')
     expect(api.apiClient.post.mock.calls.some(([url]) => url.endsWith('/dmc/enhancer'))).toBe(false)
+  })
+
+  // AC: @create-managed-prompt-enhancer ac-next-draft-editing
+  // AC: @create-managed-prompt-enhancer ac-enhance-on-change
+  test.each(['complete', 'cancel'])('stages next briefs, settings and navigation while an enhancement request awaits %s', async outcome => {
+    localStorage.setItem('dmc-create:v5:save-output', 'false')
+    session.jobs = []; session.outputs = []
+    const pending = deferred(), cancellation = deferred()
+    let current = { ready: true, enhancer: { enabled: true, model: 'minicpm' }, fields: {
+      prompt: { kind: 'text', value: 'One synthetic owl.' }, editPrompt: { kind: 'text', value: 'One synthetic owl.' },
+      facePrompt: { kind: 'text', value: 'Original face.' }, faceDetail: { kind: 'boolean', value: true },
+      editing: { kind: 'boolean', value: false }, steps: { kind: 'number', value: 20, min: 1, max: 100 },
+    } }
+    const captured = []
+    const request = vi.fn(async (action, payload) => {
+      if (action === 'generate') {
+        captured.push(structuredClone(current))
+        if (captured.length === 1) return pending.promise
+        return { ...current, lastQueuedPromptIds: ['next-synthetic-job'] }
+      }
+      if (action === 'patch') {
+        const fields = { ...current.fields }
+        for (const [key, value] of Object.entries(payload)) fields[key] = { ...fields[key], value }
+        current = { ...current, fields, mutationChanged: true }
+      }
+      if (action === 'enhancer-config') current = { ...current, enhancer: payload, mutationChanged: true }
+      return current
+    })
+    bridgeFixture.current = { dispose: vi.fn(), request }
+    api.apiClient.post.mockImplementation(async url => ({ data: url.endsWith('/dmc/enhancer/cancel') ? await cancellation.promise : url.endsWith('/sessions') ? session : { success: true } }))
+    api.apiClient.get.mockImplementation(async url => ({ data: url.endsWith('/dmc/enhancer') ? {
+      supported: true, busy: outcome === 'cancel', models: [{ id: 'minicpm', name: 'Preserver', ready: true }, { id: 'qwen', name: 'Rewriter', ready: true }],
+      ...(outcome === 'cancel' ? { job: { id: 'synthetic-enhancement', state: 'running', kind: 'enhance' } } : {}),
+    } : url.endsWith('/status') ? status : session }))
+    render(<CreateStudioHost />); openStudio()
+    const generate = await screen.findByRole('button', { name: 'Generate image', exact: true })
+    await waitFor(() => expect(generate.disabled).toBe(false)); fireEvent.click(generate)
+    await waitFor(() => expect(captured).toHaveLength(1))
+    fireEvent.click(screen.getByText('Prompt enhancer'))
+    await waitFor(() => expect(screen.getByLabelText('Enhancer model').options.length).toBe(2))
+    if (outcome === 'cancel') fireEvent.click(screen.getByRole('button', { name: 'Cancel enhancement / setup' }))
+    expect(screen.getByLabelText('Describe your image').disabled).toBe(false)
+    fireEvent.change(screen.getByLabelText('Describe your image'), { target: { value: 'Next synthetic fox.' } })
+    fireEvent.blur(screen.getByLabelText('Describe your image'))
+    fireEvent.change(screen.getByLabelText('Describe only the face'), { target: { value: 'Next face.' } })
+    fireEvent.blur(screen.getByLabelText('Describe only the face'))
+    fireEvent.change(screen.getByLabelText('Steps'), { target: { value: '31' } })
+    fireEvent.blur(screen.getByLabelText('Steps'))
+    fireEvent.change(screen.getByLabelText('Timing'), { target: { value: 'changed' } })
+    fireEvent.change(screen.getByLabelText('Enhancer model'), { target: { value: 'qwen' } })
+    fireEvent.click(screen.getByRole('tab', { name: 'Edit', exact: true }))
+    expect(screen.getByRole('tab', { name: 'Edit', exact: true }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByLabelText('Describe your image').value).toBe('Next synthetic fox.')
+    expect(generate.disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Advanced', exact: true }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Repair / verify model' }).disabled).toBe(true)
+    fireEvent.submit(generate.closest('form'))
+    expect(request.mock.calls.filter(([action]) => action === 'patch' || action === 'enhancer-config')).toHaveLength(0)
+    expect(captured[0].fields.prompt.value).toBe('One synthetic owl.')
+    expect(captured[0].fields.steps.value).toBe(20)
+    expect(captured[0].enhancer).toEqual({ enabled: true, model: 'minicpm' })
+    expect(captured).toHaveLength(1)
+    fireEvent.click(screen.getByRole('tab', { name: 'Finalize', exact: true }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Edit', exact: true }))
+    expect(screen.getByLabelText('Timing').value).toBe('changed')
+    fireEvent.click(screen.getByRole('button', { name: 'Models', exact: true }))
+    if (outcome === 'cancel') {
+      await act(async () => { cancellation.resolve({ supported: true, busy: false, models: [{ id: 'minicpm', ready: true }, { id: 'qwen', ready: true }], job: { state: 'cancelled' } }); await cancellation.promise })
+      expect(generate.disabled).toBe(true)
+      expect(request.mock.calls.filter(([action]) => action === 'enhancer-config')).toHaveLength(0)
+    }
+    await act(async () => {
+      pending.resolve(outcome === 'cancel' ? Promise.reject(new DOMException('Synthetic cancellation', 'AbortError')) : {
+        ...current, lastQueuedPromptIds: ['captured-synthetic-job'], enhancer: { ...current.enhancer, lastRun: { model: 'minicpm', seed: 72, main_prompt: 'Enhanced original owl.', face_prompt: 'Enhanced original face.' } },
+      })
+      await pending.promise.catch(() => {})
+    })
+    await waitFor(() => expect(request).toHaveBeenCalledWith('enhancer-config', { enabled: true, model: 'qwen', timing: 'changed' }, expect.any(Object)))
+    expect(screen.getByLabelText('Describe your image').value).toBe('Next synthetic fox.')
+    expect(screen.getByLabelText('Describe only the face').value).toBe('Next face.')
+    expect(screen.getByRole('button', { name: 'Models', exact: true }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByLabelText('Enhancer model').value).toBe('qwen')
+    expect(screen.getByLabelText('Timing').value).toBe('changed')
+    fireEvent.click(screen.getByRole('tab', { name: 'Create', exact: true }))
+    await waitFor(() => expect(screen.getByLabelText('Steps').value).toBe('31'))
+    await waitFor(() => expect(generate.textContent).toBe('Generate image'))
+    expect(generate.disabled).toBe(false)
+    fireEvent.click(generate)
+    await waitFor(() => expect(captured).toHaveLength(2))
+    expect(captured[1].fields.prompt.value).toBe('Next synthetic fox.')
+    expect(captured[1].fields.facePrompt.value).toBe('Next face.')
+    expect(captured[1].fields.steps.value).toBe(31)
+    expect(captured[1].enhancer).toEqual({ enabled: true, model: 'qwen', timing: 'changed' })
+  })
+
+  // AC: @create-managed-prompt-enhancer ac-next-draft-editing
+  test.each(['complete', 'stop'])('preserves a captured Run Instant request and next drafts during %s', async outcome => {
+    vi.useFakeTimers()
+    localStorage.setItem('dmc-create:v5:save-output', 'false')
+    session.jobs = []; session.outputs = []
+    const pending = deferred(), stop = deferred()
+    let current = { ready: true, enhancer: { enabled: true, model: 'minicpm', timing: 'always' }, fields: {
+      prompt: { kind: 'text', value: 'Original synthetic owl.' }, facePrompt: { kind: 'text', value: '' },
+      steps: { kind: 'number', value: 20, min: 1, max: 100 },
+    } }
+    const request = vi.fn(async (action, payload) => {
+      if (action === 'generate') return pending.promise
+      if (action === 'enhancer-config') current = { ...current, enhancer: payload, mutationChanged: true }
+      return current
+    })
+    bridgeFixture.current = { dispose: vi.fn(), request }
+    const originalPost = api.apiClient.post.getMockImplementation()
+    api.apiClient.post.mockImplementation((url, ...args) => url.endsWith('/backend/stop') ? stop.promise : originalPost(url, ...args))
+    render(<CreateStudioHost />); openStudio()
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Run Instant' }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(650) })
+    expect(request.mock.calls.filter(([action]) => action === 'generate')).toHaveLength(1)
+    let stopping
+    if (outcome === 'stop') act(() => { stopping = stopCreateBackend() })
+    expect(screen.getByLabelText('Describe your image').disabled).toBe(false)
+    fireEvent.change(screen.getByLabelText('Describe your image'), { target: { value: 'Next synthetic fox.' } })
+    fireEvent.blur(screen.getByLabelText('Describe your image'))
+    fireEvent.change(screen.getByLabelText('Steps'), { target: { value: '37' } })
+    fireEvent.blur(screen.getByLabelText('Steps'))
+    fireEvent.click(screen.getByText('Prompt enhancer'))
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    fireEvent.change(screen.getByLabelText('Timing'), { target: { value: 'changed' } })
+    expect(request.mock.calls.some(([action]) => action === 'patch' || action === 'enhancer-config')).toBe(false)
+    expect(request.mock.calls.some(([action]) => action === 'cancel-generation')).toBe(outcome === 'stop')
+    await act(async () => { await vi.advanceTimersByTimeAsync(1800) })
+    expect(request.mock.calls.filter(([action]) => action === 'generate')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Adding to queue…' }).disabled).toBe(true)
+    if (outcome === 'stop') {
+      status = { ...status, backend: { ready: false, running: false, owned: false } }
+      await act(async () => { stop.resolve({ data: { success: true } }); await stopping })
+      expect(screen.getByLabelText('Describe your image').disabled).toBe(false)
+    }
+    await act(async () => {
+      pending.resolve(outcome === 'stop' ? Promise.reject(new DOMException('Synthetic cancellation', 'AbortError')) : { ...current, lastQueuedPromptIds: ['instant-synthetic-job'] })
+      await pending.promise.catch(() => {})
+    })
+    expect(screen.getByLabelText('Describe your image').value).toBe('Next synthetic fox.')
+    expect(screen.getByLabelText('Steps').value).toBe('37')
+    expect(screen.getByLabelText('Timing').value).toBe('changed')
+    expect(request).toHaveBeenCalledWith('enhancer-config', { enabled: true, model: 'minicpm', timing: 'changed' }, expect.any(Object))
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(request.mock.calls.filter(([action]) => action === 'generate')).toHaveLength(1)
   })
 
   // AC: @create-managed-prompt-enhancer ac-owned-private

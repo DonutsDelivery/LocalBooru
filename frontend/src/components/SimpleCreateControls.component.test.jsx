@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import SimpleCreateControls from './SimpleCreateControls'
 
 const number = value => ({ kind: 'number', value, min: 0, max: 2, step: 0.01 })
@@ -303,4 +303,31 @@ test('keeps invalid generation input visible beside Generate and preserves the d
   expect(initial.onGenerate).not.toHaveBeenCalled()
   fireEvent.change(screen.getByLabelText('Steps'), { target: { value: '24' } })
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+// AC: @create-managed-prompt-enhancer ac-next-draft-editing
+test('keeps a later same-value draft after the captured initial patch acknowledges', async () => {
+  let acknowledgePatch, settleRun
+  const patch = new Promise(done => { acknowledgePatch = done })
+  const run = new Promise(done => { settleRun = done })
+  const initial = props({ prompt: { kind: 'text', value: 'Synthetic original.' } })
+  initial.onPatch.mockReturnValueOnce(patch)
+  initial.onGenerate.mockReturnValueOnce(run)
+  render(<SimpleCreateControls {...initial} />)
+  const prompt = screen.getByLabelText('Describe your image')
+  fireEvent.change(prompt, { target: { value: 'Synthetic captured brief.' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Generate image', exact: true }))
+  expect(prompt.disabled).toBe(false)
+  fireEvent.change(prompt, { target: { value: 'Next synthetic draft.' } })
+  fireEvent.change(prompt, { target: { value: 'Synthetic captured brief.' } })
+  await act(async () => { acknowledgePatch(); await patch })
+  await waitFor(() => expect(initial.onGenerate).toHaveBeenCalledTimes(1))
+  expect(prompt.value).toBe('Synthetic captured brief.')
+  fireEvent.blur(prompt)
+  expect(initial.onPatch).toHaveBeenCalledTimes(1)
+  await act(async () => { settleRun(); await run })
+  expect(prompt.value).toBe('Synthetic captured brief.')
+  fireEvent.blur(prompt)
+  await waitFor(() => expect(initial.onPatch).toHaveBeenCalledTimes(2))
+  expect(initial.onPatch).toHaveBeenLastCalledWith({ prompt: 'Synthetic captured brief.' })
 })
