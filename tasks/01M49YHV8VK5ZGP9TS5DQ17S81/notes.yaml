@@ -22,3 +22,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T01:15:57.368Z
+  - _ulid: 01M49ZKQCXXSW0XDRNT12YF7VR
+    content: "Implemented managed CPU llama.cpp b11457 with pinned MiniCPM Q6_K and Qwen Q4_K_M. Reused
+      verified/resumable download primitives, added session-owned jobs and memory-only results,
+      both-image-and-face inputs, strict finished JSON parsing, atomic guarded preview apply, and
+      instant-generation pause. Focused Python (32), UI (4), and adapter (12) checks pass. Synthetic
+      real inference preserved supplied face facts: MiniCPM 8.99 s, Qwen 14.31 s, both owned helpers
+      exited. Existing surrounding main tests independently reproduce one controller assertion
+      failure and seven UI expectation failures; changed asset provenance is corrected. Native test
+      waits behind DonutStudio heavy-build gate."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T01:28:24.733Z
