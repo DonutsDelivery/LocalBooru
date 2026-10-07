@@ -1412,10 +1412,53 @@
       latestRunRevision: latestRun.revision, latestAvailable: latestRun.revision > loadedRunRevision,
       ...(lastError ? {error: lastError} : {})};
   }
+  function validFacePrompts(value, shared) {
+    if (value === undefined) return true; // Older two-key single-face results.
+    if (!Array.isArray(value) || value.length > 16 || value.length === 1) return false;
+    if (!value.length) return true;
+    if (shared !== '') return false;
+    const spatial = ['left', 'center', 'right'];
+    const ordinal = ['1st', '2nd', '3rd', ...Array.from({length: 13}, (_, index) => (index + 4) + 'th')];
+    const labels = new Set(); let family = null, previous = -1;
+    return value.every(entry => {
+      if (!object(entry) || Object.keys(entry).length !== 3 || typeof entry.character !== 'string'
+        || !entry.character.trim() || entry.character.length > 200 || typeof entry.face_prompt !== 'string'
+        || !entry.face_prompt.trim() || entry.face_prompt.length > 8000) return false;
+      const label = entry.character.trim().toLowerCase(), kind = spatial.includes(entry.position) ? 'spatial' : 'ordinal';
+      const rank = (kind === 'spatial' ? spatial : ordinal).indexOf(entry.position);
+      if (labels.has(label) || rank < 0 || family && family !== kind || rank <= previous) return false;
+      labels.add(label); family = kind; previous = rank; return true;
+    });
+  }
+  function routeFacePrompts(output, entries, binding, detailBinding) {
+    const detailers = Object.entries(output).filter(([, node]) => node.class_type === 'DonutFaceDetailer');
+    // Pinned ComfyUI execution IDs are the full control path joined by ':'.
+    const boundId = (id, target) => String(id) === (target?.control?.path?.map(String).join(':') || String(target?.node?.id));
+    if (detailers.length !== 1 || !boundId(detailers[0][0], detailBinding)) throw new Error('Multiple face descriptions need one supported bound Face detail node.');
+    const [id, detail] = detailers[0], edit = detail.inputs?.edit_prompt, positive = detail.inputs?.positive;
+    const link = (value, slot) => Array.isArray(value) && value.length === 2 && value[1] === slot;
+    const branch = link(edit, 1) && output[edit[0]], fusion = link(positive, 2) && output[positive[0]];
+    const facePositive = fusion?.inputs?.conditioning_in_2;
+    if (branch?.class_type !== 'DonutPromptConditioning' || fusion?.class_type !== 'DonutKrea2FusionControl'
+      || !link(facePositive, 4) || facePositive[0] !== edit[0]) throw new Error('Multiple face descriptions require separate face text and face-only conditioning routes.');
+    let source = branch.inputs?.face; const seen = new Set();
+    while (link(source, 0) && !seen.has(source[0])) {
+      seen.add(source[0]); const node = output[source[0]];
+      if (node?.class_type === binding.node.type && boundId(source[0], binding)) break;
+      if (node?.class_type !== 'DonutText' || node.inputs?.prefix || node.inputs?.suffix) throw new Error('This custom face prompt route does not support separate character descriptions.');
+      source = node.inputs?.text;
+    }
+    if (!link(source, 0) || !boundId(source[0], binding) || output[source[0]]?.class_type !== binding.node.type) throw new Error('Multiple face descriptions need the bound separate face input.');
+    if (detail.inputs.edit_mode === true || detail.inputs.wildcard?.trim?.() || detail.inputs.detailer_hook != null
+      || Number.isFinite(detail.inputs.max_faces) && detail.inputs.max_faces > 0 && detail.inputs.max_faces < entries.length) {
+      throw new Error('This Face detail edit mode, hook, wildcard or face limit cannot safely apply separate character descriptions.');
+    }
+    return {...output, [id]: {...detail, class_type: 'DMCFaceDetailer', inputs: {...detail.inputs, face_prompts_json: JSON.stringify(entries)}}};
+  }
   function validEnhancementRun(run) {
     return object(run) && Number.isSafeInteger(run.seed) && run.seed >= 0 && ['qwen', 'minicpm'].includes(run.model)
       && typeof run.main_prompt === 'string' && run.main_prompt.trim() && run.main_prompt.length <= 16000
-      && typeof run.face_prompt === 'string' && run.face_prompt.length <= 8000;
+      && typeof run.face_prompt === 'string' && run.face_prompt.length <= 8000 && validFacePrompts(run.face_prompts, run.face_prompt);
   }
   function enhancerConfig() {
     const value = (app?.rootGraph || app?.graph)?.extra?.dmc_prompt_enhancer;
@@ -1479,6 +1522,7 @@
       if (token.cancelled) throw token.cancelled;
       if (graph !== (app.rootGraph || app.graph) || recipe(graph.serialize()) !== authored) throw new Error('The workflow changed while enhancing. Run again with the current draft.');
     };
+    token.validate = valid;
     async function request(options, starting = false) {
       const operation = (async () => {
         const response = await api.fetchApi('/dmc/enhancer', options);
@@ -1508,7 +1552,9 @@
       }
       const result = status.job.result;
       if (!object(result) || typeof result.main_prompt !== 'string' || !result.main_prompt.trim() || result.main_prompt.length > 16000
-        || typeof result.face_prompt !== 'string' || result.face_prompt.length > 8000) throw new Error('The enhancer returned incomplete prompts. Retry this image run.');
+        || typeof result.face_prompt !== 'string' || result.face_prompt.length > 8000
+        || !validFacePrompts(result.face_prompts, result.face_prompt)) throw new Error('The enhancer returned incomplete or ambiguous face prompts. Retry this image run.');
+      if (result.face_prompts?.length === 0 && !result.face_prompt.trim() && faceBrief.trim()) throw new Error('The supplied face instructions could not be matched unambiguously. Clarify their character positions before running.');
       const updates = [{binding: scene, source: imageBrief, generated: result.main_prompt}, {binding: face, source: faceBrief, generated: result.face_prompt}];
       let enhanced;
       compilingEnhancement = true;
@@ -1534,7 +1580,18 @@
         if (!bound) throw new Error('This prompt control cannot be compiled safely for per-run enhancement.');
       }
       if (canonical(restored) !== canonical(compiled.output) || executionSeed(enhanced.output) !== seed) throw new Error('The execution prompt changed while enhancing. Retry with supported prompt and seed controls.');
-      const run = {seed, model: settings.model, main_prompt: result.main_prompt, face_prompt: result.face_prompt};
+      if (result.face_prompts?.length) {
+        if (current.faceDetail?.widget.value === false) {
+          if (Object.values(enhanced.output).some(node => ['DonutFaceDetailer', 'DMCFaceDetailer'].includes(node.class_type))) throw new Error('Face detail execution changed while enhancing. Retry with the current workflow.');
+        } else {
+          enhanced.output = routeFacePrompts(enhanced.output, result.face_prompts, face, current.faceDetail);
+          await Promise.race([checkCapabilities(enhanced), cancelled]); valid();
+          const spec = nodeInfo.DMCFaceDetailer?.input, field = spec?.required?.face_prompts_json || spec?.optional?.face_prompts_json;
+          if (!Array.isArray(field) || field[0] !== 'STRING') throw new Error('The installed multi-face detailer does not support separate face descriptions. Repair the add-on.');
+        }
+      }
+      const run = {seed, model: settings.model, main_prompt: result.main_prompt, face_prompt: result.face_prompt,
+        ...(result.face_prompts !== undefined ? {face_prompts: result.face_prompts.map(entry => ({...entry}))} : {})};
       token.run = run;
       return {...compiled, output: enhanced.output, workflow: {...compiled.workflow,
         extra: {...compiled.workflow?.extra, dmc_prompt_enhancement: run}}};
@@ -2047,6 +2104,7 @@
         args[1] = await enhanceRun(args[1]);
         if (cancellationRevision !== queueCancellationRevision) throw new Error('The image run was cancelled before submission.');
         if (pendingEnhancement?.cancelled) throw pendingEnhancement.cancelled;
+        pendingEnhancement?.validate?.();
         // Attach per-run storage intent without changing the editable graph.
         if (object(args[1]?.workflow)) args[1] = {...args[1], workflow: {...args[1].workflow,
           extra: {...args[1].workflow.extra, dmc_output_destination: outputDestination}}};

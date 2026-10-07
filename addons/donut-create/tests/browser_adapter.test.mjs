@@ -172,6 +172,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
   return {app,api,loaded,queued,fetched,models,store,context,events,boot,settle,editPrompt,
     editSeed:value=>{nodeAt(current,1137).widgets_values[0]=value;},
     editFace:value=>{nodeAt(current,1178).widgets_values[0]=value;},
+    editFaceDetail:value=>{nodeAt(current,984).mode=value?0:4;},
     editMode:value=>{nodeAt(current,881).widgets_values[0]=value;nodeAt(current,881).widgets_values[1]=value?'donutref:'+'a'.repeat(64):'';},
     current:()=>copy(current),notice:()=>elements.get('donut-create-status')?.querySelector('.message')?.textContent};
 }
@@ -1088,4 +1089,176 @@ test('failed recognized face-route repair restores the complete broken saved rec
   const workflow=syntheticFaceBriefs(brokenFaceRecipe(),'FACE ONLY: preserve draft'),before=copy(workflow);
   const env=fixture({initial:workflow,livePrompts:true,failFaceUpgrade:true});await env.boot();
   assert.deepEqual(env.current(),before);assert.equal(env.queued.length,0);assert.match(env.notice(),/face prompt could not be added/);
+});
+
+
+const twoFacePlan=[
+  {character:'Left traveler',position:'left',face_prompt:'Blue eyes, freckles, relaxed smile.'},
+  {character:'Right traveler',position:'right',face_prompt:'Brown eyes, clean jawline, serious expression.'},
+];
+async function multiFaceFixture() {
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  const compile=env.app.graphToPrompt;
+  env.app.graphToPrompt=async ()=>{
+    const value=await compile();
+    value.output['1138:1178']=copy(value.output['text:face']);
+    value.output['face:expanded']={class_type:'DonutText',inputs:{text:['1138:1178',0]}};
+    value.output['face:condition']={class_type:'DonutPromptConditioning',inputs:{face:['face:expanded',0],scene:['text:scene',0]}};
+    value.output['face:fusion']={class_type:'DonutKrea2FusionControl',inputs:{conditioning_in_2:['face:condition',4]}};
+    value.output['1014:984']={class_type:'DonutFaceDetailer',inputs:{edit_prompt:['face:condition',1],positive:['face:fusion',2],edit_mode:false,max_faces:5,seed:value.output.sample.inputs.seed}};
+    return value;
+  };
+  const fetch=env.api.fetchApi;
+  env.api.fetchApi=async (route,options)=>{
+    const response=await fetch(route,options);
+    if(route==='/object_info') {
+      const value=await response.json();
+      if(!env.missingMultiNode)value.DMCFaceDetailer={input:{required:{face_prompts_json:['STRING',{}]}}};
+      return {...response,json:async()=>value};
+    }
+    return response;
+  };
+  env.jobChange=job=>({...job,result:{main_prompt:job.result.main_prompt,face_prompt:'',face_prompts:copy(twoFacePlan)}});
+  return env;
+}
+
+// AC: @create-multiple-face-prompts ac-character-prompts
+// AC: @create-multiple-face-prompts ac-single-face-compatible
+test('multi-face enhancement submits separate ordered records only in the compiled detailer and run metadata',async()=>{
+  const env=await multiFaceFixture();env.editFace('Left traveler: blue eyes. Right traveler: brown eyes.');
+  const before=env.current();
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  const compiled=env.queued[0][1],detail=compiled.output['1014:984'];
+  assert.equal(detail.class_type,'DMCFaceDetailer');
+  assert.deepEqual(JSON.parse(detail.inputs.face_prompts_json),twoFacePlan);
+  assert.deepEqual(detail.inputs.positive,['face:fusion',2]);
+  assert.equal(detail.inputs.seed,env.requests[0].seed);
+  assert.deepEqual(compiled.workflow.extra.dmc_prompt_enhancement.face_prompts,twoFacePlan);
+  assert.equal(compiled.output['text:face'].inputs.Text,'');
+  assert.deepEqual(env.current(),before);
+  assert.equal(nodeAt(compiled.workflow,984).type,'DonutFaceDetailer');
+  assert.deepEqual(copy((await env.action('snapshot')).snapshot.enhancer.lastRun.face_prompts),twoFacePlan);
+  await env.app.loadGraphData(compiled.workflow);
+  assert.deepEqual(copy((await env.action('snapshot')).snapshot.enhancer.lastRun.face_prompts),twoFacePlan);
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.requests[1].face_brief,env.requests[0].face_brief);
+  assert.deepEqual(JSON.parse(env.queued[1][1].output['1014:984'].inputs.face_prompts_json),twoFacePlan);
+});
+
+// AC: @create-multiple-face-prompts ac-single-face-compatible
+test('legacy two-key and new single-face results preserve the original compiled detailer behavior',async()=>{
+  for(const result of [{main_prompt:'One scene',face_prompt:'One face'}, {main_prompt:'One scene',face_prompt:'One face',face_prompts:[]}]) {
+    const env=await multiFaceFixture();env.jobChange=job=>({...job,result});
+    await env.api.queuePrompt(0,await env.app.graphToPrompt());
+    assert.equal(env.queued[0][1].output['1014:984'].class_type,'DonutFaceDetailer');
+    assert.equal(env.queued[0][1].output['1014:984'].inputs.face_prompts_json,undefined);
+    assert.equal(env.queued[0][1].output['text:face'].inputs.Text,'One face');
+  }
+});
+
+// AC: @create-multiple-face-prompts ac-character-prompts
+// AC: @create-multiple-face-prompts ac-mismatch
+test('malformed and spatially ambiguous character records cannot submit a shared-face fallback',async()=>{
+  const invalid=[
+    [twoFacePlan[0]], [...twoFacePlan].reverse(),
+    [{...twoFacePlan[0],position:'left'},{...twoFacePlan[1],position:'left'}],
+    [{...twoFacePlan[0],position:'gazing left'},twoFacePlan[1]],
+    [{...twoFacePlan[0],position:'1st'},twoFacePlan[1]],
+    [{...twoFacePlan[0],character:''},twoFacePlan[1]],
+    [twoFacePlan[0],{...twoFacePlan[1],character:twoFacePlan[0].character}],
+    [twoFacePlan[0],{...twoFacePlan[1],face_prompt:''}],
+    [twoFacePlan[0],{...twoFacePlan[1],extra:true}],
+    [twoFacePlan[0],{...twoFacePlan[1],character:'x'.repeat(201)}],
+    [twoFacePlan[0],{...twoFacePlan[1],face_prompt:'x'.repeat(8001)}],
+    Array.from({length:17},(_,index)=>({...twoFacePlan[0],character:'Character '+index,position:index+'th'})),
+  ];
+  for(const records of invalid) {
+    const env=await multiFaceFixture(),before=env.current();env.jobChange=job=>({...job,result:{...job.result,face_prompt:'',face_prompts:records}});
+    await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()));assert.equal(env.queued.length,0);assert.deepEqual(env.current(),before);
+  }
+});
+
+// AC: @create-multiple-face-prompts ac-mismatch
+test('missing per-face node capability and custom shared-face branches fail before image submission',async()=>{
+  for(const mode of ['missing','wrong-text','wrong-positive','multiple-detailers','no-detailer','edit','wrong-detail-instance','wrong-face-instance','wildcard','hook','max-faces','no-schema']) {
+    const env=await multiFaceFixture();
+    if(mode==='missing')env.missingMultiNode=true;
+    if(mode==='no-schema'){const fetch=env.api.fetchApi;env.api.fetchApi=async (route,options)=>{const response=await fetch(route,options);if(route!=='/object_info')return response;const value=await response.json();value.DMCFaceDetailer={};return {...response,json:async()=>value};};}
+    const compile=env.app.graphToPrompt;
+    env.app.graphToPrompt=async ()=>{
+      const value=await compile(),detail=value.output['1014:984'];
+      if(mode==='wrong-text')detail.inputs.edit_prompt=['condition',0];
+      if(mode==='wrong-positive')detail.inputs.positive=['condition',3];
+      if(mode==='multiple-detailers')value.output.extra=copy(detail);
+      if(mode==='no-detailer')delete value.output['1014:984'];
+      if(mode==='edit')detail.inputs.edit_mode=true;
+      if(mode==='wrong-detail-instance'){value.output['9999:984']=detail;delete value.output['1014:984'];}
+      if(mode==='wrong-face-instance'){value.output['9999:1178']=value.output['1138:1178'];value.output['face:expanded'].inputs.text=['9999:1178',0];}
+      if(mode==='wildcard')detail.inputs.wildcard='A shared face wildcard';
+      if(mode==='hook')detail.inputs.detailer_hook=['custom-hook',0];
+      if(mode==='max-faces')detail.inputs.max_faces=1;
+      return value;
+    };
+    await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/face|DMCFaceDetailer|conditioning|edit/i);
+    assert.equal(env.queued.length,0,mode);
+  }
+});
+
+// AC: @create-multiple-face-prompts ac-single-face-compatible
+// AC: @create-multiple-face-prompts ac-mismatch
+test('multi-face records support ordered ordinal positions and never erase ambiguous supplied face instructions',async()=>{
+  const env=await multiFaceFixture();
+  env.jobChange=job=>({...job,result:{main_prompt:'Scene',face_prompt:'',face_prompts:twoFacePlan.map((entry,index)=>({...entry,position:index?'2nd':'1st'}))}});
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.deepEqual(JSON.parse(env.queued[0][1].output['1014:984'].inputs.face_prompts_json).map(entry=>entry.position),['1st','2nd']);
+  env.editFace('Left traveler has blue eyes; right traveler has brown eyes.');
+  env.jobChange=job=>({...job,result:{main_prompt:'Scene',face_prompt:'',face_prompts:[]}});
+  await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/face|ambiguous/i);
+  assert.equal(env.queued.length,1);
+});
+
+// AC: @create-multiple-face-prompts ac-mismatch
+test('cancel and stale edits while per-face capabilities load cannot queue the multi-face run',async()=>{
+  for(const mode of ['cancel','stale']) {
+    const env=await multiFaceFixture(),fetch=env.api.fetchApi;let checks=0,release;
+    env.api.fetchApi=async (route,options)=>{
+      if(route==='/object_info' && ++checks===2)await new Promise(resolve=>{release=resolve;});
+      return fetch(route,options);
+    };
+    const pending=env.api.queuePrompt(0,await env.app.graphToPrompt()),rejected=assert.rejects(pending);
+    await env.settle();
+    if(mode==='cancel')await env.action('cancel-generation');else env.editPrompt('New synthetic scene');
+    release();await rejected;assert.equal(env.queued.length,0);
+  }
+});
+
+
+// AC: @create-multiple-face-prompts ac-single-face-compatible
+test('disabled known face detail keeps ordered metadata without requiring the multi-face runtime, and re-enabling routes each face',async()=>{
+  const env=await multiFaceFixture(),compile=env.app.graphToPrompt;
+  let enabled=false;env.editFaceDetail(enabled);env.missingMultiNode=true;
+  env.app.graphToPrompt=async ()=>{const value=await compile();if(!enabled)delete value.output['1014:984'];return value;};
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.queued.length,1);assert.equal(env.queued[0][1].output['1014:984'],undefined);
+  assert.deepEqual(env.queued[0][1].workflow.extra.dmc_prompt_enhancement.face_prompts,twoFacePlan);
+  assert.deepEqual(copy((await env.action('snapshot')).snapshot.enhancer.lastRun.face_prompts),twoFacePlan);
+  enabled=true;env.editFaceDetail(enabled);env.missingMultiNode=false;
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.queued[1][1].output['1014:984'].class_type,'DMCFaceDetailer');
+  assert.deepEqual(JSON.parse(env.queued[1][1].output['1014:984'].inputs.face_prompts_json),twoFacePlan);
+  assert.equal(env.requests[1].image_brief,env.requests[0].image_brief);
+});
+
+
+// AC: @create-multiple-face-prompts ac-mismatch
+test('an authored edit after per-face capability verification still cancels submission',async()=>{
+  const env=await multiFaceFixture(),fetch=env.api.fetchApi;
+  env.api.fetchApi=async (route,options)=>{
+    const response=await fetch(route,options);if(route!=='/object_info')return response;
+    const value=await response.json(),required={};
+    Object.defineProperty(required,'face_prompts_json',{get(){queueMicrotask(()=>env.editPrompt('Latest authored scene'));return ['STRING',{}];}});
+    value.DMCFaceDetailer={input:{required}};return {...response,json:async()=>value};
+  };
+  await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/workflow changed/i);
+  assert.equal(env.queued.length,0);assert.equal(nodeAt(env.current(),1126).widgets_values[0],'Latest authored scene');
 });
