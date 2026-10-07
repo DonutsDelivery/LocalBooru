@@ -647,6 +647,32 @@ class Controller:
         # SaveImage for the intermediate result.
         return node.get("class_type") == "DonutImageSave"
 
+    def first_pass_outputs(self, prompt: dict[str, Any], workflow: Any) -> dict[str, bool]:
+        """Use v5's full preview instead of its redundant workflow-PNG save."""
+        outputs = {}
+        for node_id, node in list(prompt.items()):
+            if node.get("class_type") != "SaveImage" or self.final_output({"prompt": prompt, "workflow": workflow}, node_id):
+                continue
+            image = node.get("inputs", {}).get("images")
+            if not isinstance(image, list) or len(image) != 2 or image[1] != 0:
+                continue
+            scale = prompt.get(str(image[0]), {})
+            if scale.get("class_type") != "ImageScaleBy" or scale.get("inputs", {}).get("scale_by") != 0.25:
+                continue
+            original = scale["inputs"].get("image")
+            if not isinstance(original, list) or len(original) != 2:
+                continue
+            full = next((preview_id for preview_id, preview in prompt.items()
+                         if preview.get("class_type") == "PreviewImage"
+                         and preview.get("inputs", {}).get("images") == original), None)
+            if full is None:
+                continue
+            # The serialized recipe stays untouched for sidecars and standalone
+            # exports. Removing this output sink also leaves its scaler inactive.
+            del prompt[node_id]
+            outputs[str(full)] = False
+        return outputs
+
     def record_previews(self, session: dict[str, Any], prompt_id: str, node_id: str,
                         output: dict[str, Any]) -> None:
         if prompt_id not in session["jobs"]:
@@ -984,7 +1010,7 @@ class Controller:
         destination = workflow_extra.get("dmc_output_destination", "preview") if isinstance(workflow_extra, dict) else "preview"
         if not isinstance(destination, str) or destination not in {"preview", "comfy"}:
             raise HTTPException(400, "Choose a valid output destination.")
-        save_nodes = {}
+        save_nodes = self.first_pass_outputs(body["prompt"], workflow)
         for node_id, node in body["prompt"].items():
             if node["class_type"] not in {"SaveImage", "DonutImageSave"}:
                 continue

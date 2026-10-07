@@ -621,6 +621,109 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fetched.content, self.backend.image)
         self.assertIn("type=temp", self.backend.requests[-1][1])
 
+    # AC: @donut-create-plugin ac-full-first-pass
+    async def test_v5_first_pass_uses_full_preview_without_reduced_workflow_png(self):
+        for recipe_name in ("workflow.json", "assets/base-workflow.json"):
+            for destination in ("preview", "comfy"):
+                for remapped in (False, True):
+                    with self.subTest(recipe=recipe_name, destination=destination, remapped=remapped):
+                        workflow = json.loads((MODULE_PATH.parent / recipe_name).read_text())
+                        workflow.setdefault("extra", {})["dmc_output_destination"] = destination
+                        if remapped:
+                            mapping = {node["id"]: node["id"] + 5000 for node in workflow["nodes"]}
+                            for node in workflow["nodes"]:
+                                node["id"] = mapping[node["id"]]
+                                node.get("properties", {}).pop("dmc_final_output", None)
+                            for edge in workflow["links"]:
+                                edge[1], edge[3] = mapping[edge[1]], mapping[edge[3]]
+                        nodes = workflow["nodes"]
+                        scale = next(node for node in nodes if node["type"] == "ImageScaleBy")
+                        reduced = next(node for node in nodes if node["type"] == "SaveImage")
+                        full = next(node for node in nodes if node.get("title") == "07 · Result · base")
+                        final = next(node for node in nodes if node["type"] == "DonutImageSave")
+                        edges = {edge[0]: edge for edge in workflow["links"]}
+                        def connection(node, name):
+                            edge = edges[next(port["link"] for port in node["inputs"] if port["name"] == name)]
+                            return [str(edge[1]), edge[2]]
+                        source_id = connection(scale, "image")[0]
+                        scale_id, reduced_id, full_id, final_id = (str(node["id"]) for node in (scale, reduced, full, final))
+                        original_prompt = {
+                            source_id: {"class_type": "DonutText", "inputs": {"text": "synthetic image"}},
+                            scale_id: {"class_type": "ImageScaleBy", "inputs": {"image": connection(scale, "image"), "scale_by": 0.25, "upscale_method": "nearest-exact"}},
+                            reduced_id: {"class_type": "SaveImage", "inputs": {"images": connection(reduced, "images"), "filename_prefix": "workflow"}},
+                            full_id: {"class_type": "PreviewImage", "inputs": {"images": connection(full, "images")}},
+                            final_id: {"class_type": "DonutImageSave", "inputs": {"images": [source_id, 0], "root": "output", "filename_prefix": "final"}},
+                        }
+                        sid = await self.new_session()
+                        job = await self.submit(sid, prompt=original_prompt,
+                            extra={"extra_data": {"extra_pnginfo": {"workflow": workflow}}})
+                        sent = json.loads(self.backend.requests[-1][3])
+                        self.assertNotIn(reduced_id, sent["prompt"])
+                        self.assertEqual(sent["prompt"][full_id], original_prompt[full_id])
+                        self.assertEqual(sent["extra_data"]["extra_pnginfo"]["workflow"], workflow)
+                        self.assertEqual(sent["prompt"][final_id]["inputs"]["root"], "output" if destination == "comfy" else "temp")
+                        # Execute the output dependency graph with synthetic dimensions.
+                        executed, sizes, outputs = [], {}, {}
+                        execution_prompt = sent["prompt"]
+                        def execute(node_id):
+                            if node_id in sizes:
+                                return sizes[node_id]
+                            node = execution_prompt[node_id]
+                            executed.append(node_id)
+                            if node["class_type"] == "DonutText":
+                                size = (1024, 1536)
+                            else:
+                                source = node["inputs"].get("images", node["inputs"].get("image"))
+                                size = execute(source[0])
+                                if node["class_type"] == "ImageScaleBy":
+                                    size = tuple(int(value * node["inputs"]["scale_by"]) for value in size)
+                            sizes[node_id] = size
+                            return size
+                        for node_id, node in sent["prompt"].items():
+                            if node["class_type"] in {"SaveImage", "PreviewImage", "DonutImageSave"}:
+                                execute(node_id)
+                                kind = "output" if node["class_type"] == "SaveImage" or node["inputs"].get("root") == "output" else "temp"
+                                outputs[node_id] = {"images": [{"filename": node_id + ".png", "subfolder": "synthetic", "type": kind}]}
+                        self.assertNotIn(scale_id, executed)
+                        self.assertEqual(sizes[full_id], (1024, 1536))
+                        self.backend.complete(job)
+                        self.backend.history[job]["outputs"] = outputs
+                        public = (await self.http.get(f"/create/sessions/{sid}")).json()
+                        stage = next(output for output in public["outputs"] if output["final"] is False)
+                        self.assertEqual(stage["node_id"], full_id)
+                        self.assertEqual(stage["workflow"], workflow)
+                        self.assertEqual(len(public["outputs"]), 2)
+                        self.assertTrue(next(output for output in public["outputs"] if output["node_id"] == final_id)["final"])
+                        fetched = await self.http.get(f"/create/sessions/{sid}/outputs/{stage['id']}")
+                        self.assertEqual(fetched.content, self.backend.image)
+                        self.assertIn("type=temp", self.backend.requests[-1][1])
+                        # The original standalone prompt still executes its reduced save.
+                        execution_prompt = original_prompt
+                        executed.clear()
+                        sizes.clear()
+                        self.assertEqual(execute(reduced_id), (256, 384))
+                        self.assertIn(scale_id, executed)
+
+    # AC: @donut-create-plugin ac-full-first-pass
+    async def test_unrelated_scaled_saves_and_explicit_final_outputs_are_preserved(self):
+        for scale_by, final_marker, full_preview in ((0.5, False, True), (0.25, True, True), (0.25, False, False)):
+            with self.subTest(scale_by=scale_by, final=final_marker, full_preview=full_preview):
+                sid = await self.new_session()
+                workflow = {"nodes": [{"id": 3, "properties": {"dmc_final_output": final_marker}}],
+                            "extra": {"dmc_output_destination": "comfy"}}
+                prompt = {
+                    "1": {"class_type": "DonutText", "inputs": {"text": "synthetic"}},
+                    "2": {"class_type": "ImageScaleBy", "inputs": {"image": ["1", 0], "scale_by": scale_by}},
+                    "3": {"class_type": "SaveImage", "inputs": {"images": ["2", 0], "filename_prefix": "custom"}},
+                }
+                if full_preview:
+                    prompt["4"] = {"class_type": "PreviewImage", "inputs": {"images": ["1", 0]}}
+                job = await self.submit(sid, prompt=prompt, extra={"extra_data": {"extra_pnginfo": {"workflow": workflow}}})
+                sent = json.loads(self.backend.requests[-1][3])["prompt"]
+                self.assertEqual(sent["3"]["class_type"], "SaveImage")
+                self.assertEqual(sent["3"]["inputs"]["images"], ["2", 0])
+                self.assertNotIn("4", self.controller.session(sid)["jobs"][job]["save_nodes"])
+
     # AC: @donut-create-plugin ac-save-gallery
     async def test_comfy_destination_retains_permanent_sinks_and_is_recorded(self):
         sid = await self.new_session()
@@ -872,15 +975,24 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("seed", metadata)
 
     # AC: @donut-create-plugin ac-job-ownership
+    # AC: @donut-create-plugin ac-full-first-pass
     async def test_websocket_filters_other_jobs_and_scopes_binary_preview(self):
         sid = await self.new_session()
-        own = await self.submit(sid)
+        own = await self.submit(sid, prompt={
+            "1": {"class_type": "DonutText", "inputs": {"text": "synthetic image"}},
+            "2": {"class_type": "ImageScaleBy", "inputs": {"image": ["1", 0], "scale_by": 0.25}},
+            "3": {"class_type": "SaveImage", "inputs": {"images": ["2", 0], "filename_prefix": "workflow"}},
+            "8": {"class_type": "PreviewImage", "inputs": {"images": ["1", 0]}},
+        })
+        self.assertNotIn("3", json.loads(self.backend.requests[-1][3])["prompt"])
         self.backend.pending = []
         self.backend.running = [self.backend.row(own)]
         messages = [
             json.dumps({"type": "execution_start", "data": {"prompt_id": "other"}}),
             json.dumps({"type": "status", "data": {"status": {"exec_info": {"queue_remaining": 50}}}}),
             json.dumps({"type": "execution_start", "data": {"prompt_id": own}}),
+            json.dumps({"type": "executed", "data": {"prompt_id": own, "node": "8", "output": {
+                "images": [{"filename": "full-first-pass.png", "subfolder": "synthetic", "type": "temp"}]}}}),
             b"synthetic-own-preview",
             json.dumps({"type": "progress", "data": {"prompt_id": "other", "value": 7, "max": 8}}),
             json.dumps({"type": "progress", "data": {"prompt_id": own, "value": 3, "max": 8}}),
@@ -936,9 +1048,20 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(socket.closed, None)
         self.assertEqual([entry for entry in socket.sent if isinstance(entry, bytes)], [b"synthetic-own-preview"])
         events = [entry for entry in socket.sent if isinstance(entry, dict)]
-        self.assertEqual([entry["type"] for entry in events], ["status", "execution_start", "progress", "execution_error"])
+        self.assertEqual([entry["type"] for entry in events], ["status", "execution_start", "executed", "progress", "execution_error"])
         self.assertEqual(events[0]["data"]["status"]["exec_info"]["queue_remaining"], 1)
-        self.assertEqual(self.controller.session(sid)["jobs"][own]["status"], "error")
+        session = self.controller.session(sid)
+        self.assertEqual(session["jobs"][own]["status"], "error")
+        self.assertEqual(session["outputs"], {})  # First-pass event precedes final completion.
+        preview = next(iter(session["previews"].values()))
+        self.assertEqual(preview["node_id"], "8")
+        self.assertEqual(preview["filename"], "full-first-pass.png")
+        response = await self.http.get(f"/studio/{sid}/view", params={
+            "filename": preview["filename"], "subfolder": preview["subfolder"], "type": "temp"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, self.backend.image)
+        response = await self.http.get(f"/studio/{sid}/view", params={"filename": "reduced.png", "subfolder": "synthetic", "type": "temp"})
+        self.assertEqual(response.status_code, 404)
         self.assertIn("first-comfy.invalid", captured_urls[0][0])
         self.assertIn("clientId=donut-create-" + sid, captured_urls[0][0])
         self.assertEqual(captured_urls[0][1]["proxy"], None)
