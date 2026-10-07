@@ -21,3 +21,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T04:16:49.740Z
+  - _ulid: 01M4A9G63F7TAQCNSKSC9FXXP9
+    content: Actual pinned b11457 CPU Qwen3.5-4B Q4_K_M comparison reproduced baseline sparse cabin echo
+      (A wooden cabin, no people present); explicit expansion produced a 35-word rendering
+      paragraph. Sparse owl generalized but invented perched, and detailed owl lost SYNTH_OWL, so
+      candidate rejected internally. Revised rules now explicitly leave missing
+      pose/action/location/attachment unstated, prioritize all supplied facts and triggers, and keep
+      detailed factual wording. Running owned-fixture real integration preservation tests before
+      submission; no user profile/model/cache used.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T04:21:14.480Z
