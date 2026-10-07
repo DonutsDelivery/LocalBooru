@@ -13,6 +13,7 @@ use axum::{
     Json, Router,
 };
 use futures_util::{SinkExt, StreamExt};
+use image::ImageEncoder;
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -578,14 +579,14 @@ async fn import_output(
             "Generation output is unavailable or the studio has expired".into(),
         ));
     }
-    // Staging on the destination filesystem permits atomic no-clobber install.
+    // Keep the downloaded source outside the watched output directory.
+    // The PNG suffix permits extracting its original text chunks after decoding.
     let temp = tempfile::Builder::new()
         .prefix(".donut-create-")
-        .suffix(".part")
-        .tempfile_in(&root)?;
+        .suffix(".png")
+        .tempfile()?;
     let mut file = tokio::fs::File::from_std(temp.reopen()?);
     let mut stream = response.bytes_stream();
-    let mut hash = Sha256::new();
     let mut size = 0u64;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk
@@ -596,17 +597,14 @@ async fn import_output(
                 "Generation output exceeds the import limit".into(),
             ));
         }
-        hash.update(&chunk);
         file.write_all(&chunk).await?;
     }
     file.flush().await?;
     file.sync_all().await?;
     drop(file);
-    let sha256 = format!("{:x}", hash.finalize());
-    let result = tokio::task::spawn_blocking(move || {
-        save_output(&state, &lib, &request, root, temp, sha256)
-    })
-    .await??;
+    let result =
+        tokio::task::spawn_blocking(move || save_output(&state, &lib, &request, root, temp))
+            .await??;
     Ok(Json(result))
 }
 
@@ -617,13 +615,24 @@ fn file_digest(path: &std::path::Path) -> Result<String, AppError> {
     Ok(format!("{:x}", hash.finalize()))
 }
 
+fn source_fingerprint_exif(sha256: &str) -> Vec<u8> {
+    // A little-endian TIFF IFD with one ASCII ImageDescription (0x010e).
+    // The string starts after the header, IFD count, entry and next-IFD offset.
+    let mut exif = b"II\x2a\0\x08\0\0\0\x01\0\x0e\x01\x02\0".to_vec();
+    exif.extend_from_slice(&((sha256.len() + 1) as u32).to_le_bytes());
+    exif.extend_from_slice(&26u32.to_le_bytes());
+    exif.extend_from_slice(&0u32.to_le_bytes());
+    exif.extend_from_slice(sha256.as_bytes());
+    exif.push(0);
+    exif
+}
+
 fn save_output(
     state: &AppState,
     lib: &LibraryContext,
     request: &ImportRequest,
     root: PathBuf,
-    temp: tempfile::NamedTempFile,
-    sha256: String,
+    source: tempfile::NamedTempFile,
 ) -> Result<ImportedOutput, AppError> {
     if !state.library_manager().is_mounted(&lib.uuid) {
         return Err(AppError::BadRequest(
@@ -635,19 +644,55 @@ fn save_output(
             "Destination changed while saving".into(),
         ));
     }
-    let mut reader = image::ImageReader::open(temp.path())?.with_guessed_format()?;
-    if reader.format() != Some(image::ImageFormat::Png) {
+    let mut reader = image::ImageReader::open(source.path())?.with_guessed_format()?;
+    if !matches!(
+        reader.format(),
+        Some(image::ImageFormat::Png | image::ImageFormat::WebP)
+    ) {
         return Err(AppError::BadRequest(
-            "Only generated PNG images can be imported".into(),
+            "Only generated PNG or WebP images can be imported".into(),
         ));
     }
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(16384);
     limits.max_image_height = Some(16384);
     reader.limits(limits);
-    reader.decode().map_err(|_| {
-        AppError::BadRequest("Generation output is not a valid supported PNG".into())
+    let image = reader.decode().map_err(|_| {
+        AppError::BadRequest("Generation output is not a valid supported image".into())
     })?;
+    // PNG metadata belongs to the source, while the companion is verified
+    // against the encoded WebP bytes installed into the library.
+    let mut chunks =
+        metadata::extract_png_text_chunks(&source.path().to_string_lossy()).unwrap_or_default();
+    let pixels = image.into_rgba8();
+    // Stage on the destination filesystem for atomic no-clobber installation;
+    // a non-media suffix keeps the directory watcher from indexing partial data.
+    let mut temp = tempfile::Builder::new()
+        .prefix(".donut-create-")
+        .suffix(".part")
+        .tempfile_in(&root)?;
+    let mut encoder = image::codecs::webp::WebPEncoder::new_lossless(temp.as_file_mut());
+    // Keep byte-distinct source recipes distinct after PNG text chunks move
+    // into companions. Only the source fingerprint is embedded in the WebP.
+    encoder
+        .set_exif_metadata(source_fingerprint_exif(&file_digest(source.path())?))
+        .map_err(|error| {
+            AppError::Internal(format!("Could not encode source identity: {error}"))
+        })?;
+    encoder
+        .encode(
+            pixels.as_raw(),
+            pixels.width(),
+            pixels.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .map_err(|error| {
+            AppError::Internal(format!("Could not encode generation output: {error}"))
+        })?;
+    drop(pixels);
+    temp.as_file().sync_all()?;
+    let sha256 = file_digest(temp.path())?;
+    drop(source);
 
     let mut provenance = rusqlite::Connection::open(lib.data_dir.join("donut-create.sqlite"))?;
     provenance.busy_timeout(Duration::from_secs(30))?;
@@ -666,7 +711,7 @@ fn save_output(
             |row| row.get(0),
         )?;
         if exists && path.is_file() && file_digest(&path)? == digest && digest == sha256 {
-            persist_output_metadata(&path, &sha256, request.execution_metadata.as_ref())?;
+            persist_output_metadata(&path, &sha256, &chunks, request.execution_metadata.as_ref())?;
             return Ok(ImportedOutput {
                 library_id: lib.uuid.clone(),
                 directory_id: request.directory_id,
@@ -678,13 +723,12 @@ fn save_output(
         }
     }
 
-    let mut temp = temp;
     let mut suffix = 0u32;
     let (path, created) = loop {
         let filename = if suffix == 0 {
-            format!("donut-{sha256}.png")
+            format!("donut-{sha256}.webp")
         } else {
-            format!("donut-{sha256}-{suffix}.png")
+            format!("donut-{sha256}-{suffix}.webp")
         };
         let path = root.join(filename);
         match temp.persist_noclobber(&path) {
@@ -703,7 +747,8 @@ fn save_output(
     };
     // Write the portable recipe before indexing so ordinary metadata extraction
     // and later reindexing use the same executed settings as this import.
-    if let Err(error) = persist_output_metadata(&path, &sha256, request.execution_metadata.as_ref())
+    if let Err(error) =
+        persist_output_metadata(&path, &sha256, &chunks, request.execution_metadata.as_ref())
     {
         if created {
             let _ = std::fs::remove_file(&path);
@@ -740,7 +785,6 @@ fn save_output(
     let image_id = imported
         .image_id
         .ok_or_else(|| AppError::Internal("Import returned no image identity".into()))?;
-    let mut chunks = metadata::extract_png_text_chunks(&path.to_string_lossy()).unwrap_or_default();
     let pool = lib.directory_db.get_pool(request.directory_id)?;
     let conn = pool.get()?;
     save_generation_metadata(
@@ -819,9 +863,9 @@ fn save_generation_metadata(
 fn persist_output_metadata(
     path: &std::path::Path,
     sha256: &str,
+    chunks: &std::collections::HashMap<String, String>,
     executed: Option<&serde_json::Value>,
 ) -> Result<(), AppError> {
-    let chunks = metadata::extract_png_text_chunks(&path.to_string_lossy()).unwrap_or_default();
     let graph = executed
         .and_then(|value| value.get("execution_prompt"))
         .filter(|v| v.is_object())
@@ -847,7 +891,7 @@ fn persist_output_metadata(
             }),
         execution_prompt: graph,
         execution: executed.and_then(|value| value.get("execution")).cloned(),
-        png_text: chunks,
+        png_text: chunks.clone(),
     };
     metadata::write_generation_sidecar(path, &sidecar).map_err(|error| {
         AppError::BadRequest(format!("Could not save generation metadata: {error}"))
@@ -982,12 +1026,16 @@ mod tests {
             .unwrap();
         let bytes = bytes.into_inner();
         let sha256 = format!("{:x}", Sha256::digest(&bytes));
-        let mut file = tempfile::NamedTempFile::new_in(root).unwrap();
+        let mut file = tempfile::Builder::new()
+            .suffix(".png")
+            .tempfile_in(root)
+            .unwrap();
         file.write_all(&bytes).unwrap();
         (file, sha256, bytes)
     }
 
     // AC: @donut-create-plugin ac-save-gallery
+    // AC: @donut-create-plugin ac-webp-output
     #[test]
     fn save_is_qualified_idempotent_and_does_not_overwrite() {
         let (_temp, state, lib, root) = fixture();
@@ -999,16 +1047,34 @@ mod tests {
             execution_metadata: None,
         };
         let (file, digest, bytes) = staged_png(&root);
-        let collision = root.join(format!("donut-{digest}.png"));
+        let mut webp = std::io::Cursor::new(Vec::new());
+        let pixels = image::load_from_memory(&bytes).unwrap().to_rgba8();
+        let mut encoder = image::codecs::webp::WebPEncoder::new_lossless(&mut webp);
+        encoder
+            .set_exif_metadata(source_fingerprint_exif(&digest))
+            .unwrap();
+        encoder
+            .encode(
+                pixels.as_raw(),
+                pixels.width(),
+                pixels.height(),
+                image::ExtendedColorType::Rgba8,
+            )
+            .unwrap();
+        let webp = webp.into_inner();
+        let webp_digest = format!("{:x}", Sha256::digest(&webp));
+        let collision = root.join(format!("donut-{webp_digest}.webp"));
         std::fs::write(&collision, b"preserve unrelated file").unwrap();
-        let saved =
-            save_output(&state, &lib, &request, root.clone(), file, digest.clone()).unwrap();
+        let saved = save_output(&state, &lib, &request, root.clone(), file).unwrap();
         assert_eq!(saved.library_id, lib.uuid);
         assert_eq!(
             std::fs::read(&collision).unwrap(),
             b"preserve unrelated file"
         );
-        assert_eq!(std::fs::read(root.join(&saved.filename)).unwrap(), bytes);
+        assert_eq!(saved.filename, format!("donut-{webp_digest}-1.webp"));
+        assert_eq!(saved.sha256, webp_digest);
+        assert_ne!(saved.sha256, digest);
+        assert_eq!(std::fs::read(root.join(&saved.filename)).unwrap(), webp);
         let count: i64 = state
             .library_manager()
             .primary()
@@ -1021,11 +1087,319 @@ mod tests {
             .unwrap();
         assert_eq!(count, 0);
         let (file, _, _) = staged_png(&root);
-        let repeated = save_output(&state, &lib, &request, root.clone(), file, digest).unwrap();
+        let repeated = save_output(&state, &lib, &request, root.clone(), file).unwrap();
         assert_eq!(repeated.image_id, saved.image_id);
         assert_eq!(repeated.filename, saved.filename);
         assert_eq!(repeated.status, "existing");
         assert_eq!(std::fs::read_dir(root).unwrap().count(), 3);
+    }
+
+    fn output_request(lib: &LibraryContext, output_id: &str) -> ImportRequest {
+        ImportRequest {
+            session_id: "synthetic-session".into(),
+            output_id: output_id.into(),
+            library_id: lib.uuid.clone(),
+            directory_id: 7,
+            execution_metadata: None,
+        }
+    }
+
+    // AC: @donut-create-plugin ac-webp-output
+    #[test]
+    fn saved_webp_preserves_full_resolution_rgb_and_rgba_pixels() {
+        let (_temp, state, lib, root) = fixture();
+        for alpha in [false, true] {
+            let pixels = image::RgbaImage::from_fn(513, 257, |x, y| {
+                image::Rgba([
+                    x as u8,
+                    y as u8,
+                    (x ^ y) as u8,
+                    if alpha {
+                        (x.wrapping_mul(y)) as u8
+                    } else {
+                        255
+                    },
+                ])
+            });
+            let image = if alpha {
+                image::DynamicImage::ImageRgba8(pixels.clone())
+            } else {
+                image::DynamicImage::ImageRgb8(
+                    image::DynamicImage::ImageRgba8(pixels.clone()).to_rgb8(),
+                )
+            };
+            let mut source = tempfile::Builder::new()
+                .suffix(".png")
+                .tempfile_in(&root)
+                .unwrap();
+            image
+                .write_to(source.as_file_mut(), image::ImageFormat::Png)
+                .unwrap();
+            let request = output_request(&lib, if alpha { "rgba" } else { "rgb" });
+            let saved = save_output(&state, &lib, &request, root.clone(), source).unwrap();
+            let path = root.join(&saved.filename);
+            assert_eq!(
+                image::guess_format(&std::fs::read(&path).unwrap()).unwrap(),
+                image::ImageFormat::WebP
+            );
+            assert_eq!(image::open(&path).unwrap().to_rgba8(), pixels);
+            assert_eq!(saved.sha256, file_digest(&path).unwrap());
+            let sidecar = metadata::read_generation_sidecar(&path).unwrap().unwrap();
+            assert_eq!(sidecar.image_sha256, saved.sha256);
+            let pool = lib.directory_db.get_pool(7).unwrap();
+            let conn = pool.get().unwrap();
+            let (width, height, hash, extension): (u32, u32, String, String) = conn.query_row(
+                "SELECT width,height,file_hash,file_extension FROM images JOIN image_files ON images.id=image_files.image_id WHERE images.id=?1",
+                params![saved.image_id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
+            ).unwrap();
+            assert_eq!((width, height), (513, 257));
+            assert_eq!(
+                hash,
+                importer::calculate_quick_hash(&path.to_string_lossy()).unwrap()
+            );
+            assert_eq!(extension, "webp");
+        }
+    }
+
+    // AC: @donut-create-plugin ac-webp-output
+    #[test]
+    fn generated_webp_input_is_validated_and_remains_idempotent() {
+        let (_temp, state, lib, root) = fixture();
+        let mut request = output_request(&lib, "webp-input");
+        let workflow = serde_json::json!({"nodes": [{"id":1,"type":"SyntheticWebPOutput"}]});
+        let graph = serde_json::json!({"synthetic":{"class_type":"DonutPromptConditioning","inputs":{"face":"","scene":"executed WebP study","separator":""}}});
+        request.execution_metadata = Some(serde_json::json!({
+            "workflow": workflow, "execution_prompt": graph,
+            "execution": {"seed":1234,"steps":11},
+            "prompt_source":"executed_output", "prompt":"executed WebP study", "seed":1234
+        }));
+        let pixels = image::RgbaImage::from_pixel(37, 19, image::Rgba([42, 57, 91, 127]));
+        let mut first = None;
+        for _ in 0..2 {
+            let mut source = tempfile::Builder::new()
+                .suffix(".png")
+                .tempfile_in(&root)
+                .unwrap();
+            pixels
+                .write_to(source.as_file_mut(), image::ImageFormat::WebP)
+                .unwrap();
+            let saved = save_output(&state, &lib, &request, root.clone(), source).unwrap();
+            let path = root.join(&saved.filename);
+            assert_eq!(image::open(&path).unwrap().to_rgba8(), pixels);
+            let sidecar = metadata::read_generation_sidecar(&path).unwrap().unwrap();
+            assert_eq!(sidecar.workflow, Some(workflow.clone()));
+            assert_eq!(sidecar.execution_prompt, Some(graph.clone()));
+            assert_eq!(
+                sidecar.execution,
+                Some(serde_json::json!({"seed":1234,"steps":11}))
+            );
+            assert_eq!(
+                sidecar.generation.prompt.as_deref(),
+                Some("executed WebP study")
+            );
+            assert_eq!(sidecar.generation.seed.as_deref(), Some("1234"));
+            assert_eq!(sidecar.image_sha256, saved.sha256);
+            if let Some((image_id, filename)) = &first {
+                assert_eq!(saved.image_id, *image_id);
+                assert_eq!(&saved.filename, filename);
+                assert_eq!(saved.status, "existing");
+            } else {
+                first = Some((saved.image_id, saved.filename));
+            }
+        }
+    }
+
+    // AC: @donut-create-plugin ac-webp-output
+    #[test]
+    fn malformed_or_unsupported_output_does_not_install_an_image() {
+        let (_temp, state, lib, root) = fixture();
+        let request = output_request(&lib, "invalid");
+        for bytes in [
+            b"unrelated data".as_slice(),
+            b"\x89PNG\r\n\x1a\ntruncated",
+            b"RIFF\x10\0\0\0WEBPtruncated",
+        ] {
+            let mut source = tempfile::Builder::new()
+                .suffix(".png")
+                .tempfile_in(&root)
+                .unwrap();
+            source.write_all(bytes).unwrap();
+            assert!(matches!(
+                save_output(&state, &lib, &request, root.clone(), source),
+                Err(AppError::BadRequest(_))
+            ));
+            assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
+        }
+    }
+
+    fn append_png_text(bytes: &mut Vec<u8>, chunks: &[(&str, String)]) {
+        for (key, value) in chunks {
+            let mut chunk = b"tEXt".to_vec();
+            chunk.extend_from_slice(key.as_bytes());
+            chunk.push(0);
+            chunk.extend_from_slice(value.as_bytes());
+            let mut crc = !0u32;
+            for byte in &chunk {
+                crc ^= *byte as u32;
+                for _ in 0..8 {
+                    crc = (crc >> 1) ^ (0xedb88320 & (0u32.wrapping_sub(crc & 1)));
+                }
+            }
+            let mut encoded = ((chunk.len() - 4) as u32).to_be_bytes().to_vec();
+            encoded.extend_from_slice(&chunk);
+            encoded.extend_from_slice(&(!crc).to_be_bytes());
+            bytes.splice(bytes.len() - 12..bytes.len() - 12, encoded);
+        }
+    }
+
+    // AC: @donut-create-plugin ac-webp-output
+    // AC: @donut-create-plugin ac-output-sidecar
+    #[test]
+    fn identical_pixels_with_distinct_recipes_keep_distinct_provenance() {
+        let (_temp, state, lib, root) = fixture();
+        let mut saved_outputs = Vec::new();
+        for name in ["first", "second", "first"] {
+            let request = output_request(&lib, name);
+            let (mut source, _, mut bytes) = staged_png(&root);
+            let graph = serde_json::json!({
+                "text":{"class_type":"CLIPTextEncode","inputs":{"text":name}},
+                "conditioning":{"class_type":"DonutPromptConditioning","inputs":{"face":"","scene":["text",0],"separator":""}}
+            });
+            let workflow = serde_json::json!({"synthetic_recipe":name});
+            append_png_text(
+                &mut bytes,
+                &[
+                    ("prompt", graph.to_string()),
+                    ("workflow", workflow.to_string()),
+                ],
+            );
+            source.as_file_mut().set_len(0).unwrap();
+            std::io::Seek::rewind(source.as_file_mut()).unwrap();
+            source.write_all(&bytes).unwrap();
+            let source_digest = file_digest(source.path()).unwrap();
+            let saved = save_output(&state, &lib, &request, root.clone(), source).unwrap();
+            let path = root.join(&saved.filename);
+            let sidecar = metadata::read_generation_sidecar(&path).unwrap().unwrap();
+            assert_eq!(sidecar.workflow, Some(workflow));
+            assert_eq!(sidecar.execution_prompt, Some(graph));
+            assert_eq!(sidecar.image_sha256, file_digest(&path).unwrap());
+            let encoded = std::fs::read(&path).unwrap();
+            assert_eq!(
+                u32::from_le_bytes(encoded[4..8].try_into().unwrap()) as usize + 8,
+                encoded.len()
+            );
+            assert_eq!(&encoded[12..16], b"VP8X");
+            assert_ne!(encoded[20] & 0x08, 0); // Exif-present feature flag.
+            assert!(encoded
+                .windows(64)
+                .any(|window| window == source_digest.as_bytes()));
+            assert!(!encoded
+                .windows(name.len())
+                .any(|window| window == name.as_bytes()));
+            saved_outputs.push(saved);
+        }
+        assert_ne!(saved_outputs[0].filename, saved_outputs[1].filename);
+        assert_ne!(saved_outputs[0].image_id, saved_outputs[1].image_id);
+        assert_eq!(saved_outputs[0].filename, saved_outputs[2].filename);
+        assert_eq!(saved_outputs[0].image_id, saved_outputs[2].image_id);
+        assert_eq!(saved_outputs[2].status, "existing");
+        assert_eq!(
+            image::open(root.join(&saved_outputs[0].filename))
+                .unwrap()
+                .to_rgba8(),
+            image::open(root.join(&saved_outputs[1].filename))
+                .unwrap()
+                .to_rgba8()
+        );
+        let first = metadata::read_generation_sidecar(&root.join(&saved_outputs[0].filename))
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.workflow.unwrap()["synthetic_recipe"], "first");
+        let pool = lib.directory_db.get_pool(7).unwrap();
+        let conn = pool.get().unwrap();
+        for (saved, expected) in saved_outputs.iter().zip(["first", "second", "first"]) {
+            let prompt: String = conn
+                .query_row(
+                    "SELECT prompt FROM images WHERE id=?1",
+                    params![saved.image_id],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(prompt, expected);
+        }
+    }
+
+    // AC: @donut-create-plugin ac-webp-output
+    // AC: @donut-create-plugin ac-output-sidecar
+    #[test]
+    fn webp_sidecar_preserves_source_png_workflow_and_reindex_metadata() {
+        let (_temp, state, lib, root) = fixture();
+        let request = output_request(&lib, "embedded-workflow");
+        let (mut source, _, mut bytes) = staged_png(&root);
+        let graph = serde_json::json!({
+            "text": {"class_type":"CLIPTextEncode","inputs":{"text":"synthetic color study"}},
+            "conditioning":{"class_type":"DonutPromptConditioning","inputs":{"face":"","scene":["text",0],"separator":""}},
+            "sample": {"class_type":"KSampler","inputs":{"positive":["text",0],"seed":123,"steps":20,"cfg":7.0}}
+        });
+        let workflow = serde_json::json!({"nodes": [{"id":1,"type":"SyntheticNode"}]});
+        append_png_text(
+            &mut bytes,
+            &[
+                ("prompt", graph.to_string()),
+                ("workflow", workflow.to_string()),
+            ],
+        );
+        source.as_file_mut().set_len(0).unwrap();
+        std::io::Seek::rewind(source.as_file_mut()).unwrap();
+        source.write_all(&bytes).unwrap();
+        let saved = save_output(&state, &lib, &request, root.clone(), source).unwrap();
+        let path = root.join(&saved.filename);
+        let sidecar = metadata::read_generation_sidecar(&path).unwrap().unwrap();
+        assert_eq!(sidecar.workflow, Some(workflow));
+        assert_eq!(sidecar.execution_prompt, Some(graph));
+        assert_eq!(sidecar.png_text.len(), 2);
+        let extracted = metadata::extract_metadata(&path.to_string_lossy(), None, None, "auto");
+        assert_eq!(
+            extracted.metadata.unwrap().prompt.as_deref(),
+            Some("synthetic color study")
+        );
+        let pool = lib.directory_db.get_pool(7).unwrap();
+        let prompt: String = pool
+            .get()
+            .unwrap()
+            .query_row(
+                "SELECT prompt FROM images WHERE id=?1",
+                params![saved.image_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(prompt, "synthetic color study");
+    }
+
+    // AC: @donut-create-plugin ac-webp-output
+    #[test]
+    fn repeat_of_legacy_png_import_installs_webp_without_replacing_png() {
+        let (_temp, state, lib, root) = fixture();
+        let request = output_request(&lib, "legacy-png");
+        let (source, digest, bytes) = staged_png(&root);
+        let filename = format!("donut-{digest}.png");
+        let old_path = root.join(&filename);
+        std::fs::write(&old_path, &bytes).unwrap();
+        let imported =
+            importer::import_image(&state, &lib, &old_path.to_string_lossy(), 7, false).unwrap();
+        let provenance =
+            rusqlite::Connection::open(lib.data_dir.join("donut-create.sqlite")).unwrap();
+        provenance.execute_batch("CREATE TABLE imports (session_id TEXT NOT NULL, output_id TEXT NOT NULL, directory_id INTEGER NOT NULL, image_id INTEGER NOT NULL, sha256 TEXT NOT NULL, filename TEXT NOT NULL, metadata TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(session_id,output_id,directory_id));").unwrap();
+        provenance.execute("INSERT INTO imports(session_id,output_id,directory_id,image_id,sha256,filename,metadata) VALUES(?1,?2,7,?3,?4,?5,'{}')", params![request.session_id,request.output_id,imported.image_id.unwrap(),digest,filename]).unwrap();
+        let saved = save_output(&state, &lib, &request, root.clone(), source).unwrap();
+        assert!(saved.filename.ends_with(".webp"));
+        assert_ne!(Some(saved.image_id), imported.image_id);
+        assert_eq!(std::fs::read(old_path).unwrap(), bytes);
+        let (source, _, _) = staged_png(&root);
+        let repeated = save_output(&state, &lib, &request, root, source).unwrap();
+        assert_eq!(repeated.image_id, saved.image_id);
+        assert_eq!(repeated.filename, saved.filename);
+        assert_eq!(repeated.status, "existing");
     }
 
     // AC: @donut-create-plugin ac-save-gallery
@@ -1068,8 +1442,8 @@ mod tests {
             directory_id: 7,
             execution_metadata: None,
         };
-        let (file, digest, _) = staged_png(&root);
-        let saved = save_output(&state, &lib, &request, root, file, digest).unwrap();
+        let (file, _, _) = staged_png(&root);
+        let saved = save_output(&state, &lib, &request, root, file).unwrap();
         let graph = serde_json::json!({
             "input": {"class_type":"DF_Text_Box","inputs":{"Text":"distinctive portrait"}},
             "group:face": {"class_type":"DonutText","inputs":{"text":["input",0]}},
