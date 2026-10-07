@@ -2625,13 +2625,13 @@ tasks:
     title: Repair face-only conditioning in Create workflows
     type: bug
     spec_ref: "@donut-create-plugin"
-    status: pending_review
+    status: needs_work
     blocked_by: []
     depends_on: []
     priority: 1
     tags: []
     review_ref: "@review-create-face-only-ac74e6d6"
-    notes_count: 2
+    notes_count: 3
     todos_count: 0
     created_at: 2026-10-07T10:08:31.074Z
     started_at: 2026-10-07T10:08:32.621Z

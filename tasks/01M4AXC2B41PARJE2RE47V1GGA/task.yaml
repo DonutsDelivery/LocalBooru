@@ -9,7 +9,7 @@ description: Trace and correct bundled and recognized saved workflows that route
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: needs_work
 blocked_by: []
 depends_on: []
 context: []
@@ -63,6 +63,16 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-07T10:39:26.102Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: needs_work
+        previous: pending_review
+      session_id:
+        new: null
+        previous: null
+    command: review-verdict-needs-work
+    timestamp: 2026-10-07T10:44:20.711Z
 created_at: 2026-10-07T10:08:31.074Z
 started_at: 2026-10-07T10:08:32.621Z
 submitted_at: 2026-10-07T10:20:37.881Z

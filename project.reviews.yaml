@@ -18802,7 +18802,143 @@ reviews:
       - review-create-face-only-ac74e6d6
     title: Independent face-only conditioning review ac74e6d6
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+        evidence: Independent exact ac74e6d617c27d7e7967a4a90222c8bd2e280715 node --experimental-vm-modules
+          --test tests/browser_adapter.test.mjs44/44 pass. Bundled graphs execute blank/nonblank
+          face-only text/positive, recognized copies/re-ID/idempotence/custom guards/rollback and
+          new legacy prompt-set defaults. /tmp/dmc-face-review-adapter.txt
+        name: adapter-behavioral
+        required: true
+        runner: node
+        created_at: 2026-10-07T10:44:15.925Z
+        completed_at: 2026-10-07T10:44:15.925Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+        evidence: Independent python -m unittest discover -s tests -p test_installer.py22/22 pass. Includes
+          both bundled presets and manifest/browser SHA256 provenance verification.
+          /tmp/dmc-face-review-installer.txt
+        name: installer-assets
+        required: true
+        runner: unittest
+        created_at: 2026-10-07T10:44:16.346Z
+        completed_at: 2026-10-07T10:44:16.346Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+        evidence: "Independent executable /tmp/dmc-face-review-adversarial.mjs uses exact-base bc6b6025
+          adapter+template to upgrade a legacy recipe with whole-image prompt sets, saves with
+          authored FACE ONLY: smile, then current adapter repairs. Both text+positive still become
+          WHOLE STYLE SET instead of the face brief. /tmp/dmc-face-review-adversarial.txt"
+        name: saved-legacy-inherited-prompt-sets
+        required: true
+        runner: node
+        created_at: 2026-10-07T10:44:16.758Z
+        completed_at: 2026-10-07T10:44:16.758Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+        evidence: Independent same fixture test with output1/4.links=null proves recognized saved repair
+          fails at push and leaves scene+style in both detail outputs.
+          /tmp/dmc-face-review-null-links.txt. Pinned frontend source proves nullable/absent links
+          survive valid loading/serialization.
+        name: nullable-output-links-repair
+        required: true
+        runner: node
+        created_at: 2026-10-07T10:44:17.170Z
+        completed_at: 2026-10-07T10:44:17.170Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+        evidence: Downloaded public pinned DonutNodes2806ebe12caada993e6305e3f441ce61ab22a11c
+          donut_prompt.py and independently executed its actual DonutPromptConditioning.encode with
+          synthetic CLIP/nodes/variance stubs and disposable wildcard roots. Blank/nonblank
+          inputface goes only to return1/4; whole mixed text0/3 remains separate; selected inherited
+          sets override authored face in1/4 (three assertions cases pass). No model/GPU/private
+          roots. Source /tmp/dmc-face-review-public-donut_prompt.py;
+          https://github.com/DonutsDelivery/ComfyUI-DonutNodes/blob/2806ebe12caada993e6305e3f441ce61ab22a11c/donut_prompt.py
+        name: pinned-real-conditioning-semantics
+        required: false
+        runner: manual
+        created_at: 2026-10-07T10:44:17.558Z
+        completed_at: 2026-10-07T10:44:17.558Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+        evidence: Pinned ComfyUI_frontend1.53.6 workflowSchema zNodeOutput accepts nullable/optional links;
+          NodeOutputSlot preserves original array/null state, _serialiseLinkIds returnsnull for
+          empty unconnected outputs; outputAsSerialisable uses that function. Sources
+          /tmp/dmc-face-review-public-schema.ts /tmp/dmc-face-review-public-NodeOutputSlot.ts
+          /tmp/dmc-face-review-public-slotUtils.ts.
+          https://github.com/Comfy-Org/ComfyUI_frontend/blob/v1.53.6/src/lib/litegraph/src/node/NodeOutputSlot.ts
+          ;
+          https://github.com/Comfy-Org/ComfyUI_frontend/blob/v1.53.6/src/lib/litegraph/src/node/slotUtils.ts
+          ;
+          https://github.com/Comfy-Org/ComfyUI_frontend/blob/v1.53.6/src/platform/workflow/validation/schemas/workflowSchema.ts
+        name: nullable-links-primary-source
+        required: false
+        runner: manual
+        created_at: 2026-10-07T10:44:17.978Z
+        completed_at: 2026-10-07T10:44:17.978Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+        evidence: Independent controller51 tests:50pass/1fail known
+          test_managed_port_occupant_is_not_adopted_as_owned_backend expects18010 in generic error.
+          Exactbase bc6b602583728e291b63e4871ef640f866049181 independently reproduces same failure
+          via -k. /tmp/dmc-face-review-controller.txt /tmp/dmc-face-review-base-port.txt. No
+          broad97-suite pass claim.
+        name: controller-baseline
+        required: false
+        runner: unittest
+        created_at: 2026-10-07T10:44:18.383Z
+        completed_at: 2026-10-07T10:44:18.383Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+        evidence: Independent kspec validate existing130schema errors and verify/SKILL.md
+          missing-description, unchanged limitation. /tmp/dmc-face-review-validate.txt
+        name: kspec-existing-validation
+        required: false
+        runner: kspec
+        created_at: 2026-10-07T10:44:18.769Z
+        completed_at: 2026-10-07T10:44:18.769Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+        evidence: Read AGENTS/HERMES/safety/review skill, every7-file diff and surrounding
+          load/rollback/graph binding context before claims. Scoped
+          ac-face-prompt-routing/ac-workflow-state assessed. Source syntax and diffcheck pass.
+          Actual worktree branch fix/create-face-only-conditioning; reviewed immutable exact
+          basebc6b602583728e291b63e4871ef640f866049181/headac74e6d617c27d7e7967a4a90222c8bd2e280715
+          (review head_branch label mistakenly says fix/create-face-conditioning). No source
+          edits/build/merge/private access. Two established blockers, no other findings.
+        name: diff-context-ac-review
+        required: true
+        runner: manual
+        created_at: 2026-10-07T10:44:19.173Z
+        completed_at: 2026-10-07T10:44:19.173Z
     events:
       - _ulid: 01M4AZ4NJB1N4R0WY7F6HSDHGK
         actor: DonutsDelivery
@@ -18810,9 +18946,103 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-07T10:39:25.771Z
+      - _ulid: 01M4AZDH0XWCAFY17KY33NSWKV
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: adapter-behavioral
+        timestamp: 2026-10-07T10:44:16.030Z
+      - _ulid: 01M4AZDHE8SAH83B978EE5CVXY
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: installer-assets
+        timestamp: 2026-10-07T10:44:16.456Z
+      - _ulid: 01M4AZDHV0B343DCKBB606ESG1
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: saved-legacy-inherited-prompt-sets
+        timestamp: 2026-10-07T10:44:16.864Z
+      - _ulid: 01M4AZDJ7RKK9JYF8PPTB2RSMT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: nullable-output-links-repair
+        timestamp: 2026-10-07T10:44:17.272Z
+      - _ulid: 01M4AZDJMQ553G0CZBS3V0408G
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: pinned-real-conditioning-semantics
+        timestamp: 2026-10-07T10:44:17.687Z
+      - _ulid: 01M4AZDK177244CB1VBD87X964
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: nullable-links-primary-source
+        timestamp: 2026-10-07T10:44:18.087Z
+      - _ulid: 01M4AZDKDQEA4WR1YHJGN68545
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: controller-baseline
+        timestamp: 2026-10-07T10:44:18.487Z
+      - _ulid: 01M4AZDKT00A51BGTCFN19VC33
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: kspec-existing-validation
+        timestamp: 2026-10-07T10:44:18.880Z
+      - _ulid: 01M4AZDM6KDB9D8251QRMN4YMM
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: diff-context-ac-review
+        timestamp: 2026-10-07T10:44:19.283Z
+      - _ulid: 01M4AZDMJV7APCSYMADGT1SN82
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01M4AZDMFKFV9Y8B4JTS2SAYEV
+        timestamp: 2026-10-07T10:44:19.675Z
+      - _ulid: 01M4AZDMZWX9D4ZYFBGY8C5GP0
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01M4AZDMVT2G4TAD2H62TF3JZA
+        timestamp: 2026-10-07T10:44:20.092Z
+      - _ulid: 01M4AZDNC8ADCHEG9CGDSAVFF8
+        actor: independent-create-fix-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: bc6b602583728e291b63e4871ef640f866049181
+            head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+          decision: request_changes
+        timestamp: 2026-10-07T10:44:20.488Z
+      - _ulid: 01M4AZDNC8SCEV0ZCG96REGYR0
+        actor: independent-create-fix-review
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: closed
+        timestamp: 2026-10-07T10:44:20.488Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-face-only-conditioning"
     subject:
@@ -18821,8 +19051,64 @@ reviews:
       base_commit: bc6b602583728e291b63e4871ef640f866049181
       head_branch: fix/create-face-conditioning
       head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
-    threads: []
-    verdicts: []
+    threads:
+      - _ulid: 01M4AZDMFKFV9Y8B4JTS2SAYEV
+        anchor:
+          type: code
+          commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+          line_end: 875
+          line_start: 861
+          path: addons/donut-create/assets/donut-create.js
+          side: head
+        entries:
+          - _ulid: 01M4AZDMFK72A1AV7DQKV02N4Q
+            author: DonutsDelivery
+            body: "P1: Existing saved legacy-upgrade branches retain inherited whole-image prompt-set overrides.
+              Exact-base adapter copied main conditioning widgets into new face branch, including
+              prompt_sets_json/index. This new existing-branch repair rewires face-only
+              inputs/outputs but preserves that override. Reproduction executes base upgrade with
+              selected main set face=WHOLE STYLE SET, scene=WHOLE SCENE SET, index2, writes separate
+              face FACE ONLY: smile, saves and boots current repair. Both edit text and positive
+              remain WHOLE STYLE SET instead of the authored face.
+              /tmp/dmc-face-review-adversarial.mjs + /tmp/dmc-face-review-adversarial.txt. Actual
+              pinned DonutPromptConditioning.encode also confirms set selection overrides face
+              before outputs1/4. Clear only conservatively identified inherited stock overrides
+              during recognized saved repair, retain independent custom face sets/settings and
+              whole-image controls, add prior-upgrade saved-draft regression including blank face
+              and copied IDs."
+            created_at: 2026-10-07T10:44:19.571Z
+        kind: blocker
+      - _ulid: 01M4AZDMVT2G4TAD2H62TF3JZA
+        anchor:
+          type: code
+          commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+          line_end: 872
+          line_start: 869
+          path: addons/donut-create/assets/donut-create.js
+          side: head
+        entries:
+          - _ulid: 01M4AZDMVT218TFGV1E96J5CXF
+            author: DonutsDelivery
+            body: "P2: Repair assumes unused destination output links is an array. Valid saved ComfyUI workflows
+              can retain links:null or omit links for unconnected face_text/face_positive outputs.
+              Recognized guard accepts this, but links.push at872 throws; finishLoad keeps broken
+              scene-leaking branch. Independent /tmp/dmc-face-review-adversarial.mjs null-links test
+              fails and /tmp/dmc-face-review-null-links.txt shows whole scene/style still reaches
+              edit and positive. Pinned frontend1.53.6 schema and NodeOutputSlot/_serialiseLinkIds
+              confirm nullable/absent is valid and preserved. Initialize destination link arrays
+              before pushing, and cover null and absent forms without generating or altering
+              authored fields."
+            created_at: 2026-10-07T10:44:19.962Z
+        kind: blocker
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: bc6b602583728e291b63e4871ef640f866049181
+          head_commit: ac74e6d617c27d7e7967a4a90222c8bd2e280715
+        decision: request_changes
+        reviewer: independent-create-fix-review
+        role: reviewer
+        created_at: 2026-10-07T10:44:20.488Z
     created_at: 2026-10-07T10:39:25.772Z
-    updated_at: null
+    updated_at: 2026-10-07T10:44:20.488Z
     notes: []
