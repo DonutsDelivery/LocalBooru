@@ -1,6 +1,7 @@
 """Synthetic controller checks. No models, user profiles, or services are opened."""
 
 import asyncio
+import copy
 import importlib.util
 import json
 import tempfile
@@ -174,7 +175,7 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
             response = await self.http.get(f"/studio/{sid}/workflow.json?preset={preset}")
             self.assertEqual(response.status_code, 200, response.text)
             workflow = response.json()
-            self.assertEqual(workflow["extra"]["donut_workflow"]["controls_revision"], 1)
+            self.assertEqual(workflow["extra"]["donut_workflow"]["controls_revision"], 2)
             face = [node for graph in workflow["definitions"]["subgraphs"] for node in graph["nodes"]
                     if node.get("properties", {}).get("dmc_prompt_role") == "face" and node["type"] == "DF_Text_Box"]
             self.assertEqual(len(face), 1)
@@ -513,6 +514,72 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         response = await self.http.get(f"/studio/{sid}/object_info/VAEUtils_PatchWanUpscaleVAE")
         self.assertEqual(response.json(), {})
         self.assertEqual((await self.http.get(f"/studio/{sid}/object_info/ExecutePython")).status_code, 403)
+
+    # AC: @create-multiple-face-prompts ac-single-face-compatible
+    async def test_owned_face_runtime_is_required_only_for_managed_backend_readiness(self):
+        with patch.object(self.installer, "expected_capabilities", return_value={
+                "required_nodes": ["DonutText", "DonutImageSave", "DMCFaceDetailer"], "required_models": []}):
+            self.assertTrue((await self.controller.readiness())["ready"])
+            self.controller.config["mode"] = "managed"
+            self.assertIn("DMCFaceDetailer", (await self.controller.readiness())["missing_nodes"])
+
+    # AC: @create-multiple-face-prompts ac-character-prompts
+    # AC: @create-multiple-face-prompts ac-single-face-compatible
+    async def test_ordered_face_node_is_scoped_and_preserves_executed_plan(self):
+        sid = await self.new_session()
+        self.backend.nodes["DMCFaceDetailer"] = {"input": {"optional": {"face_prompts_json": ["STRING"]}}}
+        info = await self.http.get(f"/studio/{sid}/object_info")
+        self.assertIn("DMCFaceDetailer", info.json())
+        faces = [{"character": "Left traveler", "position": "left", "face_prompt": "The left traveler smiles."},
+                 {"character": "Right traveler", "position": "right", "face_prompt": "The right traveler frowns."}]
+        workflow = {"nodes": [], "extra": {"dmc_prompt_enhancement": {"face_prompts": faces}}}
+        prompt = {"1": {"class_type": "DMCFaceDetailer", "inputs": {"face_prompts_json": json.dumps(faces)}}}
+        queued = await self.submit(sid, prompt=prompt, extra={"extra_data": {"extra_pnginfo": {"workflow": workflow}}})
+        sent = json.loads(next(entry[3] for entry in reversed(self.backend.requests) if entry[1].endswith("/prompt")))
+        self.assertEqual(json.loads(sent["prompt"]["1"]["inputs"]["face_prompts_json"]), faces)
+        self.assertEqual(self.controller.session(sid)["jobs"][queued]["workflow"]["extra"]["dmc_prompt_enhancement"]["face_prompts"], faces)
+
+    # AC: @create-multiple-face-prompts ac-mismatch
+    # AC: @donut-create-plugin ac-access-boundary
+    async def test_ordered_face_node_rejects_unsafe_or_unresolved_plans_before_queue(self):
+        sid = await self.new_session()
+        row = {"character": "Traveler", "position": "left", "face_prompt": "The traveler smiles."}
+        plans = ["not json", json.dumps([row, row]), json.dumps([{**row, "face_prompt": "%load:private%"}]),
+                 json.dumps([{**row, "position": "behind"}]), ["untrusted", 0],
+                 json.dumps([{**row, "face_prompt": "__private__"}])]
+        for plan in plans:
+            with self.subTest(plan=plan):
+                before = len([entry for entry in self.backend.requests if entry[1].endswith("/prompt")])
+                response = await self.http.post(f"/studio/{sid}/prompt", json={"prompt": {
+                    "1": {"class_type": "DMCFaceDetailer", "inputs": {"face_prompts_json": plan}}}})
+                self.assertIn(response.status_code, (400, 403), response.text)
+                self.assertEqual(len([entry for entry in self.backend.requests if entry[1].endswith("/prompt")]), before)
+
+    # AC: @create-multiple-face-prompts ac-spatial-matching
+    # AC: @create-multiple-face-prompts ac-mismatch
+    async def test_relative_face_relationships_survive_queue_and_invalid_references_do_not(self):
+        sid = await self.new_session()
+        faces = [
+            {"character": "Father", "position": {"left_of": ["Mother"], "above": ["Son"]}, "face_prompt": "Father smiles."},
+            {"character": "Son", "position": {"left_of": ["Daughter"], "above": []}, "face_prompt": "Son has a calm gaze."},
+            {"character": "Mother", "position": {"left_of": [], "above": ["Daughter"]}, "face_prompt": "Mother smiles."},
+            {"character": "Daughter", "position": {"left_of": [], "above": []}, "face_prompt": "Daughter has a calm gaze."},
+        ]
+        queued = await self.submit(sid, prompt={"1": {"class_type": "DMCFaceDetailer", "inputs": {
+            "face_prompts_json": json.dumps(faces)}}})
+        self.assertIn(queued, self.controller.session(sid)["jobs"])
+        sent = json.loads(next(entry[3] for entry in reversed(self.backend.requests) if entry[1].endswith("/prompt")))
+        self.assertEqual(json.loads(sent["prompt"]["1"]["inputs"]["face_prompts_json"]), faces)
+        for target, axis, refs in [(0, "left_of", ["Unknown"]), (0, "above", ["Father"]),
+                                   (2, "left_of", ["Father"]), (1, "above", ["Father"]),
+                                   (0, "left_of", ["Mother", "Mother"])]:
+            invalid = copy.deepcopy(faces)
+            invalid[target]["position"][axis] = refs
+            before = len([entry for entry in self.backend.requests if entry[1].endswith("/prompt")])
+            response = await self.http.post(f"/studio/{sid}/prompt", json={"prompt": {
+                "1": {"class_type": "DMCFaceDetailer", "inputs": {"face_prompts_json": json.dumps(invalid)}}}})
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertEqual(len([entry for entry in self.backend.requests if entry[1].endswith("/prompt")]), before)
 
     # AC: @donut-create-plugin ac-access-boundary
     async def test_manager_process_filesystem_and_global_mutations_blocked(self):

@@ -30,6 +30,10 @@ pub fn get_addon_sources(id: &str) -> Option<&'static [AddonSource]> {
                 include_str!("../../../addons/donut-create/installer.py"),
             ),
             (
+                "dmc_face_detailer.py",
+                include_str!("../../../addons/donut-create/dmc_face_detailer.py"),
+            ),
+            (
                 "enhancer.py",
                 include_str!("../../../addons/donut-create/enhancer.py"),
             ),

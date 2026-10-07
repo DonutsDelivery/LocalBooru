@@ -25,6 +25,21 @@ function nodeAt(workflow, wanted) {
   }
 }
 
+function outputParent(env, destination = 'preview', automatic = true) {
+  const replies = [], requests = [];
+  const parent = { postMessage(value) {
+    if (value.channel !== 'donut-create-output-v1') { replies.push(value); return; }
+    requests.push(value);
+    if (automatic) respond(value);
+  } };
+  const respond = (request = requests.at(-1), payload = {ok: true, outputDestination: destination}, override = {}) => {
+    env.events.get('message')({source: parent, origin: 'http://parent.test', ...override,
+      data: {channel: 'donut-create-output-v1', sessionId: 'synthetic-session', requestId: request.requestId, ...payload}});
+  };
+  env.context.parent = parent;
+  return {parent, replies, requests, respond};
+}
+
 const compatibilityPresets = ['Off', 'Custom', 'Bypass 2', 'Bypass 3', 'Rebalance', 'Enhancer', 'Rebalance + Enhancer',
   'Rebalance + Bypass 2', 'Rebalance + Bypass 3', 'Balanced', 'Balanced + raw NAG', 'Balanced + Enhancer', 'UncensorFix'];
 const fusionWidgets = ['compatibility_preset', 'tap_method', 'tap_profile', 'per_layer_weights', 'tap_strength',
@@ -172,6 +187,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
   return {app,api,loaded,queued,fetched,models,store,context,events,boot,settle,editPrompt,
     editSeed:value=>{nodeAt(current,1137).widgets_values[0]=value;},
     editFace:value=>{nodeAt(current,1178).widgets_values[0]=value;},
+    editFaceDetail:value=>{nodeAt(current,984).mode=value?0:4;},
     editMode:value=>{nodeAt(current,881).widgets_values[0]=value;nodeAt(current,881).widgets_values[1]=value?'donutref:'+'a'.repeat(64):'';},
     current:()=>copy(current),notice:()=>elements.get('donut-create-status')?.querySelector('.message')?.textContent};
 }
@@ -195,9 +211,7 @@ test('empty first studio loads genuine v5, scopes API and queues edited panel pr
 // AC: @donut-create-plugin ac-save-gallery
 test('advanced queue uses the selected output destination without editing the saved graph',async()=>{
   const env=fixture(); await env.boot();
-  const replies=[];
-  const parent={postMessage(value){replies.push(value);}};
-  env.context.parent=parent;
+  const {replies,parent}=outputParent(env,'comfy');
   env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',
     sessionId:'synthetic-session',requestId:'destination',action:'snapshot',payload:{outputDestination:'comfy'}}});
   await env.settle();
@@ -369,10 +383,11 @@ function faceInstruction(workflow) {
   const target = body.links.find(edge => edge.target_id === 984 && nodeAt(workflow,984).inputs[edge.target_slot].name === 'edit_prompt');
   assert.equal(target.origin_id,1180);
   const positive = body.links.find(edge => edge.target_id === 1118 && nodeAt(workflow,1118).inputs[edge.target_slot].name === 'conditioning_in_2');
-  assert.equal(positive.origin_id,1180); assert.equal(positive.origin_slot,3);
-  const context = body.links.find(edge => edge.target_id === 1180 && edge.target_slot === 1);
+  assert.equal(target.origin_slot,1);
+  assert.equal(positive.origin_id,1180); assert.equal(positive.origin_slot,4);
+  const context = body.links.find(edge => edge.target_id === 1180 && edge.target_slot === 2);
   assert.equal(context.origin_id,996); assert.equal(context.origin_slot,0);
-  const face = body.links.find(edge => edge.target_id === 1180 && edge.target_slot === 2);
+  const face = body.links.find(edge => edge.target_id === 1180 && edge.target_slot === 1);
   assert.equal(body.inputs[face.origin_slot].name,'face_instruction');
   const root = workflow.links.find(edge => edge[3] === 1014 && nodeAt(workflow,1014).inputs[edge[4]].name === 'face_instruction');
   assert.equal(root[1],1138);
@@ -681,7 +696,7 @@ test('explicit Advanced Decensor edits after selecting a preset win over queued 
 
 async function enhancerFixture(options = {}) {
   const env=fixture({livePrompts:true, ...options}); await env.boot();
-  const replies=[], parent={postMessage:value=>replies.push(value)}; env.context.parent=parent;
+  const {replies,parent}=outputParent(env);
   env.action=async (action,payload)=>{
     env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'run-'+replies.length,action,payload}});
     await env.settle(); return replies.at(-1);
@@ -912,4 +927,570 @@ test('identical scene and face briefs with identical generated prompts queue wit
   }
   assert.deepEqual(env.current(),before);
   assert.deepEqual(JSON.parse(env.store.get(draftKey('synthetic-device-a'))),before);
+});
+
+
+// Execute the relevant serialized graph edges with pinned DonutNodes text/
+// conditioning semantics (2806ebe12caada993e6305e3f441ce61ab22a11c
+// donut_prompt.py); synthetic CLIP records the actual encoded text.
+function executeFaceText(workflow, wholeImage = false) {
+  const controls=workflow.nodes.flatMap(node=>(node.properties?.donut_app_controls?.groups||[]).flatMap(group=>group.controls||[]));
+  const path=controls.find(control=>control.title==='Face detail').path;
+  const rootNode=nodeAt(workflow,path[0]);
+  const body=workflow.definitions.subgraphs.find(graph=>graph.id===rootNode.type);
+  const detail=body.nodes.find(node=>node.id===path[1]);
+  function output(graph,parent,id,slot) {
+    if(id===-10) {
+      const parentGraph=[workflow,...workflow.definitions.subgraphs].find(candidate=>candidate.nodes.includes(parent));
+      const edge=parentGraph.links.find(edge=>Array.isArray(edge)?edge[3]===parent.id && edge[4]===slot:edge.target_id===parent.id && edge.target_slot===slot);
+      if(!edge) return ''; // Unconnected optional text ports are empty.
+      return output(parentGraph,parentGraph===workflow?null:workflow.nodes.find(node=>node.type===parentGraph.id),Array.isArray(edge)?edge[1]:edge.origin_id,Array.isArray(edge)?edge[2]:edge.origin_slot);
+    }
+    const node=graph.nodes.find(node=>node.id===id);assert.ok(node,'Connected source node must exist');
+    const nested=workflow.definitions.subgraphs.find(child=>child.id===node.type);
+    if(nested) {
+      const edge=nested.links.find(edge=>edge.id===nested.outputs[slot].linkIds[0]);
+      return output(nested,node,edge.origin_id,edge.origin_slot);
+    }
+    const input=name=>{
+      const index=node.inputs.findIndex(port=>port.name===name), port=node.inputs[index];
+      const edge=graph.links.find(edge=>edge.id===port?.link);
+      return edge?output(graph,parent,edge.origin_id,edge.origin_slot):'';
+    };
+    if(node.type==='DF_Text_Box') return node.widgets_values[0];
+    if(node.type==='DonutText') return input('prefix')+input('text')+input('suffix');
+    if(node.type==='DonutPromptConditioning') {
+      let face=input('face'),scene=input('scene');
+      const names=Object.keys(node.widgets_values_named||{}),rows=JSON.parse(node.widgets_values[names.indexOf('prompt_sets_json')]||'[]');
+      const index=Number(node.widgets_values[names.indexOf('prompt_set_index')]||1),position=rows.length?Math.max(0,index-1)%(rows.length+1):0;
+      if(position){face=rows[position-1].face??face;scene=rows[position-1].scene??scene;}
+      const full=face+(node.widgets_values[1]||'')+scene;
+      return [full,face,'',{encoded:full},{encoded:face}][slot];
+    }
+    if(node.type==='DonutKrea2FusionControl') return input('conditioning_in_'+slot);
+    throw new Error('Unexpected text/conditioning source '+node.type);
+  }
+  const value=name=>{
+    const port=detail.inputs.find(input=>input.name===name),edge=body.links.find(edge=>edge.id===port.link);
+    return output(body,rootNode,edge.origin_id,edge.origin_slot);
+  };
+  if(wholeImage) {
+    const branch=body.links.find(edge=>edge.id===detail.inputs.find(port=>port.name==='edit_prompt').link).origin_id;
+    const main=body.nodes.find(node=>node.type==='DonutPromptConditioning' && node.id!==branch);
+    return output(body,rootNode,main.id,0);
+  }
+  return {edit:value('edit_prompt'),positive:value('positive').encoded};
+}
+function brokenFaceRecipe() {
+  const workflow=copy(preset),body=workflow.definitions.subgraphs.find(graph=>graph.nodes.some(node=>node.id===1180));
+  const conditioning=nodeAt(workflow,1180);
+  const input=body.links.find(edge=>edge.target_id===1180 && edge.origin_id===996);
+  const face=body.links.find(edge=>edge.target_id===1180 && edge.origin_id===-10 && body.inputs[edge.origin_slot].name==='face_instruction');
+  input.target_slot=1;face.target_slot=2;
+  conditioning.inputs[1].link=input.id;conditioning.inputs[2].link=face.id;
+  for(const [target,oldSlot] of [[984,0],[1118,3]]) {
+    const edge=body.links.find(edge=>edge.origin_id===1180 && edge.target_id===target);
+    for(const port of conditioning.outputs) port.links=(port.links||[]).filter(id=>id!==edge.id);
+    edge.origin_slot=oldSlot;conditioning.outputs[oldSlot].links.push(edge.id);
+  }
+  return workflow;
+}
+function copiedFaceRecipe(workflow) {
+  const copyRecipe=copy(workflow),remap=id=>id>=0?id+5000:id;
+  for(const graph of [copyRecipe,...copyRecipe.definitions.subgraphs]) {
+    for(const node of graph.nodes) {
+      node.id=remap(node.id);
+      for(const group of node.properties?.donut_app_controls?.groups||[])
+        for(const control of group.controls||[]) control.path=control.path.map(remap);
+    }
+    for(const edge of graph.links) {
+      if(Array.isArray(edge)){edge[1]=remap(edge[1]);edge[3]=remap(edge[3]);}
+      else {edge.origin_id=remap(edge.origin_id);edge.target_id=remap(edge.target_id);}
+    }
+  }
+  const remapLink=id=>id==null?id:id+7000000;
+  for(const graph of [copyRecipe,...copyRecipe.definitions.subgraphs]) {
+    for(const edge of graph.links) {if(Array.isArray(edge)) edge[0]=remapLink(edge[0]);else edge.id=remapLink(edge.id);}
+    for(const node of graph.nodes) {
+      for(const port of node.inputs||[]) if('link' in port) port.link=remapLink(port.link);
+      for(const port of node.outputs||[]) if(port.links) port.links=port.links.map(remapLink);
+    }
+    for(const port of [...(graph.inputs||[]),...(graph.outputs||[])]) if(port.linkIds) port.linkIds=port.linkIds.map(remapLink);
+  }
+  const ids=new Map(copyRecipe.definitions.subgraphs.map(graph=>[graph.id,'synthetic-copy-'+graph.id]));
+  for(const graph of [copyRecipe,...copyRecipe.definitions.subgraphs]) {
+    if(ids.has(graph.id)) graph.id=ids.get(graph.id);
+    for(const node of graph.nodes) if(ids.has(node.type)) node.type=ids.get(node.type);
+  }
+  return copyRecipe;
+}
+function syntheticFaceBriefs(workflow,face) {
+  nodeAt(workflow,1126).widgets_values[0]='WHOLE SCENE: a boat on a lake';
+  nodeAt(workflow,1125).widgets_values[0]='WHOLE STYLE: watercolor and golden light';
+  if(nodeAt(workflow,1178)) nodeAt(workflow,1178).widgets_values[0]=face;
+  nodeAt(workflow,984).mode=0;
+  return workflow;
+}
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+test('both bundled presets execute only their separate face text through edit and positive conditioning',()=>{
+  for(const original of [preset,JSON.parse(fs.readFileSync(path.join(root,'assets/base-workflow.json'),'utf8'))]) {
+    for(const face of ['FACE ONLY: freckles and a calm expression','']) {
+      const workflow=syntheticFaceBriefs(copy(original),face);
+      assert.deepEqual(executeFaceText(workflow),{edit:face,positive:face});
+      assert.equal(executeFaceText(workflow,true),'WHOLE STYLE: watercolor and golden lightWHOLE SCENE: a boat on a lake');
+    }
+  }
+});
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+// AC: @donut-create-plugin ac-workflow-state
+test('recognized saved broken face branches repair atomically, preserve settings, and are idempotent including copied IDs',async()=>{
+  for(const copied of [false,true]) {
+    for(const face of ['FACE ONLY: blue eyes','']) {
+      let workflow=syntheticFaceBriefs(brokenFaceRecipe(),face);
+      nodeAt(workflow,1180).widgets_values[2]=123456;nodeAt(workflow,1180).widgets_values[3]=false;
+      if(copied) workflow=copiedFaceRecipe(workflow);
+      const before=copy(workflow),env=fixture({initial:workflow,livePrompts:true});await env.boot();
+      assert.deepEqual(executeFaceText(env.current()),{edit:face,positive:face});
+      for(const id of [1126,1125,1178,1137,1180,984,1014]) assert.deepEqual(nodeAt(env.current(),id+(copied?5000:0)).widgets_values,nodeAt(before,id+(copied?5000:0)).widgets_values);
+      assert.equal(env.queued.length,0);
+      const reopened=fixture({initial:env.current(),livePrompts:true});await reopened.boot();
+      assert.deepEqual(reopened.current(),env.current());assert.equal(reopened.loaded.length,0);
+    }
+  }
+});
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+test('legacy missing branches upgrade to executable face-only routes without falling back to whole scene/style',async()=>{
+  const env=fixture({initial:legacyFaceRecipe(),livePrompts:true});await env.boot();
+  assert.deepEqual(executeFaceText(env.current()),{edit:'',positive:''});
+  env.editFace('FACE ONLY: green eyes');
+  assert.deepEqual(executeFaceText(env.current()),{edit:'FACE ONLY: green eyes',positive:'FACE ONLY: green eyes'});
+});
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+test('custom face text or conditioning wiring is preserved when a branch resembles the broken preset',async()=>{
+  for(const target of ['edit_prompt','conditioning_in_2']) {
+    const workflow=syntheticFaceBriefs(brokenFaceRecipe(),'FACE ONLY: preserve custom wiring');
+    const body=workflow.definitions.subgraphs.find(graph=>graph.nodes.some(node=>node.id===1180));
+    const edge=body.links.find(edge=>edge.origin_id===1180 && nodeAt(workflow,edge.target_id).inputs[edge.target_slot].name===target);
+    nodeAt(workflow,1180).outputs[edge.origin_slot].links=nodeAt(workflow,1180).outputs[edge.origin_slot].links.filter(id=>id!==edge.id);
+    edge.origin_id=996;nodeAt(workflow,996).outputs[edge.origin_slot].links.push(edge.id);
+    const before=copy(workflow),env=fixture({initial:workflow,livePrompts:true});await env.boot();
+    assert.deepEqual(env.current(),before);assert.equal(env.loaded.length,0);assert.equal(env.queued.length,0);
+  }
+});
+
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+test('new legacy face branches do not inherit selected whole-image prompt sets',async()=>{
+  const workflow=legacyFaceRecipe(),main=nodeAt(workflow,996),before=copy(main.widgets_values);
+  const names=Object.keys(main.widgets_values_named),sets=JSON.stringify([{face:'WHOLE STYLE SET',scene:'WHOLE SCENE SET'}]);
+  main.widgets_values[names.indexOf('prompt_sets_json')]=sets;main.widgets_values[names.indexOf('prompt_set_index')]=2;
+  main.widgets_values_named.prompt_sets_json=sets;main.widgets_values_named.prompt_set_index=2;
+  const authored=copy(main.widgets_values),env=fixture({initial:workflow,livePrompts:true});await env.boot();
+  assert.deepEqual(executeFaceText(env.current()),{edit:'',positive:''});
+  env.editFace('FACE ONLY: smile');assert.deepEqual(executeFaceText(env.current()),{edit:'FACE ONLY: smile',positive:'FACE ONLY: smile'});
+  assert.deepEqual(nodeAt(env.current(),996).widgets_values,authored);
+  assert.notDeepEqual(authored,before);
+  assert.equal(executeFaceText(env.current(),true),'WHOLE STYLE SETWHOLE SCENE SET');
+});
+
+// AC: @donut-create-plugin ac-workflow-state
+test('failed recognized face-route repair restores the complete broken saved recipe without generating',async()=>{
+  const workflow=syntheticFaceBriefs(brokenFaceRecipe(),'FACE ONLY: preserve draft'),before=copy(workflow);
+  const env=fixture({initial:workflow,livePrompts:true,failFaceUpgrade:true});await env.boot();
+  assert.deepEqual(env.current(),before);assert.equal(env.queued.length,0);assert.match(env.notice(),/face prompt could not be added/);
+});
+// AC: @donut-create-plugin ac-default-save-output
+test('Advanced Run awaits a scoped host output preparation and rejects forged replies',async()=>{
+  const env=fixture();await env.boot();
+  const host=outputParent(env,'comfy',false);
+  env.events.get('message')({source:host.parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'connect',action:'snapshot'}});
+  await env.settle();
+  const run=env.api.queuePrompt(0,await env.app.graphToPrompt());await env.settle();
+  assert.equal(host.requests.length,1);assert.equal(env.queued.length,0);
+  await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/already.*progress/i);
+  host.respond(undefined,undefined,{origin:'http://untrusted.test'});
+  host.respond(undefined,{ok:true,outputDestination:'comfy',sessionId:'wrong-session'});
+  host.respond(undefined,{ok:true,outputDestination:'comfy',requestId:'wrong-request'});
+  host.respond(undefined,undefined,{source:{}});
+  await env.settle();assert.equal(env.queued.length,0);
+  host.respond();await run;
+  assert.equal(env.queued[0][1].workflow.extra.dmc_output_destination,'comfy');
+  assert.equal(env.current().extra?.dmc_output_destination,undefined);
+});
+
+// AC: @donut-create-plugin ac-default-save-output
+test('host output failure, timeout, cancellation and changed draft prevent submission',async()=>{
+  for(const failure of ['host','timeout','cancel','pagehide','draft']){
+    const env=fixture();await env.boot();const host=outputParent(env,'preview',false);
+    env.events.get('message')({source:host.parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'connect',action:'snapshot'}});
+    await env.settle();
+    const run=env.api.queuePrompt(0,await env.app.graphToPrompt()), rejected=assert.rejects(run);
+    await env.settle();
+    if(failure==='host')host.respond(undefined,{ok:false,error:'Synthetic directory creation failed.'});
+    if(failure==='timeout')env.context.__fixtureTimers.find(timer=>timer.delay===30000&&timer.active).fn();
+    if(failure==='pagehide')env.events.get('pagehide')();
+    if(failure==='cancel')env.events.get('message')({source:host.parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'cancel',action:'cancel-generation'}});
+    if(failure==='draft'){env.editPrompt('A changed synthetic brief');host.respond();}
+    await rejected;host.respond();await env.settle();assert.equal(env.queued.length,0,failure);
+  }
+});
+
+
+const twoFacePlan=[
+  {character:'Left traveler',position:'left',face_prompt:'Blue eyes, freckles, relaxed smile.'},
+  {character:'Right traveler',position:'right',face_prompt:'Brown eyes, clean jawline, serious expression.'},
+];
+async function multiFaceFixture() {
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  const compile=env.app.graphToPrompt;
+  env.app.graphToPrompt=async ()=>{
+    const value=await compile();
+    value.output['1138:1178']=copy(value.output['text:face']);
+    value.output['face:expanded']={class_type:'DonutText',inputs:{text:['1138:1178',0]}};
+    value.output['face:condition']={class_type:'DonutPromptConditioning',inputs:{face:['face:expanded',0],scene:['text:scene',0]}};
+    value.output['face:fusion']={class_type:'DonutKrea2FusionControl',inputs:{conditioning_in_2:['face:condition',4]}};
+    value.output['1014:984']={class_type:'DonutFaceDetailer',inputs:{edit_prompt:['face:condition',1],positive:['face:fusion',2],edit_mode:false,max_faces:5,seed:value.output.sample.inputs.seed}};
+    return value;
+  };
+  const fetch=env.api.fetchApi;
+  env.api.fetchApi=async (route,options)=>{
+    const response=await fetch(route,options);
+    if(route==='/object_info') {
+      const value=await response.json();
+      if(!env.missingMultiNode)value.DMCFaceDetailer={input:{required:{face_prompts_json:['STRING',{}]},optional:{require_single_face:['BOOLEAN',{default:false}]}}};
+      return {...response,json:async()=>value};
+    }
+    return response;
+  };
+  env.jobChange=job=>({...job,result:{main_prompt:job.result.main_prompt,face_prompt:'',face_prompts:copy(twoFacePlan)}});
+  return env;
+}
+
+// AC: @create-multiple-face-prompts ac-character-prompts
+// AC: @create-multiple-face-prompts ac-single-face-compatible
+test('multi-face enhancement submits separate ordered records only in the compiled detailer and run metadata',async()=>{
+  const env=await multiFaceFixture();env.editFace('Left traveler: blue eyes. Right traveler: brown eyes.');
+  const before=env.current();
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  const compiled=env.queued[0][1],detail=compiled.output['1014:984'];
+  assert.equal(detail.class_type,'DMCFaceDetailer');
+  assert.equal(detail.inputs.require_single_face,undefined);
+  assert.deepEqual(JSON.parse(detail.inputs.face_prompts_json),twoFacePlan);
+  assert.deepEqual(detail.inputs.positive,['face:fusion',2]);
+  assert.equal(detail.inputs.seed,env.requests[0].seed);
+  assert.deepEqual(compiled.workflow.extra.dmc_prompt_enhancement.face_prompts,twoFacePlan);
+  assert.equal(compiled.output['text:face'].inputs.Text,'');
+  assert.deepEqual(env.current(),before);
+  assert.equal(nodeAt(compiled.workflow,984).type,'DonutFaceDetailer');
+  assert.deepEqual(copy((await env.action('snapshot')).snapshot.enhancer.lastRun.face_prompts),twoFacePlan);
+  await env.app.loadGraphData(compiled.workflow);
+  assert.deepEqual(copy((await env.action('snapshot')).snapshot.enhancer.lastRun.face_prompts),twoFacePlan);
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.requests[1].face_brief,env.requests[0].face_brief);
+  assert.deepEqual(JSON.parse(env.queued[1][1].output['1014:984'].inputs.face_prompts_json),twoFacePlan);
+});
+
+// AC: @create-multiple-face-prompts ac-single-face-compatible
+test('legacy two-key results preserve the detailer and new single-face results require exactly one detected face',async()=>{
+  for(const result of [{main_prompt:'One scene',face_prompt:'One face'}, {main_prompt:'One scene',face_prompt:'One face',face_prompts:[]}]) {
+    const env=await multiFaceFixture();env.jobChange=job=>({...job,result});env.missingMultiNode=!Object.hasOwn(result,'face_prompts');
+    await env.api.queuePrompt(0,await env.app.graphToPrompt());
+    const strictSingle=Object.hasOwn(result,'face_prompts'),detail=env.queued[0][1].output['1014:984'];
+    assert.equal(detail.class_type,strictSingle?'DMCFaceDetailer':'DonutFaceDetailer');
+    assert.equal(detail.inputs.face_prompts_json,strictSingle?'[]':undefined);
+    assert.equal(detail.inputs.require_single_face,strictSingle?true:undefined);
+    assert.equal(env.queued[0][1].output['text:face'].inputs.Text,'One face');
+  }
+});
+
+// AC: @create-multiple-face-prompts ac-character-prompts
+// AC: @create-multiple-face-prompts ac-mismatch
+test('malformed and spatially ambiguous character records cannot submit a shared-face fallback',async()=>{
+  const invalid=[
+    [twoFacePlan[0]], [...twoFacePlan].reverse(),
+    [{...twoFacePlan[0],position:'left'},{...twoFacePlan[1],position:'left'}],
+    [{...twoFacePlan[0],position:'gazing left'},twoFacePlan[1]],
+    [{...twoFacePlan[0],position:'1st'},twoFacePlan[1]],
+    [{...twoFacePlan[0],character:''},twoFacePlan[1]],
+    [twoFacePlan[0],{...twoFacePlan[1],character:twoFacePlan[0].character}],
+    [twoFacePlan[0],{...twoFacePlan[1],face_prompt:''}],
+    [twoFacePlan[0],{...twoFacePlan[1],extra:true}],
+    [twoFacePlan[0],{...twoFacePlan[1],character:'x'.repeat(201)}],
+    [twoFacePlan[0],{...twoFacePlan[1],face_prompt:'x'.repeat(8001)}],
+    Array.from({length:17},(_,index)=>({...twoFacePlan[0],character:'Character '+index,position:index+'th'})),
+  ];
+  for(const records of invalid) {
+    const env=await multiFaceFixture(),before=env.current();env.jobChange=job=>({...job,result:{...job.result,face_prompt:'',face_prompts:records}});
+    await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()));assert.equal(env.queued.length,0);assert.deepEqual(env.current(),before);
+  }
+});
+
+// AC: @create-multiple-face-prompts ac-mismatch
+test('missing per-face node capability and custom shared-face branches fail before image submission',async()=>{
+  for(const mode of ['missing','wrong-text','wrong-positive','multiple-detailers','no-detailer','edit','wrong-detail-instance','wrong-face-instance','wildcard','hook','max-faces','no-schema']) {
+    const env=await multiFaceFixture();
+    if(mode==='missing')env.missingMultiNode=true;
+    if(mode==='no-schema'){const fetch=env.api.fetchApi;env.api.fetchApi=async (route,options)=>{const response=await fetch(route,options);if(route!=='/object_info')return response;const value=await response.json();value.DMCFaceDetailer={};return {...response,json:async()=>value};};}
+    const compile=env.app.graphToPrompt;
+    env.app.graphToPrompt=async ()=>{
+      const value=await compile(),detail=value.output['1014:984'];
+      if(mode==='wrong-text')detail.inputs.edit_prompt=['condition',0];
+      if(mode==='wrong-positive')detail.inputs.positive=['condition',3];
+      if(mode==='multiple-detailers')value.output.extra=copy(detail);
+      if(mode==='no-detailer')delete value.output['1014:984'];
+      if(mode==='edit')detail.inputs.edit_mode=true;
+      if(mode==='wrong-detail-instance'){value.output['9999:984']=detail;delete value.output['1014:984'];}
+      if(mode==='wrong-face-instance'){value.output['9999:1178']=value.output['1138:1178'];value.output['face:expanded'].inputs.text=['9999:1178',0];}
+      if(mode==='wildcard')detail.inputs.wildcard='A shared face wildcard';
+      if(mode==='hook')detail.inputs.detailer_hook=['custom-hook',0];
+      if(mode==='max-faces')detail.inputs.max_faces=1;
+      return value;
+    };
+    await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/face|DMCFaceDetailer|conditioning|edit/i);
+    assert.equal(env.queued.length,0,mode);
+  }
+});
+
+// AC: @create-multiple-face-prompts ac-single-face-compatible
+// AC: @create-multiple-face-prompts ac-mismatch
+test('multi-face records support ordered ordinal positions and never erase ambiguous supplied face instructions',async()=>{
+  const env=await multiFaceFixture();
+  env.jobChange=job=>({...job,result:{main_prompt:'Scene',face_prompt:'',face_prompts:twoFacePlan.map((entry,index)=>({...entry,position:index?'2nd':'1st'}))}});
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.deepEqual(JSON.parse(env.queued[0][1].output['1014:984'].inputs.face_prompts_json).map(entry=>entry.position),['1st','2nd']);
+  env.editFace('Left traveler has blue eyes; right traveler has brown eyes.');
+  env.jobChange=job=>({...job,result:{main_prompt:'Scene',face_prompt:'',face_prompts:[]}});
+  await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/face|ambiguous/i);
+  assert.equal(env.queued.length,1);
+});
+
+// AC: @create-multiple-face-prompts ac-mismatch
+test('cancel and stale edits while per-face capabilities load cannot queue the multi-face run',async()=>{
+  for(const mode of ['cancel','stale']) {
+    const env=await multiFaceFixture(),fetch=env.api.fetchApi;let checks=0,release;
+    env.api.fetchApi=async (route,options)=>{
+      if(route==='/object_info' && ++checks===2)await new Promise(resolve=>{release=resolve;});
+      return fetch(route,options);
+    };
+    const pending=env.api.queuePrompt(0,await env.app.graphToPrompt()),rejected=assert.rejects(pending);
+    await env.settle();
+    if(mode==='cancel')await env.action('cancel-generation');else env.editPrompt('New synthetic scene');
+    release();await rejected;assert.equal(env.queued.length,0);
+  }
+});
+
+
+// AC: @create-multiple-face-prompts ac-single-face-compatible
+test('disabled known face detail keeps ordered metadata without requiring the multi-face runtime, and re-enabling routes each face',async()=>{
+  const env=await multiFaceFixture(),compile=env.app.graphToPrompt;
+  let enabled=false;env.editFaceDetail(enabled);env.missingMultiNode=true;
+  env.app.graphToPrompt=async ()=>{const value=await compile();if(!enabled)delete value.output['1014:984'];return value;};
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.queued.length,1);assert.equal(env.queued[0][1].output['1014:984'],undefined);
+  assert.deepEqual(env.queued[0][1].workflow.extra.dmc_prompt_enhancement.face_prompts,twoFacePlan);
+  assert.deepEqual(copy((await env.action('snapshot')).snapshot.enhancer.lastRun.face_prompts),twoFacePlan);
+  enabled=true;env.editFaceDetail(enabled);env.missingMultiNode=false;
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.queued[1][1].output['1014:984'].class_type,'DMCFaceDetailer');
+  assert.deepEqual(JSON.parse(env.queued[1][1].output['1014:984'].inputs.face_prompts_json),twoFacePlan);
+  assert.equal(env.requests[1].image_brief,env.requests[0].image_brief);
+});
+
+
+// AC: @create-multiple-face-prompts ac-mismatch
+test('an authored edit after per-face capability verification still cancels submission',async()=>{
+  const env=await multiFaceFixture(),fetch=env.api.fetchApi;
+  env.api.fetchApi=async (route,options)=>{
+    const response=await fetch(route,options);if(route!=='/object_info')return response;
+    const value=await response.json(),required={};
+    Object.defineProperty(required,'face_prompts_json',{get(){queueMicrotask(()=>env.editPrompt('Latest authored scene'));return ['STRING',{}];}});
+    value.DMCFaceDetailer={input:{required}};return {...response,json:async()=>value};
+  };
+  await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/workflow changed/i);
+  assert.equal(env.queued.length,0);assert.equal(nodeAt(env.current(),1126).widgets_values[0],'Latest authored scene');
+});
+
+
+// AC: @create-multiple-face-prompts ac-mismatch
+// AC: @create-multiple-face-prompts ac-single-face-compatible
+test('strict single-face execution requires the runtime Boolean guard capability and preserves reference/edit options',async()=>{
+  for(const mode of ['supported','missing-guard','wrong-type']) {
+    const env=await multiFaceFixture(),fetch=env.api.fetchApi,compile=env.app.graphToPrompt;
+    env.jobChange=job=>({...job,result:{main_prompt:'One character',face_prompt:'Blue eyes and freckles',face_prompts:[]}});
+    env.app.graphToPrompt=async ()=>{const value=await compile();Object.assign(value.output['1014:984'].inputs,{
+      edit_mode:true,face_reference:['reference',0],face_reference_b:['reference-b',0],detailer_hook:['hook',0],wildcard:'A single face wildcard'});return value;};
+    env.api.fetchApi=async (route,options)=>{
+      const response=await fetch(route,options);if(route!=='/object_info')return response;
+      const value=await response.json();
+      if(mode==='missing-guard')delete value.DMCFaceDetailer.input.optional.require_single_face;
+      if(mode==='wrong-type')value.DMCFaceDetailer.input.optional.require_single_face=['STRING',{}];
+      return {...response,json:async()=>value};
+    };
+    if(mode==='supported') {
+      const before=env.current(),compiled=await env.app.graphToPrompt();await env.api.queuePrompt(0,compiled);
+      const detail=env.queued[0][1].output['1014:984'];assert.equal(detail.class_type,'DMCFaceDetailer');
+      assert.deepEqual(detail.inputs,{...compiled.output['1014:984'].inputs,face_prompts_json:'[]',require_single_face:true});
+      assert.deepEqual(env.current(),before);
+    } else {await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/single.face|guard|repair/i);assert.equal(env.queued.length,0);}
+  }
+});
+
+// AC: @create-multiple-face-prompts ac-single-face-compatible
+test('disabled known face detail retains new single-face metadata without requiring a runtime guard',async()=>{
+  const env=await multiFaceFixture(),compile=env.app.graphToPrompt;env.editFaceDetail(false);env.missingMultiNode=true;
+  env.jobChange=job=>({...job,result:{main_prompt:'One character',face_prompt:'Blue eyes and freckles',face_prompts:[]}});
+  env.app.graphToPrompt=async ()=>{const value=await compile();delete value.output['1014:984'];return value;};
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.queued.length,1);assert.equal(env.queued[0][1].output['1014:984'],undefined);
+  assert.equal(env.queued[0][1].workflow.extra.dmc_prompt_enhancement.face_prompt,'Blue eyes and freckles');
+});
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+// AC: @donut-create-plugin ac-workflow-state
+test('recognized old face branches discard only inherited whole-image prompt sets, including copied IDs',async()=>{
+  for(const copied of [false,true]) {
+    for(const face of ['FACE ONLY: smile','']) {
+      let workflow=syntheticFaceBriefs(brokenFaceRecipe(),face);
+      const main=nodeAt(workflow,996),branch=nodeAt(workflow,1180),names=Object.keys(main.widgets_values_named);
+      const sets=JSON.stringify([{face:'WHOLE STYLE SET',scene:'WHOLE SCENE SET'}]);
+      for(const node of [main,branch]) {
+        for(const [name,value] of [['prompt_sets_json',sets],['prompt_set_index',2],['control_after_generate','increment']]) {
+          node.widgets_values[names.indexOf(name)]=value;node.widgets_values_named[name]=value;
+        }
+      }
+      branch.widgets_values[2]=123456;branch.widgets_values[3]=false;
+      const authored=copy(main.widgets_values),faceSettings=copy(branch.widgets_values);
+      if(copied) workflow=copiedFaceRecipe(workflow);
+      const env=fixture({initial:workflow,livePrompts:true});await env.boot();
+      assert.deepEqual(executeFaceText(env.current()),{edit:face,positive:face});
+      assert.equal(executeFaceText(env.current(),true),'WHOLE STYLE SETWHOLE SCENE SET');
+      assert.deepEqual(nodeAt(env.current(),996+(copied?5000:0)).widgets_values,authored);
+      const repaired=nodeAt(env.current(),1180+(copied?5000:0));
+      assert.deepEqual(repaired.widgets_values.slice(0,16),faceSettings.slice(0,16));
+      assert.equal(repaired.widgets_values_named.prompt_sets_json,'[]');
+      assert.equal(repaired.widgets_values_named.prompt_set_index,1);
+      assert.equal(repaired.widgets_values_named.control_after_generate,'fixed');
+      const reopened=fixture({initial:env.current(),livePrompts:true});await reopened.boot();
+      assert.deepEqual(reopened.current(),env.current());assert.equal(reopened.loaded.length,0);assert.equal(env.queued.length,0);
+    }
+  }
+});
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+test('recognized old face branches retain independently authored face prompt sets',async()=>{
+  for(const changed of ['prompt_sets_json','prompt_set_index','control_after_generate']) {
+    const workflow=syntheticFaceBriefs(brokenFaceRecipe(),'FACE ONLY: smile');
+    const main=nodeAt(workflow,996),branch=nodeAt(workflow,1180),names=Object.keys(main.widgets_values_named);
+    const sets=JSON.stringify([{face:'WHOLE STYLE SET',scene:'WHOLE SCENE SET'}]);
+    for(const node of [main,branch]) for(const [name,value] of [['prompt_sets_json',sets],['prompt_set_index',2],['control_after_generate','increment']]) {
+      node.widgets_values[names.indexOf(name)]=value;node.widgets_values_named[name]=value;
+    }
+    const values={prompt_sets_json:JSON.stringify([{face:'CUSTOM FACE SET',scene:'CUSTOM UNUSED SCENE'}]),prompt_set_index:1,control_after_generate:'fixed'};
+    branch.widgets_values[names.indexOf(changed)]=values[changed];branch.widgets_values_named[changed]=values[changed];
+    const authored=copy(branch.widgets_values),named=copy(branch.widgets_values_named);
+    const env=fixture({initial:workflow,livePrompts:true});await env.boot();
+    assert.deepEqual(nodeAt(env.current(),1180).widgets_values,authored);
+    assert.deepEqual(nodeAt(env.current(),1180).widgets_values_named,named);
+    const expected=changed==='prompt_sets_json'?'CUSTOM FACE SET':changed==='prompt_set_index'?'FACE ONLY: smile':'WHOLE STYLE SET';
+    assert.deepEqual(executeFaceText(env.current()),{edit:expected,positive:expected});
+  }
+});
+
+// AC: @donut-create-plugin ac-face-prompt-routing
+test('recognized face routes repair when unused face output link arrays are null or absent',async()=>{
+  for(const missing of ['null','absent']) {
+    const workflow=syntheticFaceBriefs(brokenFaceRecipe(),'FACE ONLY: smile');
+    for(const slot of [1,4]) {
+      if(missing==='null') nodeAt(workflow,1180).outputs[slot].links=null;
+      else delete nodeAt(workflow,1180).outputs[slot].links;
+    }
+    const env=fixture({initial:workflow,livePrompts:true});await env.boot();
+    assert.deepEqual(executeFaceText(env.current()),{edit:'FACE ONLY: smile',positive:'FACE ONLY: smile'});
+    assert.equal(env.queued.length,0);
+    const reopened=fixture({initial:env.current(),livePrompts:true});await reopened.boot();
+    assert.deepEqual(reopened.current(),env.current());
+  }
+});
+
+const familyFacePlan=[
+  {character:'Upper left',position:{left_of:['Upper middle'],above:['Lower left']},face_prompt:'Freckles and blue eyes.'},
+  {character:'Upper middle',position:{left_of:['Upper right'],above:['Lower middle']},face_prompt:'Brown eyes and a smile.'},
+  {character:'Upper right',position:{left_of:[],above:['Lower right']},face_prompt:'Green eyes and dimples.'},
+  {character:'Lower left',position:{left_of:['Lower middle'],above:[]},face_prompt:'Round cheeks and a calm expression.'},
+  {character:'Lower middle',position:{left_of:['Lower right'],above:[]},face_prompt:'Hazel eyes and a serious expression.'},
+  {character:'Lower right',position:{left_of:[],above:[]},face_prompt:'Grey eyes and an open smile.'},
+];
+const raggedFacePlan=[
+  {character:'Top',position:{left_of:[],above:['Bottom left','Bottom right']},face_prompt:'Blue eyes.'},
+  {character:'Bottom right',position:{left_of:[],above:[]},face_prompt:'Green eyes.'},
+  {character:'Bottom left',position:{left_of:['Bottom right'],above:[]},face_prompt:'Brown eyes.'},
+];
+
+// AC: @create-multiple-face-prompts ac-character-prompts
+test('relative face plans retain two-axis and ragged layouts in compiled routing and metadata regardless of array order',async()=>{
+  for(const plan of [copy(familyFacePlan).reverse(),raggedFacePlan,[{character:'Top',position:{left_of:[],above:['Bottom']},face_prompt:'Blue eyes.'},{character:'Bottom',position:{left_of:[],above:[]},face_prompt:'Brown eyes.'}]]) {
+    const env=await multiFaceFixture(),before=env.current(),compile=env.app.graphToPrompt;
+    env.app.graphToPrompt=async()=>{const compiled=await compile();compiled.output['1014:984'].inputs.max_faces=16;return compiled;};
+    env.jobChange=job=>({...job,result:{main_prompt:'Placed family scene',face_prompt:'',face_prompts:copy(plan)}});
+    const originalSeed=(await env.app.graphToPrompt()).output.sample.inputs.seed;
+    await env.api.queuePrompt(0,await env.app.graphToPrompt());
+    const submitted=env.queued[0][1];
+    assert.deepEqual(JSON.parse(submitted.output['1014:984'].inputs.face_prompts_json),plan);
+    assert.equal(submitted.output['1014:984'].class_type,'DMCFaceDetailer');
+    assert.equal(submitted.output['1014:984'].inputs.seed,originalSeed);
+    assert.equal(env.requests[0].seed,originalSeed);
+    assert.deepEqual(submitted.workflow.extra.dmc_prompt_enhancement.face_prompts,plan);
+    assert.deepEqual(env.current(),before);
+    await env.app.loadGraphData(submitted.workflow);
+    assert.deepEqual(copy((await env.action('snapshot')).snapshot.enhancer.lastRun.face_prompts),plan);
+    await env.api.queuePrompt(0,await env.app.graphToPrompt());
+    assert.equal(env.requests[1].image_brief,env.requests[0].image_brief);
+    assert.deepEqual(JSON.parse(env.queued[1][1].output['1014:984'].inputs.face_prompts_json),plan);
+  }
+});
+
+// AC: @create-multiple-face-prompts ac-mismatch
+test('invalid relative face schemas and axis cycles fail before compiled face submission',async()=>{
+  const cases=[
+    position=>{position.left_of=['Upper left'];},
+    position=>{position.left_of=['Unknown character'];},
+    position=>{position.left_of=['upper middle'];},
+    position=>{position.left_of=['Upper middle','Upper middle'];},
+    position=>{position.left_of=Array(16).fill('Upper middle');},
+    position=>{position.left_of='Upper middle';},
+    position=>{position.above=null;},
+    position=>{position.above=[1];},
+    position=>{delete position.above;},
+    position=>{position.row=1;},
+  ].map(change=>{const plan=copy(familyFacePlan);change(plan[0].position);return plan;});
+  const horizontal=copy(familyFacePlan);horizontal[2].position.left_of=['Upper left'];cases.push(horizontal);
+  const vertical=copy(familyFacePlan);vertical[3].position.above=['Upper left'];cases.push(vertical);
+  const mixed=copy(familyFacePlan);mixed[0].position='left';cases.push(mixed);
+  const duplicate=copy(familyFacePlan);duplicate[1].character='UPPER LEFT';cases.push(duplicate);
+  for(const plan of cases) {
+    const env=await multiFaceFixture(),before=env.current();
+    env.jobChange=job=>({...job,result:{main_prompt:'Family scene',face_prompt:'',face_prompts:plan}});
+    await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/incomplete|ambiguous/i);
+    assert.equal(env.queued.length,0);assert.deepEqual(env.current(),before);
+  }
+});
+
+// AC: @create-multiple-face-prompts ac-mismatch
+test('tampered cyclic run metadata is not exposed or reused as an executable face plan',async()=>{
+  const env=await multiFaceFixture(),compile=env.app.graphToPrompt;
+  env.app.graphToPrompt=async()=>{const compiled=await compile();compiled.output['1014:984'].inputs.max_faces=16;return compiled;};
+  env.jobChange=job=>({...job,result:{main_prompt:'Family scene',face_prompt:'',face_prompts:copy(familyFacePlan)}});
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  const saved=copy(env.queued[0][1].workflow),bad=saved.extra.dmc_prompt_enhancement.face_prompts;
+  bad[2].position.left_of=['Upper left'];
+  await env.app.loadGraphData(saved);
+  assert.equal((await env.action('snapshot')).snapshot.enhancer.lastRun,undefined);
+  const before=env.current();
+  env.jobChange=job=>({...job,result:{main_prompt:'Tampered family scene',face_prompt:'',face_prompts:bad}});
+  await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/incomplete|ambiguous/i);
+  assert.equal(env.queued.length,1);assert.deepEqual(env.current(),before);
 });

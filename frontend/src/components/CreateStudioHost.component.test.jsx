@@ -64,6 +64,7 @@ async function reconnectStudio() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   bridgeFixture.current = null
   status = {
     mode: 'managed', backend_url: 'http://127.0.0.1:18010',
@@ -111,6 +112,12 @@ beforeEach(() => {
   api.apiClient.get.mockImplementation(async url => ({ data: url.endsWith('/dmc/enhancer') ? { supported: true, busy: false, models: [{ id: 'minicpm', name: 'Preserver', ready: true }] } : url.endsWith('/status') ? status : session }))
   api.apiClient.post.mockImplementation(async (url, body) => {
     if (url === `${CREATE_API}/sessions`) return { data: session }
+    if (url === '/create/output-directory') {
+      const current = await api.fetchDirectories()
+      api.fetchDirectories.mockResolvedValue({ directories: [...current.directories,
+        { id: 90, library_id: body.library_id, name: 'Created Images', show_images: true, enabled: true, path_exists: true }] })
+      return { data: { library_id: body.library_id, directory_id: 90, name: 'Created Images' } }
+    }
     if (url === '/create/import') return { data: {
       library_id: body.library_id, directory_id: body.directory_id,
       image_id: 42, sha256: 'synthetic-sha256', status: 'imported',
@@ -690,7 +697,7 @@ describe('Donut Create studio', () => {
     fireEvent.change(destination, { target: { value: '__comfy_output__' } })
     const automatic = screen.getByRole('switch', { name: 'Save output' })
     expect(automatic.disabled).toBe(false)
-    fireEvent.click(automatic)
+    expect(automatic.checked).toBe(true)
     expect(screen.getByText(/Save output keeps images in ComfyUI only/)).toBeTruthy()
     expect(api.apiClient.post.mock.calls.filter(([url]) => url === '/create/import')).toEqual([])
     fireEvent.change(destination, { target: { value: 'library-b:1' } })
@@ -774,7 +781,7 @@ describe('Donut Create studio', () => {
       fireEvent.click(await screen.findByRole('tab', { name: 'Finalize' }))
       const destination = await screen.findByLabelText('Output destination')
       expect(Array.from(destination.options).map(option => option.text)).toEqual([
-        'Choose a directory', 'ComfyUI output folder', 'Archive · Images B', 'Primary · Images A',
+        'Automatic · Created Images', 'ComfyUI output folder', 'Archive · Images B', 'Primary · Images A',
       ])
       fireEvent.change(destination, { target: { value: 'library-b:1' } })
       fireEvent.click(save)
@@ -867,7 +874,7 @@ describe('Donut Create studio', () => {
     expect(screen.queryByRole('img', { name: 'old-server.png' })).toBeNull()
     expect(screen.getByRole('img', { name: 'new-server.png' })).toBeTruthy()
     fireEvent.click(await screen.findByRole('tab', { name: 'Finalize' }))
-    expect(Array.from((await screen.findByLabelText('Output destination')).options).map(option => option.text)).toEqual(['Choose a directory', 'ComfyUI output folder', 'New server · Fresh images'])
+    expect(Array.from((await screen.findByLabelText('Output destination')).options).map(option => option.text)).toEqual(['Automatic · Created Images', 'ComfyUI output folder', 'New server · Fresh images'])
     expect(api.apiClient.get.mock.calls.slice(requestsBeforeSwitch).some(([url]) => url.includes('/sessions/scoped-session'))).toBe(false)
     expect(api.getApiUrl()).toBe('/remote/api')
   })
@@ -939,6 +946,185 @@ describe('Donut Create studio', () => {
     openStudio()
     expect((await screen.findByTitle('DonutUI creation studio')).getAttribute('src')).toContain('scoped-session')
     expect(api.apiClient.post.mock.calls.filter(([url]) => url === `${CREATE_API}/sessions`)).toHaveLength(1)
+  })
+})
+
+describe('Donut Create default output', () => {
+  function readyBridge() {
+    session.jobs = []; session.outputs = []
+    const snapshot = { ready: true, fields: { prompt: { value: 'Synthetic landscape', available: true } } }
+    bridgeFixture.current = { dispose: vi.fn(), request: vi.fn(async action => action === 'generate'
+      ? { ...snapshot, lastQueuedPromptIds: ['new-queued-id'] } : snapshot) }
+    return bridgeFixture.current.request
+  }
+  async function readyGenerate() {
+    const button = await screen.findByRole('button', { name: 'Generate image', exact: true })
+    await waitFor(() => expect(button.disabled).toBe(false))
+    fireEvent.click(screen.getByRole('tab', { name: 'Finalize' }))
+    return button
+  }
+  function outputRequest(frame, requestId, overrides = {}) {
+    const origin = new URL(frame.getAttribute('src'), window.location.href).origin
+    act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, origin, ...overrides,
+      data: { channel: 'donut-create-output-v1', sessionId: session.id, requestId, action: 'prepare-output', ...(overrides.data || {}) } })))
+  }
+  async function resolveDirectory(pending, libraryId = 'library-b') {
+    const current = await api.fetchDirectories()
+    api.fetchDirectories.mockResolvedValue({ directories: [...current.directories,
+      { id: 90, library_id: libraryId, name: 'Created Images', show_images: true, enabled: true, path_exists: true }] })
+    await act(async () => pending.resolve({ data: { library_id: libraryId, directory_id: 90, name: 'Created Images' } }))
+  }
+
+  // AC: @donut-create-plugin ac-default-save-output
+  test('starts on, creates the selected library default only when generating and saves new final output', async () => {
+    const request = readyBridge()
+    render(<CreateStudioHost />); openStudio()
+    const generate = await readyGenerate()
+    expect(screen.getByRole('switch', { name: 'Save output' }).checked).toBe(true)
+    expect(api.apiClient.post.mock.calls.some(([url]) => url === '/create/output-directory')).toBe(false)
+    fireEvent.click(generate)
+    await waitFor(() => expect(request.mock.calls.some(([action]) => action === 'generate')).toBe(true))
+    expect(api.apiClient.post).toHaveBeenCalledWith('/create/output-directory', { library_id: 'library-b' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Finalize' }))
+    expect(screen.getByLabelText('Output destination').value).toBe('library-b:90')
+    session = { ...session, outputs: [{id:'fresh-final',filename:'saved.png',type:'temp',storage:'temporary',final:true,prompt_id:'new-queued-id',media_type:'image/png'}] }
+    await waitFor(() => expect(api.apiClient.post.mock.calls.some(([url,body]) => url === '/create/import' && body.output_id === 'fresh-final')).toBe(true), {timeout:5000})
+  })
+
+  // AC: @donut-create-plugin ac-default-save-output
+  test('remembers explicit off across reopening, reconnect and remount without creating a folder', async () => {
+    const request = readyBridge()
+    const mounted = render(<CreateStudioHost />); openStudio(); await readyGenerate()
+    const toggle = screen.getByRole('switch', { name: 'Save output' })
+    expect(toggle.disabled).toBe(false); fireEvent.click(toggle)
+    fireEvent.click(await readyGenerate())
+    await waitFor(() => expect(request.mock.calls.some(([action]) => action === 'generate')).toBe(true))
+    expect(api.apiClient.post.mock.calls.some(([url]) => url === '/create/output-directory')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Exit', exact: true })); openStudio()
+    expect(screen.getByRole('switch', { name: 'Save output' }).checked).toBe(false)
+    serverEvent('donut-create-backend-changed'); await reconnectStudio(); await readyGenerate()
+    expect(screen.getByRole('switch', { name: 'Save output' }).checked).toBe(false)
+    mounted.unmount(); render(<CreateStudioHost />); openStudio(); await readyGenerate()
+    expect(screen.getByRole('switch', { name: 'Save output' }).checked).toBe(false)
+  })
+
+  // AC: @donut-create-plugin ac-default-save-output
+  test('keeps an explicit existing directory and uses ComfyUI directly without creating a default', async () => {
+    const request = readyBridge()
+    render(<CreateStudioHost />); openStudio(); await readyGenerate()
+    fireEvent.click(screen.getByRole('tab', { name: 'Finalize' }))
+    const choice = screen.getByLabelText('Output destination')
+    fireEvent.change(choice, { target: { value: 'library-a:1' } })
+    fireEvent.click(await readyGenerate())
+    await waitFor(() => expect(request.mock.calls.some(([action]) => action === 'generate')).toBe(true))
+    expect(choice.value).toBe('library-a:1')
+    expect(api.apiClient.post.mock.calls.some(([url]) => url === '/create/output-directory')).toBe(false)
+    fireEvent.change(choice, { target: { value: '__comfy_output__' } })
+    fireEvent.click(await readyGenerate())
+    await waitFor(() => expect(request).toHaveBeenCalledWith('generate', {outputDestination:'comfy'}, expect.any(Object)))
+    expect(api.apiClient.post.mock.calls.some(([url]) => url === '/create/output-directory')).toBe(false)
+  })
+
+  // AC: @donut-create-plugin ac-default-save-output
+  test.each(['directory failure','no writable library'])('shows %s beside Generate and never queues with enabled saving', async failure => {
+    const request = readyBridge()
+    if (failure === 'no writable library') api.fetchLibraries.mockResolvedValue({libraries:[{uuid:'readonly',name:'Read only',mounted:true,read_only:true}]})
+    else {
+      const original = api.apiClient.post.getMockImplementation()
+      api.apiClient.post.mockImplementation((url,...args) => url === '/create/output-directory'
+        ? Promise.reject(new Error('Synthetic directory creation failed')) : original(url,...args))
+    }
+    render(<CreateStudioHost />); openStudio(); fireEvent.click(await readyGenerate())
+    await screen.findAllByText(failure === 'no writable library'
+      ? /No writable output library is available/ : 'Synthetic directory creation failed')
+    expect(request.mock.calls.some(([action]) => action === 'generate')).toBe(false)
+    expect(screen.getByRole('switch', {name:'Save output'}).checked).toBe(true)
+  })
+
+  // AC: @donut-create-plugin ac-default-save-output
+  test('Advanced requests are scoped and share one pending default directory creation', async () => {
+    readyBridge()
+    const pending = deferred(), original = api.apiClient.post.getMockImplementation()
+    api.apiClient.post.mockImplementation((url,...args) => url === '/create/output-directory' ? pending.promise : original(url,...args))
+    render(<CreateStudioHost />); openStudio(); await readyGenerate()
+    const frame = screen.getByTitle('DonutUI creation studio'), replies = vi.spyOn(frame.contentWindow, 'postMessage')
+    outputRequest(frame,'untrusted',{origin:'http://untrusted.invalid'})
+    outputRequest(frame,'wrong-source',{source:window})
+    outputRequest(frame,'wrong-session',{data:{sessionId:'other'}})
+    expect(api.apiClient.post.mock.calls.some(([url]) => url === '/create/output-directory')).toBe(false)
+    outputRequest(frame,'advanced-1'); outputRequest(frame,'advanced-2')
+    await waitFor(() => expect(api.apiClient.post.mock.calls.filter(([url]) => url === '/create/output-directory')).toHaveLength(1))
+    expect(replies.mock.calls.some(([value]) => value.channel === 'donut-create-output-v1')).toBe(false)
+    await resolveDirectory(pending)
+    await waitFor(() => expect(replies.mock.calls.filter(([value]) => value.ok === true && value.channel === 'donut-create-output-v1')).toHaveLength(2))
+    expect(replies.mock.calls.filter(([value]) => value.ok === true && value.channel === 'donut-create-output-v1').map(([value]) => value.requestId)).toEqual(['advanced-1','advanced-2'])
+  })
+
+  // AC: @donut-create-plugin ac-default-save-output
+  test.each(['close/reopen','save toggle','destination','library','server'])('rejects pending output preparation after %s and preserves the later choice', async change => {
+    readyBridge()
+    const pending = deferred(), original = api.apiClient.post.getMockImplementation()
+    api.apiClient.post.mockImplementation((url,...args) => url === '/create/output-directory' ? pending.promise : original(url,...args))
+    render(<CreateStudioHost />); openStudio(); await readyGenerate()
+    fireEvent.click(screen.getByRole('tab', { name: 'Finalize' }))
+    const frame = screen.getByTitle('DonutUI creation studio'), replies = vi.spyOn(frame.contentWindow, 'postMessage')
+    outputRequest(frame,'pending')
+    await waitFor(() => expect(api.apiClient.post.mock.calls.some(([url]) => url === '/create/output-directory')).toBe(true))
+    if (change === 'close/reopen') { fireEvent.click(screen.getByRole('button', { name: 'Exit', exact: true })); openStudio() }
+    if (change === 'save toggle') fireEvent.click(screen.getByRole('switch', { name: 'Save output' }))
+    if (change === 'destination') fireEvent.change(screen.getByLabelText('Output destination'), {target:{value:'library-a:1'}})
+    if (change === 'library') fireEvent.change(screen.getByLabelText('Output library'), {target:{value:'library-a'}})
+    if (change === 'server') {serverEvent('donut-create-server-changing'); serverEvent('donut-create-server-changed')}
+    await resolveDirectory(pending)
+    await act(async () => {})
+    expect(replies.mock.calls.some(([value]) => value.channel === 'donut-create-output-v1' && value.ok === true)).toBe(false)
+    if (change !== 'server') expect(screen.getByLabelText('Output destination').value).toBe(change === 'destination' ? 'library-a:1' : '')
+  })
+
+  // AC: @donut-create-plugin ac-default-save-output
+  test('Run Instant prepares its default destination before its first queue request', async () => {
+    vi.useFakeTimers()
+    const request = readyBridge()
+    render(<CreateStudioHost />); openStudio()
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    fireEvent.click(screen.getByRole('checkbox', {name:'Run Instant'}))
+    await act(async () => { await vi.advanceTimersByTimeAsync(650) })
+    expect(api.apiClient.post.mock.calls.filter(([url]) => url === '/create/output-directory')).toHaveLength(1)
+    expect(request.mock.calls.filter(([action]) => action === 'generate')).toHaveLength(1)
+    expect(api.apiClient.post.mock.invocationCallOrder.find((value,index) => api.apiClient.post.mock.calls[index][0] === '/create/output-directory'))
+      .toBeLessThan(request.mock.invocationCallOrder.find((value,index) => request.mock.calls[index][0] === 'generate'))
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+    expect(request.mock.calls.filter(([action]) => action === 'generate')).toHaveLength(1)
+  })
+
+  // AC: @donut-create-plugin ac-default-save-output
+  test('times out output preparation and ignores its late directory result', async () => {
+    vi.useFakeTimers(); readyBridge()
+    const pending = deferred(), original = api.apiClient.post.getMockImplementation()
+    api.apiClient.post.mockImplementation((url,...args) => url === '/create/output-directory' ? pending.promise : original(url,...args))
+    render(<CreateStudioHost />);openStudio()
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    fireEvent.click(screen.getByRole('tab',{name:'Finalize'}))
+    const frame=screen.getByTitle('DonutUI creation studio'),replies=vi.spyOn(frame.contentWindow,'postMessage')
+    outputRequest(frame,'timeout')
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(api.apiClient.post.mock.calls.some(([url]) => url === '/create/output-directory')).toBe(true)
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+    expect(replies.mock.calls.some(([value]) => value.requestId === 'timeout' && value.ok === false && /in time/.test(value.error))).toBe(true)
+    await resolveDirectory(pending)
+    expect(screen.getByLabelText('Output destination').value).toBe('')
+    expect(replies.mock.calls.some(([value]) => value.channel === 'donut-create-output-v1' && value.ok === true)).toBe(false)
+  })
+
+  // AC: @donut-create-plugin ac-default-save-output
+  test('falls back to an in-memory user choice when preference storage fails', async () => {
+    vi.spyOn(Storage.prototype,'getItem').mockImplementation(() => {throw new Error('Synthetic unavailable storage')})
+    vi.spyOn(Storage.prototype,'setItem').mockImplementation(() => {throw new Error('Synthetic full storage')})
+    readyBridge(); render(<CreateStudioHost />); openStudio(); await readyGenerate()
+    const toggle = screen.getByRole('switch',{name:'Save output'})
+    expect(toggle.checked).toBe(true); fireEvent.click(toggle); expect(toggle.checked).toBe(false)
+    fireEvent.click(screen.getByRole('button',{name:'Exit',exact:true}));openStudio()
+    expect(screen.getByRole('switch',{name:'Save output'}).checked).toBe(false)
   })
 })
 

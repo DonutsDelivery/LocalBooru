@@ -184,7 +184,7 @@ class InstallerTests(unittest.TestCase):
             for row in json.loads(nodes[1055]["widgets_values_named"]["slots_json"]):
                 if row["lora_name"] == "krea2/Krea2_NSFW_Aesthetics_V1.safetensors":
                     self.assertEqual((row["model_weight"], row["clip_weight"]), (1, 1))
-            self.assertEqual(workflow["extra"]["donut_workflow"]["controls_revision"], 1)
+            self.assertEqual(workflow["extra"]["donut_workflow"]["controls_revision"], 2)
         provenance = self.installer.manifest["provenance"]
         self.assertEqual(provenance["workflow"]["bundled_sha256"], hashlib.sha256((ROOT / "workflow.json").read_bytes()).hexdigest())
         for asset, expected in provenance["donutui"]["browser_assets"].items():
@@ -364,6 +364,8 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(self.installer.ready())
         receipt["capability_check"] = True
         module._atomic_json(self.installer.state_dir / "ready.json", receipt)
+        self.assertFalse(self.installer.ready(), "Owned face runtime source must also be activated.")
+        self.installer.ensure_owned_nodes()
         self.assertTrue(self.installer.ready())
         first = next(iter(records.values()))
         Path(first["path"]).write_bytes(b"edited")

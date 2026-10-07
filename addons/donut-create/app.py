@@ -27,6 +27,7 @@ from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
 import httpx
 import local_backend
+from dmc_face_detailer import face_prompts as parse_face_plan
 import websockets
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -47,7 +48,7 @@ EXTENSION_ROOTS = {"core", "donutnodes", "comfyui-impact-pack", "comfyui-impact-
                    "ComfyUI_essentials", "ComfyUI-VAE-Utils", "ComfyUI-bleh", "RES4LYF", "mikey_nodes",
                    "derfuu_comfyui_moddednodes", "comfyui-krea2edit", "krea2-nag",
                    "krea-seed-variance-enhancer", "rgthree-comfy"}
-SAFE_EXTRA_NODES = {"SaveImage", "PreviewImage", "LoadImage", "DonutSubjectMaskPreview", "DonutToneLab"}
+SAFE_EXTRA_NODES = {"SaveImage", "PreviewImage", "LoadImage", "DonutSubjectMaskPreview", "DonutToneLab", "DMCFaceDetailer"}
 FILE_MACRO = re.compile(r"__|(?<![\w/*])[A-Za-z][\w/-]*\*(?![\w*])")
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif"}
 
@@ -237,7 +238,13 @@ class Controller:
 
     def expected_capabilities(self) -> dict[str, Any]:
         if hasattr(self.installer, "expected_capabilities"):
-            return self.installer.expected_capabilities()
+            capabilities = self.installer.expected_capabilities()
+            if self.config["mode"] != "managed":
+                # External backends can keep using their existing single-face
+                # workflows; ordered routing checks its node at submission.
+                capabilities = {**capabilities, "required_nodes": [node for node in capabilities["required_nodes"]
+                                if node != "DMCFaceDetailer"]}
+            return capabilities
         manifest = read_json(Path(__file__).with_name("runtime.json"), {})
         profile = self.installer.status().get("profile") or manifest.get("default_profile", "base")
         return {"required_nodes": manifest.get("required_nodes", []),
@@ -920,6 +927,16 @@ class Controller:
             inputs = node.get("inputs", {})
             if not isinstance(inputs, dict):
                 raise HTTPException(400, "Invalid workflow node inputs.")
+            if node["class_type"] == "DMCFaceDetailer":
+                try:
+                    plan = parse_face_plan(inputs.get("face_prompts_json", "[]"))
+                except ValueError as error:
+                    raise HTTPException(400, str(error)) from None
+                for face in plan:
+                    safe_prompt_text(face["character"])
+                    safe_prompt_text(face["face_prompt"])
+                if "require_single_face" in inputs and type(inputs["require_single_face"]) is not bool:
+                    raise HTTPException(400, "Use a literal single-face routing flag.")
             if node["class_type"] == "DonutText":
                 separator = source_text(inputs.get("separator", ""))
                 combined = separator.join(source_text(inputs[key]) for key in ("prefix", "text", "suffix") if key in inputs)

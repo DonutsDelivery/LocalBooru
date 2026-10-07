@@ -24,6 +24,9 @@ CATALOG = json.loads((ROOT / "enhancer_models.json").read_text(encoding="utf-8")
 SYSTEM_PROMPT = (ROOT / "enhancer_prompt.txt").read_text(encoding="utf-8")
 MAX_BRIEF = 16000
 MAX_FACE = 8000
+FACE_POSITIONS = ("left", "center", "right")
+FACE_ORDINALS = ("1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th",
+                 "9th", "10th", "11th", "12th", "13th", "14th", "15th", "16th")
 
 
 def inference_seed(seed):
@@ -38,6 +41,36 @@ def inference_seed(seed):
 def messages(image_brief, face_brief):
     return [{"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": json.dumps({"image_brief": image_brief, "face_brief": face_brief}, ensure_ascii=False)}]
+
+
+def _valid_relative_positions(plan):
+    labels = {record["character"] for record in plan}
+    for record in plan:
+        position = record["position"]
+        if not isinstance(position, dict) or set(position) != {"left_of", "above"}:
+            return False
+        for references in position.values():
+            if (not isinstance(references, list) or len(references) > 15
+                    or not all(isinstance(label, str) and label in labels and label != record["character"] for label in references)
+                    or len(references) != len(set(references))):
+                return False
+    for axis in ("left_of", "above"):
+        edges = {record["character"]: record["position"][axis] for record in plan}
+        visiting, complete = set(), set()
+        def visit(label):
+            if label in visiting:
+                return False
+            if label in complete:
+                return True
+            visiting.add(label)
+            if not all(visit(target) for target in edges[label]):
+                return False
+            visiting.remove(label)
+            complete.add(label)
+            return True
+        if not all(visit(label) for label in labels):
+            return False
+    return True
 
 
 def parse_result(text, finish_reason, supplied_face=False):
@@ -56,10 +89,42 @@ def parse_result(text, finish_reason, supplied_face=False):
         result = json.loads(text, object_pairs_hook=unique)
     except (ValueError, TypeError):
         raise ValueError("The model returned an invalid prompt pair. Try again; your original prompts are unchanged.") from None
-    if (not isinstance(result, dict) or set(result) != {"main_prompt", "face_prompt"}
-            or not all(isinstance(value, str) and len(value) <= 32000 for value in result.values())
-            or not result["main_prompt"].strip() or supplied_face and not result["face_prompt"].strip()
-            or any(re.search(r"%(?:load|file)\s*:", value, re.I) for value in result.values())):
+    def valid_text(value, limit, required=False):
+        return (isinstance(value, str) and len(value) <= limit and (not required or bool(value.strip()))
+                and not re.search(r"%(?:load|file)\s*:", value, re.I))
+    if (not isinstance(result, dict) or set(result) not in ({"main_prompt", "face_prompt"}, {"main_prompt", "face_prompt", "face_prompts"})
+            or not valid_text(result["main_prompt"], 32000, True)
+            or not valid_text(result["face_prompt"], 32000)):
+        raise ValueError("The model returned an incomplete or unsafe prompt pair. Try again; your original prompts are unchanged.")
+    if "face_prompts" in result:
+        plan = result["face_prompts"]
+        valid = isinstance(plan, list) and len(plan) <= 16 and len(plan) != 1
+        labels, positions = [], []
+        if valid:
+            for item in plan:
+                if (not isinstance(item, dict) or set(item) != {"character", "position", "face_prompt"}
+                        or not valid_text(item["character"], 200, True)
+                        or not valid_text(item["face_prompt"], MAX_FACE, True)):
+                    valid = False
+                    break
+                labels.append(item["character"].strip().casefold())
+                positions.append(item["position"])
+            valid = valid and len(labels) == len(set(labels))
+            if valid and positions:
+                if all(isinstance(position, str) for position in positions):
+                    families = [family for family in (FACE_POSITIONS, FACE_ORDINALS) if all(position in family for position in positions)]
+                    valid = bool(families)
+                    if valid:
+                        order = [families[0].index(position) for position in positions]
+                        valid = all(first < second for first, second in zip(order, order[1:]))
+                else:
+                    valid = _valid_relative_positions(plan)
+                valid = valid and not result["face_prompt"].strip()
+        if not valid:
+            raise ValueError("The model returned an invalid spatial face plan. Try again; your original prompts are unchanged.")
+        if supplied_face and not plan and not result["face_prompt"].strip():
+            raise ValueError("The model could not resolve the supplied facial descriptions. Specify which characters are left of or above others, or give left-to-right face order and retry; your original prompts are unchanged.")
+    elif supplied_face and not result["face_prompt"].strip():
         raise ValueError("The model returned an incomplete or unsafe prompt pair. Try again; your original prompts are unchanged.")
     return result
 
@@ -359,8 +424,17 @@ class Enhancer(VerifiedDownloads):
                     "max_tokens": 4096, "stream": False, "cache_prompt": False,
                     "chat_template_kwargs": {"enable_thinking": False},
                     "response_format": {"type": "json_schema", "json_schema": {"name": "prompt_pair", "strict": True, "schema": {
-                        "type": "object", "properties": {"main_prompt": {"type": "string"}, "face_prompt": {"type": "string"}},
-                        "required": ["main_prompt", "face_prompt"], "additionalProperties": False}}}})
+                        "type": "object", "properties": {"main_prompt": {"type": "string", "maxLength": 32000},
+                            "face_prompt": {"type": "string", "maxLength": 32000},
+                            "face_prompts": {"type": "array", "maxItems": 16, "items": {
+                                "type": "object", "properties": {"character": {"type": "string", "minLength": 1, "maxLength": 200},
+                                    "position": {"oneOf": [{"type": "string", "enum": list(FACE_POSITIONS + FACE_ORDINALS)},
+                                        {"type": "object", "properties": {axis: {"type": "array", "maxItems": 15, "uniqueItems": True,
+                                            "items": {"type": "string", "minLength": 1, "maxLength": 200}} for axis in ("left_of", "above")},
+                                         "required": ["left_of", "above"], "additionalProperties": False}]},
+                                    "face_prompt": {"type": "string", "minLength": 1, "maxLength": MAX_FACE}},
+                                "required": ["character", "position", "face_prompt"], "additionalProperties": False}}},
+                        "required": ["main_prompt", "face_prompt", "face_prompts"], "additionalProperties": False}}}})
                 if not response.is_success:
                     raise ValueError("The local model could not process this brief. Try a shorter brief or retry; nothing has been applied.")
                 choice = response.json()["choices"][0]

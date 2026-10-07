@@ -22,6 +22,109 @@ from test_installer import Opener
 
 
 class OutputTests(unittest.TestCase):
+    # AC: @create-multiple-face-prompts ac-character-prompts
+    def test_relative_two_axis_plan_keeps_arbitrary_stable_character_order(self):
+        plan = [
+            {'character': 'Son', 'position': {'left_of': ['Daughter'], 'above': []}, 'face_prompt': 'The son smiles.'},
+            {'character': 'Mother', 'position': {'left_of': [], 'above': ['Daughter']}, 'face_prompt': "The mother's face."},
+            {'character': 'Father', 'position': {'left_of': ['Mother'], 'above': ['Son']}, 'face_prompt': "The father's face."},
+            {'character': 'Daughter', 'position': {'left_of': [], 'above': []}, 'face_prompt': "The daughter's face."},
+        ]
+        result = {'main_prompt': 'Father above son, mother above daughter; father left of mother and son left of daughter.', 'face_prompt': '', 'face_prompts': plan}
+        self.assertEqual(parse_result(json.dumps(result), 'stop', True), result)
+        # An edge in each direction across different axes is not an axis cycle.
+        cross_axis = [
+            {'character': 'Father', 'position': {'left_of': ['Son'], 'above': []}, 'face_prompt': "The father's face."},
+            {'character': 'Son', 'position': {'left_of': [], 'above': ['Father']}, 'face_prompt': "The son's face."},
+        ]
+        self.assertEqual(parse_result(json.dumps({**result, 'face_prompts': cross_axis}), 'stop')['face_prompts'], cross_axis)
+
+    # AC: @create-multiple-face-prompts ac-mismatch
+    def test_relative_references_and_axis_cycles_are_rejected(self):
+        plan = [
+            {'character': 'Father', 'position': {'left_of': ['Mother'], 'above': ['Son']}, 'face_prompt': "The father's face."},
+            {'character': 'Mother', 'position': {'left_of': [], 'above': []}, 'face_prompt': "The mother's face."},
+            {'character': 'Son', 'position': {'left_of': [], 'above': []}, 'face_prompt': "The son's face."},
+        ]
+        for index, position in (
+            (0, {'left_of': ['Unknown'], 'above': []}),
+            (0, {'left_of': ['mother'], 'above': []}),
+            (0, {'left_of': ['Father'], 'above': []}),
+            (0, {'left_of': ['Mother', 'Mother'], 'above': []}),
+            (0, {'left_of': [True], 'above': []}),
+            (0, {'left_of': []}),
+            (0, {'left_of': [], 'above': [], 'extra': []}),
+            (0, {'left_of': 'Mother', 'above': []}),
+            (0, {'left_of': [], 'above': None}),
+            (0, {'left_of': ['Mother'] * 16, 'above': []}),
+            (0, {'column': 1, 'row': 1}),
+            (1, {'left_of': ['Father'], 'above': []}),
+            (2, {'left_of': [], 'above': ['Father']}),
+            (2, 'right'),
+        ):
+            with self.subTest(index=index, position=position), self.assertRaises(ValueError):
+                modified = [dict(record) for record in plan]
+                modified[index]['position'] = position
+                parse_result(json.dumps({'main_prompt': 'Three family members.', 'face_prompt': '', 'face_prompts': modified}), 'stop')
+        cycle = [{**record, 'position': {'left_of': [plan[(index + 1) % 3]['character']], 'above': []}}
+                 for index, record in enumerate(plan)]
+        with self.assertRaises(ValueError):
+            parse_result(json.dumps({'main_prompt': 'Three family members.', 'face_prompt': '', 'face_prompts': cycle}), 'stop')
+
+    # AC: @create-multiple-face-prompts ac-character-prompts
+    # AC: @create-multiple-face-prompts ac-single-face-compatible
+    def test_ordered_face_plan_and_legacy_single_face_are_preserved(self):
+        plan = [
+            {'character': 'Older pilot', 'position': 'left', 'face_prompt': 'The older pilot smiles, eyes open.'},
+            {'character': 'Younger pilot', 'position': 'right', 'face_prompt': 'The younger pilot frowns, eyes closed.'},
+        ]
+        result = {'main_prompt': 'Two pilots stand together, older on the left and younger on the right.', 'face_prompt': '', 'face_prompts': plan}
+        self.assertEqual(parse_result(json.dumps(result), 'stop', True), result)
+        single = {'main_prompt': 'One pilot looks left.', 'face_prompt': 'The pilot looks left.', 'face_prompts': []}
+        self.assertEqual(parse_result(json.dumps(single), 'stop', True), single)
+        legacy = {key: single[key] for key in ('main_prompt', 'face_prompt')}
+        self.assertEqual(parse_result(json.dumps(legacy), 'stop', True), legacy)
+        ordinal = [{**record, 'position': position} for record, position in zip(plan, ('1st', '2nd'))]
+        self.assertEqual(parse_result(json.dumps({**result, 'face_prompts': ordinal}), 'stop')['face_prompts'], ordinal)
+        maximum = [{'character': f'Character {index + 1}', 'position': position, 'face_prompt': f'Character {index + 1} smiles.'}
+                   for index, position in enumerate(module.FACE_ORDINALS)]
+        self.assertEqual(len(maximum), 16)
+        self.assertEqual(parse_result(json.dumps({**result, 'face_prompts': maximum}), 'stop')['face_prompts'], maximum)
+
+    # AC: @create-multiple-face-prompts ac-mismatch
+    def test_ambiguous_face_plan_can_remain_empty_in_new_contract(self):
+        unresolved = {'main_prompt': 'Two pilots, both facing the viewer.', 'face_prompt': '', 'face_prompts': []}
+        self.assertEqual(parse_result(json.dumps(unresolved), 'stop'), unresolved)
+        with self.assertRaisesRegex(ValueError, 'resolve'):
+            parse_result(json.dumps(unresolved), 'stop', True)
+
+    # AC: @create-multiple-face-prompts ac-mismatch
+    def test_invalid_or_unsupported_face_order_is_rejected(self):
+        left = {'character': 'Left twin', 'position': 'left', 'face_prompt': 'The left twin smiles.'}
+        right = {'character': 'Right twin', 'position': 'right', 'face_prompt': 'The right twin frowns.'}
+        valid = {'main_prompt': 'Two twins, smiling twin left and frowning twin right.', 'face_prompt': '', 'face_prompts': [left, right]}
+        for patch_result in (
+            {'face_prompts': None}, {'face_prompts': {}}, {'face_prompts': [left]},
+            {'face_prompt': 'Both twins smile.'},
+            {'face_prompts': [right, left]},
+            {'face_prompts': [left, {**right, 'position': 'left'}]},
+            {'face_prompts': [left, {**right, 'position': '2nd'}]},
+            {'face_prompts': [{**left, 'position': 'looking left'}, right]},
+            {'face_prompts': [{**left, 'position': '17th'}, right]},
+            {'face_prompts': [left, {**right, 'character': ' LEFT TWIN '}]},
+            {'face_prompts': [left, {**right, 'character': ''}]},
+            {'face_prompts': [left, {**right, 'character': 'x' * 201}]},
+            {'face_prompts': [left, {**right, 'face_prompt': ''}]},
+            {'face_prompts': [left, {**right, 'face_prompt': 'x' * 8001}]},
+            {'face_prompts': [left, {**right, 'face_prompt': '%load:/synthetic%'}]},
+            {'face_prompts': [left, {**right, 'extra': 'unselected'}]},
+            {'face_prompts': [left, 'not a character record']},
+            {'face_prompts': [{**left, 'character': f'Twin {index}', 'position': f'{index}th'} for index in range(17)]},
+            {'face_prompts': [left, right], 'other': 'unselected'},
+        ):
+            with self.subTest(patch=patch_result), self.assertRaises(ValueError):
+                parse_result(json.dumps({**valid, **patch_result}), 'stop')
+
     # AC: @create-managed-prompt-enhancer ac-enhance-preview
     def test_both_inputs_are_distinct_and_valid_json_is_required(self):
         inputs = messages("A clockwork owl.", "The owl looks left, eyes open.")
@@ -103,7 +206,23 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(request.url.path, '/v1/chat/completions')
             requests.append(data)
             self.assertEqual(json.loads(data['messages'][1]['content']), {'image_brief': image, 'face_brief': face})
-            self.assertEqual(data['response_format']['json_schema']['schema']['required'], ['main_prompt', 'face_prompt'])
+            schema = data['response_format']['json_schema']['schema']
+            self.assertEqual(schema['required'], ['main_prompt', 'face_prompt', 'face_prompts'])
+            self.assertEqual(schema['properties']['face_prompts']['maxItems'], 16)
+            record = schema['properties']['face_prompts']['items']
+            self.assertEqual(record['required'], ['character', 'position', 'face_prompt'])
+            self.assertFalse(record['additionalProperties'])
+            self.assertEqual(record['properties']['character']['maxLength'], 200)
+            self.assertEqual(record['properties']['face_prompt']['maxLength'], 8000)
+            positions = record['properties']['position']['oneOf']
+            self.assertEqual(positions[0]['enum'][:3], ['left', 'center', 'right'])
+            self.assertEqual(positions[0]['enum'][-1], '16th')
+            self.assertEqual(positions[1]['required'], ['left_of', 'above'])
+            self.assertFalse(positions[1]['additionalProperties'])
+            for axis in ('left_of', 'above'):
+                self.assertEqual(positions[1]['properties'][axis]['maxItems'], 15)
+                self.assertTrue(positions[1]['properties'][axis]['uniqueItems'])
+                self.assertEqual(positions[1]['properties'][axis]['items']['maxLength'], 200)
             self.assertGreaterEqual(data['temperature'], 0.6)
             self.assertFalse(data['cache_prompt'])
             return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(output)}}]})
@@ -131,6 +250,8 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
     async def test_scene_derived_face_pair_survives_owned_inference_with_empty_face_brief(self):
         # Synthetic model responses verify transport and parsing, not real-model
         # obedience to the face-selection policy. No model is downloaded here.
+        # These legacy two-field outputs remain readable for compatibility;
+        # current three-field policy requires coverage of every visible face.
         fixtures = [
             ('A front-facing portrait of one adult dancer. No makeup.', '',
              "The adult dancer's face, facing the viewer, without makeup."),
@@ -190,6 +311,77 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(job['result'], output)
                 self.assertEqual(job['seed'], 73)
                 self.assertEqual(len(completion_requests), 1)
+                self.assertNotIn('job', self.enhancer.status('other'))
+                process.terminate.assert_called_once()
+                self.assertIsNone(self.enhancer.process)
+
+    # AC: @create-multiple-face-prompts ac-character-prompts
+    # AC: @create-multiple-face-prompts ac-mismatch
+    async def test_actual_http_result_retains_spatial_face_plan_and_unresolved_order_fails_closed(self):
+        left = {'character': 'Alice', 'position': 'left', 'face_prompt': 'Alice smiles, looking right.'}
+        right = {'character': 'Bob', 'position': 'right', 'face_prompt': 'Bob frowns, looking left.'}
+        positioned = 'Bob on the right frowns, looking left; Alice on the left smiles, looking right. Trigger SYNTH_PAIR. A sign says "Keep out—".'
+        family = 'Father above son, mother above daughter; father left of mother and son left of daughter. All four faces are visible.'
+        fixtures = [
+            (positioned, '', {'main_prompt': positioned, 'face_prompt': '', 'face_prompts': [left, right]}, 'complete'),
+            (family, 'Father smiles, eyes closed.',
+             {'main_prompt': family + ' Father smiles with eyes closed.', 'face_prompt': '', 'face_prompts': [
+                 {'character': 'Son', 'position': {'left_of': ['Daughter'], 'above': []}, 'face_prompt': "The son's face."},
+                 {'character': 'Father', 'position': {'left_of': ['Mother'], 'above': ['Son']}, 'face_prompt': 'Father smiles, eyes closed.'},
+                 {'character': 'Daughter', 'position': {'left_of': [], 'above': []}, 'face_prompt': "The daughter's face."},
+                 {'character': 'Mother', 'position': {'left_of': [], 'above': ['Daughter']}, 'face_prompt': "The mother's face."},
+             ]}, 'complete'),
+            ('Bob is on the right; Alice is on the left. Both faces are visible.', 'Alice smiles, eyes closed.',
+             {'main_prompt': 'Bob is on the right; Alice is on the left, smiling with eyes closed. Both faces are visible.', 'face_prompt': '',
+              'face_prompts': [{'character': 'Alice', 'position': 'left', 'face_prompt': 'Alice smiles, eyes closed.'},
+                               {'character': 'Bob', 'position': 'right', 'face_prompt': "Bob's face."}]}, 'complete'),
+            ('Alice and Bob pose for a portrait.', 'From left to right: Alice smiles, looking right; Bob frowns, looking left.',
+             {'main_prompt': 'Alice on the left smiles, looking right; Bob on the right frowns, looking left, in a portrait.', 'face_prompt': '',
+              'face_prompts': [{**left, 'position': '1st'}, {**right, 'position': '2nd'}]}, 'complete'),
+            ('Alice looks left; Bob looks right. Neither has a specified position.', '',
+             {'main_prompt': 'Alice looks left; Bob looks right. Neither has a specified position.', 'face_prompt': '', 'face_prompts': []}, 'complete'),
+            ('Father is above son; mother is also visible, with no relationship specified for her.', '',
+             {'main_prompt': 'Father is above son; mother is also visible, with no relationship specified for her.', 'face_prompt': '', 'face_prompts': []}, 'complete'),
+            ('Alice and Bob pose for a portrait.', 'Alice smiles; Bob frowns. No order is specified.',
+             {'main_prompt': 'Alice smiles; Bob frowns, in a portrait.', 'face_prompt': '', 'face_prompts': []}, 'error'),
+            ('Alice and Bob pose together, both faces visible. Their positions are unspecified.', 'Alice smiles, eyes closed.',
+             {'main_prompt': 'Alice smiles with eyes closed; Bob poses beside her, both faces visible. Their positions are unspecified.', 'face_prompt': '', 'face_prompts': []}, 'error'),
+        ]
+        client_type = httpx.AsyncClient
+        for image, face, output, state in fixtures:
+            with self.subTest(image=image, face=face):
+                process = unittest.mock.Mock(returncode=None)
+                process.wait = AsyncMock(return_value=0)
+                requests = []
+                def respond(request):
+                    self.assertEqual(request.url.host, '127.0.0.1')
+                    data = {} if request.method == 'GET' else json.loads(request.content)
+                    if request.url.path == '/health':
+                        return httpx.Response(200, json={})
+                    if request.url.path == '/apply-template':
+                        return httpx.Response(200, json={'prompt': 'synthetic formatted chat'})
+                    if request.url.path == '/tokenize':
+                        return httpx.Response(200, json={'tokens': [1] * 20})
+                    self.assertEqual(request.url.path, '/v1/chat/completions')
+                    self.assertEqual(data['messages'], messages(image, face))
+                    self.assertEqual(json.loads(data['messages'][1]['content']), {'image_brief': image, 'face_brief': face})
+                    self.assertEqual(data['seed'], 73)
+                    requests.append(data)
+                    return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(output)}}]})
+                def client(**options):
+                    options['transport'] = httpx.MockTransport(respond)
+                    return client_type(**options)
+                with patch.object(self.enhancer, 'ready', return_value=True), patch.object(module, '_read_json', return_value={'server': 'llama-server'}), patch.object(module.asyncio, 'create_subprocess_exec', new=AsyncMock(return_value=process)), patch.object(module.httpx, 'AsyncClient', side_effect=client):
+                    self.enhancer.start('owner', 'enhance', 'qwen', image, face, seed=73)
+                    await self.enhancer.task
+                job = self.enhancer.status('owner')['job']
+                self.assertEqual(job['state'], state)
+                if state == 'complete':
+                    self.assertEqual(job['result'], output)
+                else:
+                    self.assertNotIn('result', job)
+                    self.assertIn('could not resolve', job['error'])
+                self.assertEqual(len(requests), 1)
                 self.assertNotIn('job', self.enhancer.status('other'))
                 process.terminate.assert_called_once()
                 self.assertIsNone(self.enhancer.process)
@@ -315,7 +507,7 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             conversations.append(data['messages'])
             self.assertFalse(data['cache_prompt'])
             self.assertFalse(data['chat_template_kwargs']['enable_thinking'])
-            self.assertEqual(data['response_format']['json_schema']['schema']['required'], ['main_prompt', 'face_prompt'])
+            self.assertEqual(data['response_format']['json_schema']['schema']['required'], ['main_prompt', 'face_prompt', 'face_prompts'])
             return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(output)}}]})
         def client(**options):
             options['transport'] = httpx.MockTransport(respond)

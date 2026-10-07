@@ -65,6 +65,25 @@ Original editable briefs stay unchanged. Write explicit directions to invent,
 choose or vary details when desired; fixed facts and literal trigger tokens must
 remain intact. The resulting scene and face text conditions only that run and
 appears under **Last run's enhanced prompts**, together with its model and seed.
+When the face brief is empty, the enhancer derives one identifiable visible face
+from the image brief. For several visible faces, describe their screen positions
+or give facial descriptions explicitly in left-to-right order. The enhancer
+returns up to 16 separate character descriptions, shown in the last-run preview.
+It can associate characters through relative left/right and above/below ordering
+without requiring a fixed grid. The owned DMC detailer matches those relationships
+against detected face-box centers and applies independent conditioning only when
+there is exactly one possible assignment. Ambiguous positions, contradictory
+relationships or a face-count mismatch stop refinement before any character
+prompt is applied. Left/right-only descriptions retain their existing ordering.
+Newly inferred single-face runs also require exactly one detected face. Gaze direction does not determine screen position.
+
+Managed setup installs the owned detailer automatically. Existing external
+backends retain ordinary workflows but need the DMC detailer for new inferred
+face routing. Multi-face identity editing/references, wildcards and custom
+conditioning hooks currently report an unsupported-mode error; there is no
+implicit identity-reference matching. Original prompts stay editable and the
+ordered descriptions used by a run remain in its workflow metadata.
+
 There is no separate apply step. Enhancement failure, a changed workflow or
 cancellation prevents submission. Closing Create or stopping ComfyUI cancels a
 pending enhancement without cancelling already accepted image jobs. Model setup
@@ -260,9 +279,12 @@ app launcher.
 
 ## Output destination
 
-Finalize selects one permanent destination. With **Save output** enabled, choose
-an image directory for automatic DMC imports, or **ComfyUI output folder** to
-keep backend outputs without importing them into DMC. With saving disabled, runs
+Finalize selects one permanent destination. **Save output** defaults on and
+remembers an explicit off choice. If no destination is selected, the first
+saving-enabled run creates or reuses an Images-only **Created Images** directory
+in the selected output library before queueing; opening Create alone creates no
+folder. Choose an image directory for automatic DMC imports, or **ComfyUI output
+folder** to keep backend outputs without importing them into DMC. With saving disabled, runs
 remain temporary until explicitly saved. Execution rewrites the known image save
 sinks; the editable workflow and its generation settings remain intact.
 

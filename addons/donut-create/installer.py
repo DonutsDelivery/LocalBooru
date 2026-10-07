@@ -223,6 +223,13 @@ class Installer(VerifiedDownloads):
         self._status.setdefault("downloaded_bytes", 0)
         self._status.setdefault("total_bytes", 0)
         self._status.setdefault("error", None)
+        # Only the managed, receipt-owned backend receives bundled local nodes.
+        # Installation is cheap source activation, with no model downloads.
+        if _read_json(self.backend_root / ".donut-create-source.json", {}).get("sha256") == self.manifest["comfyui"]["sha256"]:
+            try:
+                self.ensure_owned_nodes()
+            except (SetupError, OSError) as error:
+                self._status.update(state="error", phase="source", error=str(error))
         if self._status["state"] in ("installing", "cancelling"):
             self._status.update(state="cancelled", phase="interrupted", error="Setup was interrupted. Retry to reuse verified files and resume downloads.")
         if self._status["state"] == "ready" and not self.ready():
@@ -276,10 +283,71 @@ class Installer(VerifiedDownloads):
 
     def expected_capabilities(self):
         models = self._models()
-        nodes = set(self.manifest["required_nodes"])
+        nodes = set(self.manifest["required_nodes"]) | {"DMCFaceDetailer"}
         for model in models:
             nodes.update(model.get("requires_nodes", []))
         return {"required_nodes": sorted(nodes), "required_models": [{"folder": m["folder"], "filename": m["filename"]} for m in models]}
+
+    def _owned_node_files(self):
+        # One executable file makes source replacement atomic even on Windows.
+        return {"__init__.py": (ROOT / "dmc_face_detailer.py").read_bytes()}
+
+    def _owned_nodes_match(self):
+        target = self.backend_root / "custom_nodes" / "dmc_create"
+        if target.is_symlink():
+            return False
+        marker = target / ".donut-create-owned.json"
+        receipt = _read_json(marker, {})
+        if (marker.is_symlink() or not isinstance(receipt, dict) or receipt.get("owner") != "donut-create"
+                or not isinstance(receipt.get("files"), dict)):
+            return False
+        for name, content in self._owned_node_files().items():
+            path = target / name
+            wanted = hashlib.sha256(content).hexdigest()
+            if path.is_symlink() or not path.is_file() or self._hash(path) != wanted or receipt.get("files", {}).get(name) != wanted:
+                return False
+        return True
+
+    def ensure_owned_nodes(self):
+        target = self.backend_root / "custom_nodes" / "dmc_create"
+        marker = target / ".donut-create-owned.json"
+        files = self._owned_node_files()
+        hashes = {name: hashlib.sha256(content).hexdigest() for name, content in files.items()}
+        if not target.exists() and not target.is_symlink():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            stage = Path(tempfile.mkdtemp(prefix=".dmc-owned-", dir=target.parent))
+            try:
+                for name, content in files.items():
+                    (stage / name).write_bytes(content)
+                _atomic_json(stage / marker.name, {"owner": "donut-create", "files": hashes})
+                stage.rename(target)
+            finally:
+                if stage.exists():
+                    shutil.rmtree(stage)
+            return
+        if target.exists() or target.is_symlink():
+            receipt = _read_json(marker, {})
+            if (target.is_symlink() or marker.is_symlink() or not isinstance(receipt, dict)
+                    or receipt.get("owner") != "donut-create" or not isinstance(receipt.get("files"), dict)):
+                raise SetupError("An existing DMC node folder is not owned by this add-on. It was preserved.")
+            for name in files:
+                path = target / name
+                # A crash between source replacement and receipt activation
+                # may leave either the previous or the new owned checksum.
+                if path.is_symlink() or not path.is_file() or self._hash(path) not in {receipt.get("files", {}).get(name), hashes[name]}:
+                    raise SetupError("An existing DMC node source was modified. It was preserved.")
+            if self._owned_nodes_match():
+                return
+        target.mkdir(parents=True, exist_ok=True)
+        for name, content in files.items():
+            descriptor, temporary = tempfile.mkstemp(prefix=".dmc-source-", dir=target)
+            try:
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(content)
+                os.replace(temporary, target / name)
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+        _atomic_json(marker, {"owner": "donut-create", "files": hashes})
 
     def _disk(self, models=None):
         models = models or self._models()
@@ -380,6 +448,8 @@ class Installer(VerifiedDownloads):
         for source, target in self._sources():
             if _read_json(target / ".donut-create-source.json", {}).get("sha256") != source["sha256"] or not (target / "__init__.py" if target != self.backend_root else target / "main.py").is_file():
                 return False
+        if not self._owned_nodes_match():
+            return False
         return receipt.get("capability_check") is True
 
     def _sources(self):
@@ -701,6 +771,7 @@ print(json.dumps({'frontend':distribution.version, 'prefix_support':True}))
             for item, target in self._sources():
                 self._update(current_file=item.get("directory", "ComfyUI"))
                 self._source(item, target)
+            self.ensure_owned_nodes()
             self._update(phase="environment", progress=0.15, current_file=None)
             self._environment(runtime)
             self._update(phase="dependencies", progress=0.2)

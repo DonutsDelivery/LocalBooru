@@ -28,6 +28,11 @@ import './CreateStudio.css'
 
 const CONNECTION_WAIT_MS = 5 * 60 * 1000
 const COMFY_OUTPUT = '__comfy_output__'
+const SAVE_OUTPUT_KEY = 'dmc-create:v5:save-output'
+function savedOutputPreference() {
+  try { return localStorage.getItem(SAVE_OUTPUT_KEY) !== 'false' }
+  catch { return true }
+}
 
 export default function CreateStudioHost() {
   const [opened, setOpened] = useState(false)
@@ -49,7 +54,7 @@ export default function CreateStudioHost() {
   const [saving, setSaving] = useState(null)
   const [cancelling, setCancelling] = useState(false)
   const [saved, setSaved] = useState({})
-  const [autoSave, setAutoSave] = useState(false)
+  const [autoSave, setAutoSave] = useState(savedOutputPreference)
   const outputDestination = useRef('preview')
   outputDestination.current = autoSave && destinationKey === COMFY_OUTPUT ? 'comfy' : 'preview'
   const [error, setError] = useState('')
@@ -88,6 +93,11 @@ export default function CreateStudioHost() {
   const saveBaselines = useRef(new Map())
   const directoryCreateLock = useRef(false)
   const directoryRequestVersion = useRef(0)
+  const saveSettingsRevision = useRef(0)
+  const saveSettings = useRef(null)
+  saveSettings.current = { enabled: autoSave, destinationKey, outputLibraryId, directories }
+  const outputPreparation = useRef(null)
+  const outputPreparationEpoch = useRef(0)
   const pendingWorkflow = useRef(null)
   const dropSequence = useRef(0)
   const dropLock = useRef(false)
@@ -122,7 +132,9 @@ export default function CreateStudioHost() {
   const studioSessionId = session?.id
 
   const cancelGeneration = useCallback((includeAdvanced = false) => {
-    if (!includeAdvanced && (!generateLock.current || generationCancelled.current)) return
+    if (!includeAdvanced && (!generateLock.current || generationCancelled.current) && !outputPreparation.current) return
+    outputPreparationEpoch.current += 1
+    outputPreparation.current?.cancel()
     if (generateLock.current) generationCancelled.current = true
     bridge.current?.request('cancel-generation', {}, { timeout: 5000 }).catch(() => {})
   }, [])
@@ -237,7 +249,6 @@ export default function CreateStudioHost() {
     setSession(null)
     setFrameUrl('')
     setSaved({})
-    setAutoSave(false)
     setSelectedOutputId('')
     setLivePreview(null)
     setLiveProgress(null)
@@ -420,14 +431,15 @@ export default function CreateStudioHost() {
     return () => { active = false; clearInterval(timer); pollRequest.current?.abort() }
   }, [started, serverRevision, handleStatus, invalidateSession, launchStudio])
 
-  const refreshDestinations = useCallback(async select => {
+  const refreshDestinations = useCallback(async (select, ownsSelection = () => true) => {
     const requestGeneration = generation.current
     const version = ++directoryRequestVersion.current
     const signal = requests.current.signal
     const [libraryData, directoryData] = await Promise.all([fetchLibraries({ signal }), fetchDirectories(true, null, 'image', { signal })])
-    if (!mounted.current || signal.aborted || requestGeneration !== generation.current || version !== directoryRequestVersion.current) return
+    if (!mounted.current || signal.aborted || requestGeneration !== generation.current || version !== directoryRequestVersion.current || !ownsSelection()) return
     const libraryOptions = createLibraryOptions(libraryData.libraries || [])
     const directoryOptions = createDirectoryOptions(directoryData.directories || [], libraryData.libraries || [])
+    saveSettings.current.directories = directoryOptions
     setLibraries(libraryOptions)
     setDirectories(directoryOptions)
     setOutputLibraryId(previous => libraryOptions.some(library => library.id === previous) ? previous : libraryOptions.find(library => library.primary)?.id || libraryOptions[0]?.id || '')
@@ -435,9 +447,97 @@ export default function CreateStudioHost() {
       const key = `${select.library_id}:${select.directory_id}`
       if (!directoryOptions.some(directory => directory.key === key)) throw new Error('The output directory was created, but is not available for saving. Refresh the studio destinations to try again.')
       saveBaselines.current.set(`${sessionRef.current?.id}:${key}`, new Set((sessionRef.current?.outputs || []).map(output => output.id)))
+      saveSettings.current.destinationKey = key
       setDestinationKey(key)
     }
+    return { libraryOptions, directoryOptions }
   }, [])
+
+  const prepareOutput = useCallback(async () => {
+    const requestGeneration = generation.current
+    const revision = saveSettingsRevision.current
+    const epoch = outputPreparationEpoch.current
+    const sessionId = sessionRef.current?.id
+    let timedOut = false
+    const valid = () => mounted.current && visible.current && !serverChanging.current
+      && backendReady.current && !backendChanging.current && generation.current === requestGeneration
+      && outputPreparationEpoch.current === epoch && !timedOut
+      && saveSettingsRevision.current === revision && sessionRef.current?.id === sessionId
+    const cancelled = () => new DOMException('The save settings or studio changed. Generate again with the current settings.', 'AbortError')
+    if (!valid()) throw cancelled()
+    const settings = saveSettings.current
+    if (!settings.enabled) return 'preview'
+    if (settings.destinationKey === COMFY_OUTPUT) return 'comfy'
+    if (settings.destinationKey) {
+      if (!settings.directories.some(directory => directory.key === settings.destinationKey)) throw new Error('Choose an available output directory before generating with Save output on.')
+      return 'preview'
+    }
+    if (outputPreparation.current?.generation === requestGeneration && outputPreparation.current?.revision === revision) return outputPreparation.current.promise
+    if (directoryCreateLock.current) throw new Error('Wait for the output directory to finish, then generate again.')
+    directoryCreateLock.current = true
+    setCreatingDirectory(true)
+    let timeout
+    let cancel
+    const cancellation = new Promise((resolve, reject) => { cancel = () => reject(cancelled()) })
+    const deadline = new Promise((resolve, reject) => {
+      timeout = setTimeout(() => {
+        timedOut = true
+        reject(new Error('The output directory could not be prepared in time. Check Save destination and generate again.'))
+      }, 30000)
+    })
+    const promise = Promise.race([(async () => {
+      const choices = await refreshDestinations(undefined, valid)
+      if (!valid() || !choices) throw cancelled()
+      const libraryId = choices.libraryOptions.find(library => library.id === settings.outputLibraryId)?.id
+        || choices.libraryOptions.find(library => library.primary)?.id || choices.libraryOptions[0]?.id
+      if (!libraryId) throw new Error('No writable output library is available. Choose a library or turn Save output off before generating.')
+      const result = await createOutputDirectory(libraryId, requests.current.signal)
+      if (!valid()) throw cancelled()
+      if (!await refreshDestinations(result, valid) || !valid()) throw cancelled()
+      setAnnouncement(`${result.name || 'Created Images'} is ready and selected for saving.`)
+      return 'preview'
+    })(), deadline, cancellation]).finally(() => {
+      clearTimeout(timeout)
+      if (generation.current === requestGeneration) {
+        directoryCreateLock.current = false
+        outputPreparation.current = null
+        if (mounted.current) setCreatingDirectory(false)
+      }
+    })
+    outputPreparation.current = { generation: requestGeneration, revision, promise, cancel }
+    return promise
+  }, [refreshDestinations])
+
+  useEffect(() => {
+    if (!opened || !studioSessionId || !frameUrl) return
+    const frame = studioFrame.current
+    const origin = new URL(frameUrl, window.location.href).origin
+    const requestGeneration = generation.current
+    const receive = event => {
+      const message = event.data
+      if (event.source !== frame?.contentWindow || event.origin !== origin || message?.channel !== 'donut-create-output-v1'
+        || message.sessionId !== studioSessionId || message.action !== 'prepare-output'
+        || typeof message.requestId !== 'string' || !message.requestId || message.requestId.length > 256) return
+      const revision = saveSettingsRevision.current
+      const epoch = outputPreparationEpoch.current
+      const reply = payload => {
+        if (generation.current === requestGeneration && visible.current && sessionRef.current?.id === studioSessionId) {
+          if (payload.ok && (saveSettingsRevision.current !== revision || outputPreparationEpoch.current !== epoch)) payload = { ok: false, error: 'The save settings or studio changed. Generate again with the current settings.' }
+          frame.contentWindow.postMessage({ channel: message.channel, sessionId: studioSessionId, requestId: message.requestId, ...payload }, origin)
+        }
+      }
+      prepareOutput().then(outputDestination => reply({ ok: true, outputDestination })).catch(error => {
+        if (generation.current === requestGeneration && visible.current && error.name !== 'AbortError') {
+          stopInstant()
+          actionErrorVisible.current = true
+          setBridgeError(createErrorMessage(error))
+        }
+        reply({ ok: false, error: createErrorMessage(error) })
+      })
+    }
+    window.addEventListener('message', receive)
+    return () => window.removeEventListener('message', receive)
+  }, [opened, studioSessionId, frameUrl, prepareOutput, stopInstant])
 
   useEffect(() => {
     if (!opened || switchingServer || directoryCreateLock.current) return
@@ -621,10 +721,14 @@ export default function CreateStudioHost() {
     generationCancelled.current = false
     instantVersion.current = version
     try {
-      const ownsRequest = isInstant ? () => instantEnabled.current && instantEpoch.current === epoch
-        && authoredRevision.current === version && !draftsWaiting.current && visible.current
-        && !acknowledgedPrompts.current.size && !(sessionRef.current?.jobs || []).some(job => ['queued', 'running'].includes(job.status)) : undefined
-      const nextSnapshot = await studioAction('generate', { outputDestination: outputDestination.current }, ownsRequest)
+      const saveRevision = saveSettingsRevision.current
+      const ownsRequest = () => generation.current === requestGeneration && !generationCancelled.current
+        && saveSettingsRevision.current === saveRevision && authoredRevision.current === version && visible.current
+        && (!isInstant || instantEnabled.current && instantEpoch.current === epoch && !draftsWaiting.current
+          && !acknowledgedPrompts.current.size && !(sessionRef.current?.jobs || []).some(job => ['queued', 'running'].includes(job.status)))
+      const output = await prepareOutput()
+      if (!ownsRequest()) throw new DOMException('The image run was cancelled before submission.', 'AbortError')
+      const nextSnapshot = await studioAction('generate', { outputDestination: output }, ownsRequest)
       const queuedIds = nextSnapshot.lastQueuedPromptIds || []
       sessionMutationRevision.current += 1
       for (const id of queuedIds) acknowledgedPrompts.current.add(id)
@@ -643,12 +747,16 @@ export default function CreateStudioHost() {
       if (!isInstant) setMobilePane('results')
       return nextSnapshot
     } catch (generateError) {
-      if (requestGeneration === generation.current && generateError.name !== 'AbortError') stopInstant()
+      if (requestGeneration === generation.current && generateError.name !== 'AbortError') {
+        stopInstant()
+        actionErrorVisible.current = true
+        setBridgeError(createErrorMessage(generateError))
+      }
       throw generateError
     } finally {
       if (requestGeneration === generation.current) generateLock.current = false
     }
-  }, [studioAction, stopInstant])
+  }, [studioAction, stopInstant, prepareOutput])
   const uploadReference = useCallback(async (file, target = 'referenceA') => {
     const nextSnapshot = await studioAction('upload-reference', { file, target })
     if (!target.startsWith('guidance')) setControlTab('edit')
@@ -1003,12 +1111,14 @@ export default function CreateStudioHost() {
   }, [autoSave, saving, creatingDirectory, switchingServer, session, destinationKey, outputs, saved, saveOutput])
 
   function changeAutoSave(enabled) {
+    saveSettingsRevision.current += 1
+    saveSettings.current.enabled = enabled
+    try { localStorage.setItem(SAVE_OUTPUT_KEY, String(enabled)) } catch { /* Keep the current choice in memory. */ }
     if (enabled) {
       const current = sessionRef.current
-      if (!current || !destinationKey) return
-      const context = `${current.id}:${destinationKey}`
+      const context = `${current?.id}:${destinationKey}`
       const baseline = saveBaselines.current.get(context) || new Set()
-      for (const output of current.outputs || []) {
+      for (const output of current?.outputs || []) {
         const key = `${current.id}:${output.id}:${destinationKey}`
         if (saveAttempts.current.get(key) === 'error') saveAttempts.current.delete(key)
         else baseline.add(output.id)
@@ -1019,6 +1129,8 @@ export default function CreateStudioHost() {
   }
 
   function changeDestination(key) {
+    saveSettingsRevision.current += 1
+    saveSettings.current.destinationKey = key
     if (key && key !== destinationKey) saveBaselines.current.set(`${sessionRef.current?.id}:${key}`, new Set((sessionRef.current?.outputs || []).map(output => output.id)))
     setDestinationKey(key)
   }
@@ -1138,13 +1250,17 @@ export default function CreateStudioHost() {
   const destinationControls = <div className="create-destination-controls">
       <label className="create-field create-destination">Output destination
         <select value={destination || destinationKey === COMFY_OUTPUT ? destinationKey : ''} disabled={creatingDirectory || switchingServer} onChange={event => changeDestination(event.target.value)}>
-          <option value="">Choose a directory</option>
+          <option value="">Automatic · Created Images</option>
           <option value={COMFY_OUTPUT}>ComfyUI output folder</option>
           {directories.map(directory => <option key={directory.key} value={directory.key}>{directory.label}</option>)}
         </select>
       </label>
       {!destination && destinationKey !== COMFY_OUTPUT && libraries.length > 0 && <label className="create-field create-output-library">Output library
-        <select value={outputLibraryId} disabled={creatingDirectory} onChange={event => setOutputLibraryId(event.target.value)}>
+        <select value={outputLibraryId} disabled={creatingDirectory} onChange={event => {
+          saveSettingsRevision.current += 1
+          saveSettings.current.outputLibraryId = event.target.value
+          setOutputLibraryId(event.target.value)
+        }}>
           {libraries.map(library => <option key={library.id} value={library.id}>{library.label}</option>)}
         </select>
       </label>}
@@ -1152,13 +1268,13 @@ export default function CreateStudioHost() {
         disabled={creatingDirectory || switchingServer || (!destination && !outputLibraryId)} onClick={createSaveDirectory}>
         {creatingDirectory ? 'Creating output directory…' : 'Create output directory'}
       </button>}
-      {directories.length === 0 && destinationKey !== COMFY_OUTPUT && <p className="create-control-note">Create an output directory here, or enable an Images directory in Directories.</p>}
+      {!destination && destinationKey !== COMFY_OUTPUT && <p className="create-control-note">With Save output on, your first run creates or reuses Created Images in the selected output library.</p>}
     </div>
   const saveTools = <details className="create-save-tools">
-    <summary><span>Save destination</span><strong>{destinationKey === COMFY_OUTPUT ? 'ComfyUI output folder' : destination?.label || 'Choose a directory'}</strong></summary>
+    <summary><span>Save destination</span><strong>{destinationKey === COMFY_OUTPUT ? 'ComfyUI output folder' : destination?.label || 'Created Images on first run'}</strong></summary>
     <div className="create-save-popover">{destinationControls}</div>
   </details>
-  const autoSaveControl = <label className="create-auto-save"><input type="checkbox" role="switch" checked={autoSave} disabled={(!destination && destinationKey !== COMFY_OUTPUT) || creatingDirectory || switchingServer}
+  const autoSaveControl = <label className="create-auto-save"><input type="checkbox" role="switch" checked={autoSave} disabled={creatingDirectory || switchingServer}
     onChange={event => changeAutoSave(event.target.checked)} />Save output</label>
   const finalizeContent = <div className="create-finalize">{destinationControls}{autoSaveControl}
     <p className="create-control-note">{destinationKey === COMFY_OUTPUT

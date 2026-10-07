@@ -697,6 +697,7 @@
   let presetControlsRevision = null;
   let outputDestination = 'preview';
   let pendingEnhancement = null, queueInFlight = false, compilingEnhancement = false, lastEnhancement = null, queueCancellationRevision = 0;
+  let outputPreparation = null, outputRequestSequence = 0;
   let nodeInfo = {}, loraNames = [], lastQueuedPromptIds = [];
   const uploadedReferences = new Set();
   const uploadedMasks = new Map();
@@ -805,7 +806,7 @@
       throw new Error(['Missing node types: ' + [...missingNodes].join(', '), 'Missing models: ' + [...missingModels].join(', ')].filter(value => !value.endsWith(': ')).join('. ') + '. Install the selected models and node packs before generating.');
     }
   }
-  // Add only the missing face branch to recognized pre-face v5 recipes. Never
+  // Repair recognized stock face routes or add a missing legacy branch. Never
   // replace a saved recipe or reinterpret custom/partially upgraded face wiring.
   function upgradeLegacyFacePrompt(workflow, template) {
     const clone = value => JSON.parse(JSON.stringify(value));
@@ -827,6 +828,76 @@
     const allGraphs = [workflow, ...(workflow.definitions?.subgraphs || [])];
     const seeds = sources?.nodes?.filter(item => item.type === 'SeedNode' && item.outputs?.[0]?.name === 'seed') || [];
     const detail = body && node(body, detailControl.path[1]);
+    if (sources && body && detail?.type === 'DonutFaceDetailer'
+      && sources.outputs.some(port => port.name === 'face_instruction')
+      && body.inputs.some(port => port.name === 'face_instruction')) {
+      const edgeTo = (target, name) => body.links.filter(edge => sameId(edge.target_id, target.id)
+        && target.inputs?.[edge.target_slot]?.name === name);
+      const edits = edgeTo(detail, 'edit_prompt');
+      if (edits.length !== 1) return null;
+      const edit = edits[0], branch = node(body, edit.origin_id);
+      if (branch?.type !== 'DonutPromptConditioning' || branch.outputs?.[edit.origin_slot]?.name !== 'full_text') return null;
+      const faceEdges = edgeTo(branch, 'face'), sceneEdges = edgeTo(branch, 'scene');
+      if (faceEdges.length !== 1 || sceneEdges.length !== 1) return null;
+      const context = faceEdges[0], instruction = sceneEdges[0], whole = node(body, context.origin_id);
+      if (whole?.type !== 'DonutPromptConditioning' || whole.outputs?.[context.origin_slot]?.name !== 'full_text'
+        || instruction.origin_id !== -10 || body.inputs[instruction.origin_slot]?.name !== 'face_instruction') return null;
+      const positives = body.links.filter(edge => sameId(edge.origin_id, branch.id)
+        && branch.outputs[edge.origin_slot]?.name === 'positive'
+        && node(body, edge.target_id)?.type === 'DonutKrea2FusionControl'
+        && node(body, edge.target_id).inputs[edge.target_slot]?.name === 'conditioning_in_2');
+      if (positives.length !== 1) return null;
+      const positive = positives[0], fusion = node(body, positive.target_id), detailPositive = edgeTo(detail, 'positive');
+      if (detailPositive.length !== 1 || !sameId(detailPositive[0].origin_id, fusion.id)
+        || fusion.outputs[detailPositive[0].origin_slot]?.name !== 'conditioning_out_2') return null;
+      // Only recognize the complete old stock branch: input/output link metadata
+      // must agree and no extra consumers may be silently reinterpreted.
+      const expected = new Set([edit.id, positive.id]);
+      if ([context, instruction, edit, positive, detailPositive[0]].some(edge =>
+        node(body, edge.target_id)?.inputs[edge.target_slot]?.link !== edge.id
+        || (edge.origin_id === -10 ? !body.inputs[edge.origin_slot].linkIds?.includes(edge.id)
+          : !node(body, edge.origin_id)?.outputs[edge.origin_slot]?.links?.includes(edge.id)))
+        || body.links.some(edge => sameId(edge.origin_id, branch.id) && !expected.has(edge.id))
+        || branch.outputs.some(output => (output.links || []).some(id => !expected.has(id)))) return null;
+      const result = clone(workflow), updatedBody = graph(result, bodyNode.type), updatedBranch = node(updatedBody, branch.id);
+      const updatedContext = updatedBody.links.find(edge => edge.id === context.id);
+      const updatedInstruction = updatedBody.links.find(edge => edge.id === instruction.id);
+      updatedContext.target_slot = instruction.target_slot; updatedInstruction.target_slot = context.target_slot;
+      updatedBranch.inputs[context.target_slot].link = instruction.id;
+      updatedBranch.inputs[instruction.target_slot].link = context.id;
+      for (const original of [edit, positive]) {
+        const edge = updatedBody.links.find(edge => edge.id === original.id), name = original === edit ? 'face_text' : 'face_positive';
+        const slot = updatedBranch.outputs.findIndex(output => output.name === name);
+        if (slot < 0) return null;
+        updatedBranch.outputs[edge.origin_slot].links = updatedBranch.outputs[edge.origin_slot].links.filter(id => id !== edge.id);
+        edge.origin_slot = slot; (updatedBranch.outputs[slot].links ||= []).push(edge.id);
+      }
+      // Earlier stock migrations copied all whole-image widgets into this
+      // branch. Reset only matching inherited set options; retain independent
+      // face sets and every other authored conditioning setting.
+      const defaults = node(bodyTemplate, 1180), names = Object.keys(defaults.widgets_values_named);
+      const setOptions = ['prompt_sets_json', 'prompt_set_index', 'control_after_generate'];
+      const inherited = setOptions.every(name => {
+        const slot = names.indexOf(name), value = branch.widgets_values?.[slot];
+        return value !== undefined && value === whole.widgets_values?.[slot]
+          && [branch, whole].every(item => !Object.hasOwn(item.widgets_values_named || {}, name)
+            || item.widgets_values_named[name] === value);
+      });
+      let hasSets = false;
+      try {
+        const sets = JSON.parse(branch.widgets_values?.[names.indexOf('prompt_sets_json')]);
+        hasSets = Array.isArray(sets) && sets.length > 0;
+      } catch { /* Unrecognized custom set data is preserved. */ }
+      if (inherited && hasSets) {
+        updatedBranch.widgets_values_named ||= {};
+        for (const name of setOptions) {
+          updatedBranch.widgets_values[names.indexOf(name)] = clone(defaults.widgets_values[names.indexOf(name)]);
+          updatedBranch.widgets_values_named[name] = clone(defaults.widgets_values_named[name]);
+        }
+      }
+      updatedBranch.title = 'Face-only conditioning · separate face instruction';
+      return result;
+    }
     if (!sources || !body || !groups?.[0]?.controls || seeds.length !== 1
       || node(sources, sceneControl.path[1])?.type !== 'DF_Text_Box' || detail?.type !== 'DonutFaceDetailer'
       || sources.outputs.some(port => port.name === 'face_instruction')
@@ -841,7 +912,7 @@
       && node(body, edge.target_id)?.type === 'DonutKrea2FusionControl'
       && node(body, edge.target_id).inputs?.[edge.target_slot]?.name === 'conditioning_in_2');
     if (fusionEdges.length !== 1) return null;
-    const routes = [[detailEdge, 1, 0], [fusionEdges[0], 4, 3]].map(([edge, oldSlot, newSlot]) => {
+    const routes = [[detailEdge, 1, 1], [fusionEdges[0], 4, 4]].map(([edge, oldSlot, newSlot]) => {
       const target = node(body, edge.target_id);
       return sameId(edge.origin_id, conditioning.id) && edge.origin_slot === oldSlot
         && target.inputs[edge.target_slot].link === edge.id && conditioning.outputs[oldSlot].links?.includes(edge.id)
@@ -871,9 +942,17 @@
     addNode(resultSources, sourceTemplate, 1178);
     addNode(resultSources, sourceTemplate, 1179);
     const faceConditioning = addNode(resultBody, bodyTemplate, 1180);
-    // Keep the recipe's conditioning options rather than copying preset values.
+    // Keep conditioning options, but a new face branch must not inherit the
+    // whole-image prompt-set overrides in place of its separate face input.
+    const defaults = clone(faceConditioning.widgets_values), defaultNamed = clone(faceConditioning.widgets_values_named);
+    const names = Object.keys(defaultNamed);
     faceConditioning.widgets_values = clone(conditioning.widgets_values);
     if (conditioning.widgets_values_named) faceConditioning.widgets_values_named = clone(conditioning.widgets_values_named);
+    for (const name of ['prompt_sets_json', 'prompt_set_index', 'control_after_generate']) {
+      const slot = names.indexOf(name);
+      if (slot >= 0) faceConditioning.widgets_values[slot] = defaults[slot];
+      faceConditioning.widgets_values_named[name] = defaultNamed[name];
+    }
     const outputSlot = resultSources.outputs.length, inputSlot = resultBody.inputs.length;
     const sourcePort = clone(sourceTemplate.outputs.find(port => port.name === 'face_instruction'));
     sourcePort.linkIds = sourcePort.linkIds.map(newId); resultSources.outputs.push(sourcePort);
@@ -1357,10 +1436,79 @@
       latestRunRevision: latestRun.revision, latestAvailable: latestRun.revision > loadedRunRevision,
       ...(lastError ? {error: lastError} : {})};
   }
+  function validFacePrompts(value, shared) {
+    if (value === undefined) return true; // Older two-key single-face results.
+    if (!Array.isArray(value) || value.length > 16 || value.length === 1) return false;
+    if (!value.length) return true;
+    if (shared !== '') return false;
+    const spatial = ['left', 'center', 'right'];
+    const ordinal = ['1st', '2nd', '3rd', ...Array.from({length: 13}, (_, index) => (index + 4) + 'th')];
+    const labels = new Set();
+    if (!value.every(entry => {
+      if (!object(entry) || Object.keys(entry).length !== 3 || typeof entry.character !== 'string'
+        || !entry.character.trim() || entry.character.length > 200 || typeof entry.face_prompt !== 'string'
+        || !entry.face_prompt.trim() || entry.face_prompt.length > 8000) return false;
+      const label = entry.character.trim().toLowerCase();
+      if (labels.has(label)) return false;
+      labels.add(label); return true;
+    })) return false;
+    if (value.some(entry => object(entry.position))) {
+      const entries = new Map(value.map(entry => [entry.character, entry]));
+      if (!value.every(entry => object(entry.position) && Object.keys(entry.position).length === 2
+        && ['left_of', 'above'].every(axis => Array.isArray(entry.position[axis]) && entry.position[axis].length <= 15
+          && new Set(entry.position[axis]).size === entry.position[axis].length
+          && entry.position[axis].every(label => label !== entry.character && entries.has(label))))) return false;
+      // Relations apply independently on each axis. Record order does not
+      // describe rows, columns, or the runtime's detected-face traversal order.
+      return ['left_of', 'above'].every(axis => {
+        const active = new Set(), visited = new Set();
+        const visit = label => {
+          if (active.has(label)) return false;
+          if (visited.has(label)) return true;
+          active.add(label);
+          if (!entries.get(label).position[axis].every(visit)) return false;
+          active.delete(label); visited.add(label); return true;
+        };
+        return value.every(entry => visit(entry.character));
+      });
+    }
+    let family = null, previous = -1;
+    return value.every(entry => {
+      const kind = spatial.includes(entry.position) ? 'spatial' : 'ordinal';
+      const rank = (kind === 'spatial' ? spatial : ordinal).indexOf(entry.position);
+      if (rank < 0 || family && family !== kind || rank <= previous) return false;
+      family = kind; previous = rank; return true;
+    });
+  }
+  function routeFacePrompts(output, entries, binding, detailBinding, requireSingle = false) {
+    const detailers = Object.entries(output).filter(([, node]) => node.class_type === 'DonutFaceDetailer');
+    // Pinned ComfyUI execution IDs are the full control path joined by ':'.
+    const boundId = (id, target) => String(id) === (target?.control?.path?.map(String).join(':') || String(target?.node?.id));
+    if (detailers.length !== 1 || !boundId(detailers[0][0], detailBinding)) throw new Error('Multiple face descriptions need one supported bound Face detail node.');
+    const [id, detail] = detailers[0], edit = detail.inputs?.edit_prompt, positive = detail.inputs?.positive;
+    const link = (value, slot) => Array.isArray(value) && value.length === 2 && value[1] === slot;
+    const branch = link(edit, 1) && output[edit[0]], fusion = link(positive, 2) && output[positive[0]];
+    const facePositive = fusion?.inputs?.conditioning_in_2;
+    if (branch?.class_type !== 'DonutPromptConditioning' || fusion?.class_type !== 'DonutKrea2FusionControl'
+      || !link(facePositive, 4) || facePositive[0] !== edit[0]) throw new Error('Multiple face descriptions require separate face text and face-only conditioning routes.');
+    let source = branch.inputs?.face; const seen = new Set();
+    while (link(source, 0) && !seen.has(source[0])) {
+      seen.add(source[0]); const node = output[source[0]];
+      if (node?.class_type === binding.node.type && boundId(source[0], binding)) break;
+      if (node?.class_type !== 'DonutText' || node.inputs?.prefix || node.inputs?.suffix) throw new Error('This custom face prompt route does not support separate character descriptions.');
+      source = node.inputs?.text;
+    }
+    if (!link(source, 0) || !boundId(source[0], binding) || output[source[0]]?.class_type !== binding.node.type) throw new Error('Multiple face descriptions need the bound separate face input.');
+    if (!requireSingle && (detail.inputs.edit_mode === true || detail.inputs.wildcard?.trim?.() || detail.inputs.detailer_hook != null
+      || Number.isFinite(detail.inputs.max_faces) && detail.inputs.max_faces > 0 && detail.inputs.max_faces < entries.length)) {
+      throw new Error('This Face detail edit mode, hook, wildcard or face limit cannot safely apply separate character descriptions.');
+    }
+    return {...output, [id]: {...detail, class_type: 'DMCFaceDetailer', inputs: {...detail.inputs, face_prompts_json: JSON.stringify(entries), ...(requireSingle ? {require_single_face: true} : {})}}};
+  }
   function validEnhancementRun(run) {
     return object(run) && Number.isSafeInteger(run.seed) && run.seed >= 0 && ['qwen', 'minicpm'].includes(run.model)
       && typeof run.main_prompt === 'string' && run.main_prompt.trim() && run.main_prompt.length <= 16000
-      && typeof run.face_prompt === 'string' && run.face_prompt.length <= 8000;
+      && typeof run.face_prompt === 'string' && run.face_prompt.length <= 8000 && validFacePrompts(run.face_prompts, run.face_prompt);
   }
   function enhancerConfig() {
     const value = (app?.rootGraph || app?.graph)?.extra?.dmc_prompt_enhancer;
@@ -1385,10 +1533,29 @@
   }
   function cancelGeneration(message = 'The image run was cancelled before submission.') {
     queueCancellationRevision++;
+    if (outputPreparation) outputPreparation.finish(new Error(message));
     const token = pendingEnhancement;
     if (!token || token.cancelled) return;
     token.cancelled = new Error(message); token.reject(token.cancelled);
     void cancelOwnedEnhancement(token);
+  }
+  function prepareOutputDestination() {
+    // An unembedded studio keeps its existing ComfyUI behavior. In DMC the
+    // host owns library destinations and must prepare saving before any Run.
+    if (!window.parent || window.parent === window) return Promise.resolve(outputDestination);
+    if (!parentOrigin) return Promise.reject(new Error('Wait for the studio connection before generating.'));
+    const requestId = 'output-' + (++outputRequestSequence);
+    return new Promise((resolve, reject) => {
+      const finish = (error, destination) => {
+        if (outputPreparation?.requestId !== requestId) return;
+        clearTimeout(outputPreparation.timer); outputPreparation = null;
+        if (error) reject(error); else resolve(destination);
+      };
+      const timer = setTimeout(() => finish(new Error('The output directory could not be prepared in time. Check Save destination and generate again.')), 30000);
+      outputPreparation = { requestId, timer, finish };
+      try { window.parent.postMessage({ channel: 'donut-create-output-v1', sessionId: config.sessionId, requestId, action: 'prepare-output' }, parentOrigin); }
+      catch (error) { finish(error); }
+    });
   }
   function executionSeed(output) {
     const samplers = Object.values(output || {}).filter(node => node.class_type === 'DonutSampler');
@@ -1424,6 +1591,7 @@
       if (token.cancelled) throw token.cancelled;
       if (graph !== (app.rootGraph || app.graph) || recipe(graph.serialize()) !== authored) throw new Error('The workflow changed while enhancing. Run again with the current draft.');
     };
+    token.validate = valid;
     async function request(options, starting = false) {
       const operation = (async () => {
         const response = await api.fetchApi('/dmc/enhancer', options);
@@ -1453,7 +1621,9 @@
       }
       const result = status.job.result;
       if (!object(result) || typeof result.main_prompt !== 'string' || !result.main_prompt.trim() || result.main_prompt.length > 16000
-        || typeof result.face_prompt !== 'string' || result.face_prompt.length > 8000) throw new Error('The enhancer returned incomplete prompts. Retry this image run.');
+        || typeof result.face_prompt !== 'string' || result.face_prompt.length > 8000
+        || !validFacePrompts(result.face_prompts, result.face_prompt)) throw new Error('The enhancer returned incomplete or ambiguous face prompts. Retry this image run.');
+      if (result.face_prompts?.length === 0 && !result.face_prompt.trim() && faceBrief.trim()) throw new Error('The supplied face instructions could not be matched unambiguously. Clarify their character positions before running.');
       const updates = [{binding: scene, source: imageBrief, generated: result.main_prompt}, {binding: face, source: faceBrief, generated: result.face_prompt}];
       let enhanced;
       compilingEnhancement = true;
@@ -1479,7 +1649,21 @@
         if (!bound) throw new Error('This prompt control cannot be compiled safely for per-run enhancement.');
       }
       if (canonical(restored) !== canonical(compiled.output) || executionSeed(enhanced.output) !== seed) throw new Error('The execution prompt changed while enhancing. Retry with supported prompt and seed controls.');
-      const run = {seed, model: settings.model, main_prompt: result.main_prompt, face_prompt: result.face_prompt};
+      const requireSingle = result.face_prompts?.length === 0 && Boolean(result.face_prompt.trim());
+      if (result.face_prompts?.length || requireSingle) {
+        if (current.faceDetail?.widget.value === false) {
+          if (Object.values(enhanced.output).some(node => ['DonutFaceDetailer', 'DMCFaceDetailer'].includes(node.class_type))) throw new Error('Face detail execution changed while enhancing. Retry with the current workflow.');
+        } else {
+          enhanced.output = routeFacePrompts(enhanced.output, result.face_prompts, face, current.faceDetail, requireSingle);
+          await Promise.race([checkCapabilities(enhanced), cancelled]); valid();
+          const spec = nodeInfo.DMCFaceDetailer?.input, field = spec?.required?.face_prompts_json || spec?.optional?.face_prompts_json;
+          if (!Array.isArray(field) || field[0] !== 'STRING') throw new Error('The installed multi-face detailer does not support separate face descriptions. Repair the add-on.');
+          const singleGuard = spec?.optional?.require_single_face || spec?.required?.require_single_face;
+          if (requireSingle && (!Array.isArray(singleGuard) || singleGuard[0] !== 'BOOLEAN')) throw new Error('The installed face detailer lacks the single-face count guard. Repair the add-on.');
+        }
+      }
+      const run = {seed, model: settings.model, main_prompt: result.main_prompt, face_prompt: result.face_prompt,
+        ...(result.face_prompts !== undefined ? {face_prompts: result.face_prompts.map(entry => ({...entry}))} : {})};
       token.run = run;
       return {...compiled, output: enhanced.output, workflow: {...compiled.workflow,
         extra: {...compiled.workflow?.extra, dmc_prompt_enhancement: run}}};
@@ -1880,6 +2064,13 @@
   }, true);
   window.addEventListener('message', event => {
     const message = event.data;
+    if (event.source === window.parent && event.origin === parentOrigin && object(message)
+      && message.channel === 'donut-create-output-v1' && message.sessionId === config.sessionId
+      && message.requestId === outputPreparation?.requestId) {
+      if (message.ok === true && ['preview', 'comfy'].includes(message.outputDestination)) outputPreparation.finish(null, message.outputDestination);
+      else outputPreparation.finish(new Error(typeof message.error === 'string' ? message.error : 'Choose a valid save destination before generating.'));
+      return;
+    }
     // Tauri/Wry's registered native scheme uses a tuple origin, like HTTP.
     // Keep the exact observed origin; opaque parents cannot receive a reply.
     if (event.source !== window.parent || !object(message) || message.channel !== channel || message.sessionId !== config.sessionId
@@ -1984,6 +2175,7 @@
     const originalQueue = api.queuePrompt.bind(api);
     api.queuePrompt = async function (...args) {
       const attempt = queueAttempt, cancellationRevision = queueCancellationRevision;
+      const authored = recipe((app.rootGraph || app.graph).serialize());
       if (queueInFlight) throw new Error('An image submission is already in progress.');
       queueInFlight = true;
       try {
@@ -1992,9 +2184,13 @@
         args[1] = await enhanceRun(args[1]);
         if (cancellationRevision !== queueCancellationRevision) throw new Error('The image run was cancelled before submission.');
         if (pendingEnhancement?.cancelled) throw pendingEnhancement.cancelled;
+        const preparedDestination = await prepareOutputDestination();
+        if (cancellationRevision !== queueCancellationRevision) throw new Error('The image run was cancelled before submission.');
+        if (recipe((app.rootGraph || app.graph).serialize()) !== authored) throw new Error('The workflow changed while preparing output. Generate again with the current settings.');
+        pendingEnhancement?.validate?.();
         // Attach per-run storage intent without changing the editable graph.
         if (object(args[1]?.workflow)) args[1] = {...args[1], workflow: {...args[1].workflow,
-          extra: {...args[1].workflow.extra, dmc_output_destination: outputDestination}}};
+          extra: {...args[1].workflow.extra, dmc_output_destination: preparedDestination}}};
         const result = await originalQueue(...args);
         if (result?.error || result?.node_errors && Object.keys(result.node_errors).length) throw new Error(result.error?.message || 'The backend rejected this workflow. Check the Advanced editor for node errors.');
         if (attempt && result?.prompt_id) attempt.accepted++;
