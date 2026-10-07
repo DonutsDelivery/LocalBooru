@@ -935,6 +935,7 @@
       await checkCapabilities(); await refreshFieldCatalogs(); lastError = ''; notice('Draft is saved locally for this backend.');
     }
     catch (error) { showError(error); }
+    protectDecensorPresets();
     saveDraft();
   }
   async function loadPreset(payload) {
@@ -1127,7 +1128,49 @@
     }
     return node;
   }
+  const decensorGuards = new WeakMap();
+  function protectDecensorPresets() {
+    for (const node of liveNodes()) {
+      if (node.type !== 'DonutKrea2FusionControl' && node.properties?.['Node name for S&R'] !== 'DonutKrea2FusionControl') continue;
+      const preset = node.widgets?.find(widget => widget.name === 'compatibility_preset');
+      if (!preset?.callback) continue;
+      let guard = decensorGuards.get(preset);
+      if (!guard) { guard = {depth: 0, fields: new Map()}; decensorGuards.set(preset, guard); }
+      for (const widget of node.widgets.filter(widget => ['uncensorfix_controls', 'uncensorfix_strength'].includes(widget.name))) {
+        let field = guard.fields.get(widget);
+        if (!field) { field = {revision: 0}; guard.fields.set(widget, field); }
+        if (field.callback && widget.callback === field.callback) continue;
+        const previous = widget.callback;
+        field.callback = function () {
+          const explicit = !guard.depth;
+          if (explicit) field.revision++;
+          try { return previous?.apply(this, arguments); }
+          finally { if (explicit) field.value = widget.value; }
+        };
+        widget.callback = field.callback;
+      }
+      if (preset.callback === guard.callback) continue;
+      const previous = preset.callback;
+      guard.callback = function () {
+        const before = [...guard.fields].map(([widget, field]) => ({widget, field, value: widget.value, revision: field.revision}));
+        const restore = () => {
+          for (const {widget, field, value, revision} of before) widget.value = field.revision === revision ? value : field.value;
+        };
+        guard.depth++;
+        try { return previous.apply(this, arguments); }
+        finally {
+          guard.depth--;
+          restore();
+          // Upstream preset extensions queue sibling work. A later explicit
+          // Decensor callback advances its revision and wins over this restore.
+          Promise.resolve().then(restore);
+        }
+      };
+      preset.callback = guard.callback;
+    }
+  }
   function bindings() {
+    protectDecensorPresets();
     const controls = liveNodes().flatMap(node => (node.properties?.donut_app_controls?.groups || []).flatMap(group => group.controls || []));
     const result = {};
     for (const [key, [name, path, kind, title]] of Object.entries(basicFields)) {
@@ -1530,6 +1573,8 @@
       // panel does after editing its promoted root control. Apply presets first
       // so an explicitly supplied strength/composition wins within this patch.
       if (Object.hasOwn(payload, 'compatibilityPreset')) {
+        const decensor = ['decensor', 'decensorWeight'].flatMap(key => current[key]
+          ? [{widget: current[key].widget, value: current[key].widget.value}] : []);
         commit(updates.get(current.compatibilityPreset.widget));
         const fusion = resolveControl([1014, 1118]), target = named(fusion, 'compatibility_preset');
         if (!target?.widget.callback) throw new Error('The backend preset controls are still loading.');
@@ -1538,6 +1583,12 @@
           const rootStrength = current.tapStrength, innerStrength = named(fusion, 'tap_strength');
           if (rootStrength && innerStrength) commit({...rootStrength, value: innerStrength.widget.value});
         }
+        // Presets own fusion/TAP settings, not the separately bound Decensor
+        // controls. Restore raw composition (including Advanced-only modes)
+        // after queued preset work, without callbacks that relabel it Custom.
+        // Explicit Decensor edits below still win in the same atomic patch.
+        await Promise.resolve();
+        for (const {widget, value} of decensor) widget.value = value;
       }
       for (const update of updates.values()) if (update.key !== 'compatibilityPreset') commit(update);
       if (Object.hasOwn(payload, 'tapStrength')) {
@@ -1829,6 +1880,7 @@
     app.registerExtension({
       name: 'DonutCreate.Studio',
       async setup() { ready = true; },
+      nodeCreated() { Promise.resolve().then(protectDecensorPresets); },
     });
     const started = Date.now();
     const wait = setInterval(async () => {

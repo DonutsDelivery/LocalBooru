@@ -25,7 +25,15 @@ function nodeAt(workflow, wanted) {
   }
 }
 
-function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 'synthetic-device-a', livePrompts = false, failFace = false, failFaceUpgrade = false} = {}) {
+const compatibilityPresets = ['Off', 'Custom', 'Bypass 2', 'Bypass 3', 'Rebalance', 'Enhancer', 'Rebalance + Enhancer',
+  'Rebalance + Bypass 2', 'Rebalance + Bypass 3', 'Balanced', 'Balanced + raw NAG', 'Balanced + Enhancer', 'UncensorFix'];
+const fusionWidgets = ['compatibility_preset', 'tap_method', 'tap_profile', 'per_layer_weights', 'tap_strength',
+  'tap_formula', 'tap_normalization', 'projector_method', 'projector_profile', 'projector_layer_weights',
+  'projector_strength', 'projector_formula', 'projector_normalization', 'fusion_method', 'fusion_strength',
+  'ui_mode', 'uncensorfix_controls', 'uncensorfix_target', 'uncensorfix_strength', 'nag_match_taps',
+  'nag_raw_negative', 'nag_text_energy_compensation', 'nag_batch_txtfusion'];
+
+function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 'synthetic-device-a', livePrompts = false, liveFusion = false, failPreset = false, failFace = false, failFaceUpgrade = false} = {}) {
   const timers = [], events = new Map(), elements = new Map();
   function element(tag) {
     const result = {
@@ -40,14 +48,45 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
   const document = {body:element('body'),createElement:element,getElementById:id=>elements.get(id),querySelector:()=>null,
     addEventListener(name, fn) { events.set(name, fn); },hidden:false};
   let current = copy(initial);
+  let cachedLive;
   const loaded = [], queued = [], fetched = [];
   const models = Object.fromEntries([...new Set(catalog.models.map(model => model.folder))].map(folder => [folder,catalog.models.filter(model => model.folder === folder).map(model => model.filename)]));
   function liveNodes() {
-    if (!livePrompts) return current.nodes;
+    if (!livePrompts && !liveFusion) return current.nodes;
+    if (liveFusion && cachedLive) return cachedLive;
     function build(graph) {
       return graph.nodes.map(node => {
         const subgraph = current.definitions?.subgraphs?.find(item => item.id === node.type);
-        if (subgraph) return { ...node, subgraph: { _nodes: build(subgraph) } };
+        const live = {...node};
+        if (subgraph) live.subgraph = {_nodes:build(subgraph)};
+        if (liveFusion && [1014,1118].includes(node.id)) {
+          const names = node.id === 1118 ? fusionWidgets : node.inputs.filter(input=>input.widget).map(input=>input.name);
+          const item = name => live.widgets.find(widget=>widget.name===name);
+          live.widgets = names.map((name,index)=>({name,
+            get value() { return node.widgets_values[index]; },
+            set value(value) { node.widgets_values[index]=value; },
+            options:name==='compatibility_preset'?{values:compatibilityPresets}
+              :name==='uncensorfix_controls'?{values:['Fusion only','Fusion + UncensorFix weights','UncensorFix weights only']}
+              :{min:0,max:10,step:0.01},
+            callback(value) {
+              if (name==='compatibility_preset') {
+                const inner = node.id===1118 ? live : live.subgraph._nodes.find(child=>child.id===1118);
+                const control = name=>inner.widgets.find(widget=>widget.name===name);
+                control('tap_strength').value = 1;
+                control('tap_method').value = 'Synthetic preset '+value;
+                control('uncensorfix_controls').value = value==='UncensorFix'?'Fusion + UncensorFix weights':'Fusion only';
+                control('uncensorfix_strength').value = 1;
+                // Preset extensions schedule sibling updates, as well as doing synchronous work.
+                queueMicrotask(()=>{control('uncensorfix_strength').value=1;});
+                if (node.id===1118 && failPreset) throw new Error('Synthetic preset callback failure');
+              } else if (['uncensorfix_controls','uncensorfix_strength'].includes(name)) {
+                item('compatibility_preset').value='Custom';
+              }
+            },
+          }));
+          return live;
+        }
+        if (subgraph) return live;
         if (node.type !== 'DF_Text_Box') return node;
         return { ...node, widgets: [{ name: 'Text',
           get value() { return node.widgets_values[0]; },
@@ -56,12 +95,14 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
         }] };
       });
     }
-    return build(current);
+    const result=build(current);
+    if (liveFusion) cachedLive=result;
+    return result;
   }
   const app = {
     canvas:{draw() {}}, registerExtension() {},
     graph:{get _nodes() { return liveNodes(); },serialize() { return copy(current); }},
-    async loadGraphData(data) { current = copy(data || stock); loaded.push(copy(current)); if (failFaceUpgrade && nodeAt(current,1180)) return false; },
+    async loadGraphData(data) { current = copy(data || stock); cachedLive=null; loaded.push(copy(current)); if (failFaceUpgrade && nodeAt(current,1180)) return false; },
     async graphToPrompt() {
       const face = nodeAt(current,1125)?.widgets_values?.[0] || '';
       const scene = nodeAt(current,1126)?.widgets_values?.[0] || '';
@@ -520,4 +561,115 @@ test('failed explicit preset reset rolls back the entire working draft without g
   assert.match(reply.error,/setup workflow could not be loaded/);
   assert.deepEqual(env.current(),working);
   assert.equal(env.queued.length,0);
+});
+
+async function fusionBridge(options = {}) {
+  const working=copy(preset), fusion=nodeAt(working,1118);
+  fusion.widgets_values[fusionWidgets.indexOf('uncensorfix_controls')]=options.composition || 'Fusion only';
+  fusion.widgets_values[fusionWidgets.indexOf('uncensorfix_strength')]=2.37;
+  const env=fixture({initial:working,liveFusion:true,...options}); await env.boot();
+  const replies=[],parent={postMessage:value=>replies.push(value)};env.context.parent=parent;
+  const action=async(action,payload)=>{
+    env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'fusion-'+replies.length,action,payload}});
+    await env.settle();return replies.at(-1);
+  };
+  await action('snapshot');
+  return {env,action};
+}
+
+// AC: @donut-create-plugin ac-basic-advanced-sync
+// AC: @donut-create-plugin ac-basic-model-effects
+test('every compatibility preset preserves raw decensor composition and weight through callbacks and microtasks',async()=>{
+  for (const composition of ['Fusion only','Fusion + UncensorFix weights','UncensorFix weights only']) {
+    const {env,action}=await fusionBridge({composition});
+    for (const compatibilityPreset of compatibilityPresets) {
+      const reply=await action('patch',{compatibilityPreset});
+      assert.equal(reply.ok,true,reply.error);
+      const fusion=nodeAt(env.current(),1118), value=name=>fusion.widgets_values[fusionWidgets.indexOf(name)];
+      assert.equal(value('uncensorfix_controls'),composition,compatibilityPreset);
+      assert.equal(value('uncensorfix_strength'),2.37,compatibilityPreset);
+      assert.equal(value('compatibility_preset'),compatibilityPreset);
+      assert.equal(reply.snapshot.fields.compatibilityPreset.value,compatibilityPreset);
+      assert.equal(reply.snapshot.fields.decensor.value,composition!=='Fusion only');
+      assert.equal(reply.snapshot.fields.decensorWeight.value,2.37);
+      assert.equal(value('tap_method'),'Synthetic preset '+compatibilityPreset);
+      if (!['Off','Custom'].includes(compatibilityPreset)) assert.equal(reply.snapshot.fields.tapStrength.value,1);
+    }
+    assert.equal(env.queued.length,0);
+  }
+});
+
+// AC: @donut-create-plugin ac-basic-advanced-sync
+test('explicit decensor and weight edits win within the compatibility patch independently of payload order',async()=>{
+  for (const decensor of [true,false]) {
+    const {env,action}=await fusionBridge({composition:decensor?'Fusion only':'Fusion + UncensorFix weights'});
+    for (const patch of [
+      {compatibilityPreset:'Balanced',decensor},
+      {decensorWeight:3.14,compatibilityPreset:'UncensorFix'},
+      {decensorWeight:0.61,decensor,compatibilityPreset:'Rebalance',tapStrength:0.73},
+    ]) {
+      const reply=await action('patch',patch);
+      assert.equal(reply.ok,true,reply.error);
+      assert.equal(reply.snapshot.fields.decensor.value,decensor);
+      assert.equal(reply.snapshot.fields.decensorWeight.value,patch.decensorWeight??2.37);
+      if (patch.tapStrength!==undefined) assert.equal(reply.snapshot.fields.tapStrength.value,patch.tapStrength);
+    }
+    assert.equal(env.queued.length,0);
+  }
+});
+
+// AC: @donut-create-plugin ac-workflow-state
+test('preset callback failure rolls back the entire workflow and saved draft after its microtasks',async()=>{
+  const {env,action}=await fusionBridge({composition:'Fusion + UncensorFix weights',failPreset:true});
+  const before=env.current(),saved=env.store.get(draftKey('synthetic-device-a'));
+  const reply=await action('patch',{compatibilityPreset:'Bypass 3',decensor:false,decensorWeight:0.42});
+  assert.equal(reply.ok,false);
+  assert.match(reply.error,/Synthetic preset callback failure/);
+  assert.deepEqual(env.current(),before);
+  assert.equal(env.store.get(draftKey('synthetic-device-a')),saved);
+  assert.equal(env.queued.length,0);
+});
+
+// AC: @donut-create-plugin ac-basic-advanced-sync
+test('Advanced preset callbacks preserve Decensor in both UI modes and after workflow recreation',async()=>{
+  for (const composition of ['Fusion only','Fusion + UncensorFix weights','UncensorFix weights only']) {
+    const {env,action}=await fusionBridge({composition});
+    for (const uiMode of ['Simple','Advanced']) {
+      const inner=()=>env.app.graph._nodes.find(node=>node.id===1014).subgraph._nodes.find(node=>node.id===1118);
+      const widget=name=>inner().widgets.find(widget=>widget.name===name);
+      widget('ui_mode').value=uiMode;
+      for (const name of compatibilityPresets) {
+        widget('compatibility_preset').value=name;
+        widget('compatibility_preset').callback(name);
+        await env.settle();
+        assert.equal(widget('uncensorfix_controls').value,composition);
+        assert.equal(widget('uncensorfix_strength').value,2.37);
+        assert.equal(widget('compatibility_preset').value,name);
+        assert.equal((await action('snapshot')).snapshot.fields.decensorWeight.value,2.37);
+      }
+      await env.app.loadGraphData(env.current());
+      widget('compatibility_preset').value='Balanced';
+      widget('compatibility_preset').callback('Balanced');
+      await env.settle();
+      assert.equal(widget('uncensorfix_controls').value,composition);
+      assert.equal(widget('uncensorfix_strength').value,2.37);
+      assert.equal(widget('compatibility_preset').value,'Balanced');
+    }
+  }
+});
+
+// AC: @donut-create-plugin ac-basic-advanced-sync
+test('explicit Advanced Decensor edits after selecting a preset win over queued preset work',async()=>{
+  const {env}=await fusionBridge();
+  const inner=env.app.graph._nodes.find(node=>node.id===1014).subgraph._nodes.find(node=>node.id===1118);
+  const widget=name=>inner.widgets.find(widget=>widget.name===name);
+  widget('compatibility_preset').value='Rebalance';
+  widget('compatibility_preset').callback('Rebalance');
+  widget('uncensorfix_controls').value='Fusion + UncensorFix weights';
+  widget('uncensorfix_controls').callback(widget('uncensorfix_controls').value);
+  widget('uncensorfix_strength').value=0.42;
+  widget('uncensorfix_strength').callback(0.42);
+  await env.settle();
+  assert.equal(widget('uncensorfix_controls').value,'Fusion + UncensorFix weights');
+  assert.equal(widget('uncensorfix_strength').value,0.42);
 });
