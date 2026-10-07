@@ -127,3 +127,14 @@ test('can disable automatic enhancement if the configured model or workflow beco
   expect(toggle.disabled).toBe(false); fireEvent.click(toggle)
   await waitFor(()=>expect(onConfigure).toHaveBeenCalledWith({enabled:false,model:'minicpm'}))
 })
+
+
+// AC: @create-managed-prompt-enhancer ac-resident-model
+test.each(['minicpm','qwen'])('reports a warm selected model without starting a run or claiming another model is loaded (%s)', async model => {
+  getEnhancerStatus.mockResolvedValue({...idle,loaded_model:'minicpm'})
+  render(<CreatePromptEnhancer sessionId="synthetic" config={{enabled:true,model}} onConfigure={vi.fn()} />)
+  fireEvent.click(screen.getByText('Prompt enhancer'))
+  await waitFor(()=>expect(screen.getByLabelText('Enhancer model').options.length).toBe(2))
+  expect(Boolean(screen.queryByText('Model loaded in RAM · Ready for the next run.'))).toBe(model==='minicpm')
+  expect(startEnhancer).not.toHaveBeenCalled()
+})
