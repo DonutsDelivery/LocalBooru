@@ -46,3 +46,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T01:35:27.125Z
+  - _ulid: 01M4A1KBRXPMXQY2SS76B076WK
+    content: Both main and written face prompts feed the enhancer independently. Candidate bfb5f520 now
+      also excludes external LLAMA_* and HF_TOKEN defaults. Focused tests and both real synthetic
+      models pass. Native test compile reached build.rs but needs frontend/dist; frontend build is
+      queued behind the existing host-wide compiler before rerunning the native test. No normal
+      profile or user comparison page inspected.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T02:03:09.981Z

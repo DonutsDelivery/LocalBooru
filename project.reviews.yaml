@@ -15699,6 +15699,57 @@ reviews:
         runner: baseline comparison
         created_at: 2026-10-07T01:43:54.764Z
         completed_at: 2026-10-07T01:43:54.764Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+        evidence: 34 focused checks rerun and passed on bfb5f520, including both inputs, owner isolation,
+          context bounds, verified downloads, cleanup and native environment sanitation.
+        name: Focused Python
+        required: true
+        runner: unittest
+        created_at: 2026-10-07T02:03:08.732Z
+        completed_at: 2026-10-07T02:03:08.732Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+        evidence: 4 UI and 12 adapter checks passed; UI/adapter sources are unchanged by the subsequent
+          documentation and native environment commits.
+        name: UI and graph adapter
+        required: true
+        runner: vitest + node
+        created_at: 2026-10-07T02:03:09.056Z
+        completed_at: 2026-10-07T02:03:09.056Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+        evidence: "Both pinned models passed again with the isolated helper environment: MiniCPM 7.44s, Qwen
+          15.74s. Both received separate synthetic main/face inputs, preserved face details,
+          returned valid JSON and released helpers. Earlier synthetic browser preview/apply passed
+          on unchanged UI."
+        name: Real model acceptance
+        required: true
+        runner: synthetic CPU + browser
+        created_at: 2026-10-07T02:03:09.390Z
+        completed_at: 2026-10-07T02:03:09.390Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+        evidence: Unchanged main reproduces seven old UI expectation failures and one controller error-text
+          assertion failure. No new surrounding failure. Existing malformed kspec records also
+          remain outside scope.
+        name: Existing surrounding suite failures
+        required: false
+        runner: baseline comparison
+        created_at: 2026-10-07T02:03:09.697Z
+        completed_at: 2026-10-07T02:03:09.697Z
     events:
       - _ulid: 01M4A00PJPR8RKW3J1ZN0J6WQ4
         actor: codex-self-review
@@ -15790,6 +15841,41 @@ reviews:
           status: fail
           name: Existing surrounding suite failures
         timestamp: 2026-10-07T01:43:54.847Z
+      - _ulid: 01M4A1KAA112Z5ZCF0T04HW65X
+        actor: codex-self-review
+        event_type: subject_refreshed
+        payload:
+          new_head: bfb5f5204955419ef008118a78801dc40da6aa83
+          previous_head: 336c69a79cb9314412455091ce6f430e5d8b894b
+        timestamp: 2026-10-07T02:03:08.481Z
+      - _ulid: 01M4A1KAMJWNNB8SDG1ZQ8K8ZV
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: pass
+          name: Focused Python
+        timestamp: 2026-10-07T02:03:08.818Z
+      - _ulid: 01M4A1KAYH679SZ6S2KHXA3DGM
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: pass
+          name: UI and graph adapter
+        timestamp: 2026-10-07T02:03:09.137Z
+      - _ulid: 01M4A1KB931AEKS02Q5ZN32D2Q
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: pass
+          name: Real model acceptance
+        timestamp: 2026-10-07T02:03:09.476Z
+      - _ulid: 01M4A1KBJJJ5EN41KS39HYMZAP
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: fail
+          name: Existing surrounding suite failures
+        timestamp: 2026-10-07T02:03:09.778Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -15800,9 +15886,9 @@ reviews:
       base_branch: main
       base_commit: db118f74
       head_branch: feat/create-managed-enhancer
-      head_commit: 336c69a79cb9314412455091ce6f430e5d8b894b
+      head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
     threads: []
     verdicts: []
     created_at: 2026-10-07T01:35:29.878Z
-    updated_at: 2026-10-07T01:43:54.764Z
+    updated_at: 2026-10-07T02:03:09.697Z
     notes: []
