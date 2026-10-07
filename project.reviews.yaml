@@ -18235,3 +18235,32 @@ reviews:
     created_at: 2026-10-07T07:46:45.645Z
     updated_at: 2026-10-07T07:47:37.702Z
     notes: []
+  - _ulid: 01M4AP5SRVQF9RMQG9T95V9J67
+    slugs:
+      - review-create-visible-errors-90d5d882
+    title: Independent visible Generate errors review 90d5d882
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M4AP5SRVVF5MN76JTAMRK0WW
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T08:02:45.659Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@create-visible-generation-errors"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 6501234a8c6a5fe445ce32f55923f47c6f65e63e
+      head_branch: fix/create-visible-errors
+      head_commit: 90d5d88240e561276ad26bb69a11cf24018d7e3d
+    threads: []
+    verdicts: []
+    created_at: 2026-10-07T08:02:45.659Z
+    updated_at: null
+    notes: []
