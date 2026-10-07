@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01M4A86C6NE6XHGYR1WHBZQVZG
+    content: User screenshot still has no face textbox with Face detail on after repair. Investigate
+      actual public Comfy serialization and starter preset, without reading private workflow. Ensure
+      routed face textbox and enhanced scene/face preview; combine install with integrated
+      Rewriter/Preserver labels. Comparison lab and 11G of owned test downloads removed, no
+      prompts/results read.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T03:58:24.469Z
