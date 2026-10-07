@@ -53,15 +53,24 @@ unrecognized editable graphs open in the Advanced editor.
 ## Local prompt enhancement
 
 Open **Prompt enhancer** below the image/face descriptions in the simple Create
-or Edit controls. Choose **Download model**, then **Enhance prompts**. The default
-is MiniCPM5-2B mondk Abliterated **Q6_K** (2.07 GB); Qwen3.5-4B HauhauCS Aggressive
-**Q4_K_M** (2.71 GB) is an alternative. Both the existing image description and
-the user-written face description are supplied separately. Review the two outputs
-and choose **Apply both prompts**, or discard them. Originals remain available in
-the preview. Applying changes neither starts generation nor enables face detail;
-Run Instant is paused. Changed inputs require a new enhancement. Model setup stays
-available when an older or custom workflow lacks a prompt control; the enhancer
-shows guidance and disables enhancement/apply until both controls are exposed.
+or Edit controls. Choose **Download model**, then enable **Enhance every run**.
+**Preserver** is MiniCPM5-2B mondk Abliterated **Q6_K** (2.07 GB); **Rewriter** is
+Qwen3.5-4B HauhauCS Aggressive **Q4_K_M** (2.71 GB). Each Create, Edit, Advanced,
+and Run Instant submission supplies the original scene and face briefs to the
+selected local model using that image's actual execution seed. Larger image
+seeds map deterministically into llama.cpp's 32-bit sampling range. Fixed briefs,
+model and seed repeat sampling; changing the seed allows new variations.
+
+Original editable briefs stay unchanged. Write explicit directions to invent,
+choose or vary details when desired; fixed facts and literal trigger tokens must
+remain intact. The resulting scene and face text conditions only that run and
+appears under **Last run's enhanced prompts**, together with its model and seed.
+There is no separate apply step. Enhancement failure, a changed workflow or
+cancellation prevents submission. Closing Create or stopping ComfyUI cancels a
+pending enhancement without cancelling already accepted image jobs. Model setup
+stays available when an older or custom workflow lacks a prompt control; enable
+requires both controls, while disabling remains available if a binding or model
+becomes unavailable.
 
 The add-on downloads its own pinned llama.cpp **b11457** CPU runtime and GGUF
 weights using the byte counts, revisions, and SHA-256 checksums in
@@ -81,7 +90,7 @@ listens only on loopback and exits after completion, cancellation, or add-on
 shutdown. Cancellation targets only that studio's enhancer operation.
 
 Enhancer inputs and outputs are held in bounded memory, not logged or saved by
-the enhancer. Applying a preview uses the studio's normal saved workflow behavior.
+the enhancer. Submitted workflows retain original briefs and record that run's enhanced pair in workflow metadata.
 Malformed, truncated, or incomplete output cannot change either workflow field.
 The context is bounded; overly long briefs fail without truncating or applying.
 Maximum input sizes are 16,000 characters for the image and 8,000 for the face.
@@ -265,4 +274,4 @@ permanent ComfyUI results; an explicit **Save to library** remains available.
 
 Older recognized v5 recipes gain the missing face-prompt textbox and face-only conditioning path in place when opened. Existing scene/style prompts, seeds, models, and generation settings remain intact; no image is generated. Custom face wiring and partial upgrades are left unchanged. When Face detail is enabled, the face textbox appears above Prompt enhancer, and its written draft is supplied alongside the main brief.
 
-The basic studio offers **Workflow preset** → **Neutral starter** or **Original v5** → **Reset workflow**. Confirming replaces the draft prompts, references, model choices and workflow settings with the bundled preset; it keeps saved images and downloaded models and does not generate. Original v5 requires its original model and LoRA choices to be installed. Legacy v5 face repair follows the exposed scene/detail controls and executable face routes, including copied workflows with different IDs or missing release metadata; custom face wiring remains unchanged. Enhanced scene and face text is shown under **Prompt enhancer** before **Apply both prompts**.
+The basic studio offers **Workflow preset** → **Neutral starter** or **Original v5** → **Reset workflow**. Confirming replaces the draft prompts, references, model choices and workflow settings with the bundled preset; it keeps saved images and downloaded models and does not generate. Original v5 requires its original model and LoRA choices to be installed. Legacy v5 face repair follows the exposed scene/detail controls and executable face routes, including copied workflows with different IDs or missing release metadata; custom face wiring remains unchanged. The actual scene and face text used by the last enhanced run is shown under **Prompt enhancer**.
