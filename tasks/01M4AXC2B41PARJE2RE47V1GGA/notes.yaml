@@ -7,3 +7,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T10:12:41.940Z
+  - _ulid: 01M4AY27WVNV6VEVYC55SBVMRB
+    content: Candidate ac74e6d6 fixes pinned DonutPromptConditioning 0/3 mixed outputs versus 1/4
+      face-only outputs. Both presets plus atomic recognized savedbranch repair and legacy
+      missingbranch upgrade corrected, with independent face prompt-set defaults. 44 adapter and 22
+      installer tests pass; broad Python97 has93pass3skip1 unchanged pre-existing port-error
+      assertion. Synthetic graph RED reproduced scene/style leak including blank face, now isolated
+      edit+positive face routes, custom/ID copies/idempotent/rollback verified.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T10:20:37.659Z
