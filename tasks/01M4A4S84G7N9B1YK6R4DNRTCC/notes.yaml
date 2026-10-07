@@ -51,3 +51,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T03:31:25.206Z
+  - _ulid: 01M4A7HD690ZB9VTC394F2DZY3
+    content: "Shipping verified: installer exited 0; installed executable SHA-256
+      4ae9817bb1ea0b54f54f78c3e61e17c9595a12653436a7e6aba881dd47c5620a contains the exact tested
+      adapter. Canonical isolated startup and empty-gallery checks pass. Corrected acceptance
+      shutdown to signal only its owned canonical shell; both disposable profiles are removed, test
+      port 18791 is closed, and all owned build/watcher processes exited. Task worktree was clean
+      and an ancestor of main before removal. Normal user app and private library were never
+      opened."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T03:46:57.353Z
