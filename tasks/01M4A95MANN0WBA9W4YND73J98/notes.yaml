@@ -32,3 +32,16 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T04:21:14.480Z
+  - _ulid: 01M4AA4V56TS8F6EAMEWMCTR0R
+    content: "Final revised Qwen actual inference passed all 3 synthetic checks using b11457 CPU,
+      production request and strict parser: sparse cabin now contains substantive compatible
+      timber/light/atmosphere/lens detail; sparse owl adds feather texture/light/shadows/atmosphere
+      with no action or facial invention; detailed owl main paragraph remains exactly the supplied
+      text, including SYNTH_OWL and exact quote. Identity-only face retained and empty cabin face
+      stays empty. Parent clarified compiler/Docker gate does not cover prebuilt bounded CPU
+      inference; verified/cancelled only owned queued wrapper+waiter, ran at existing 4-thread CPU
+      limit without touching other builds. Conditional fresh default MiniCPM sparse+rich check now
+      downloading one extra owned public model. No code fallback or backend output alteration."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T04:32:31.398Z
