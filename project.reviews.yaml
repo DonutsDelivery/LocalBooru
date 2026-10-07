@@ -17982,3 +17982,32 @@ reviews:
     created_at: 2026-10-07T07:40:12.174Z
     updated_at: 2026-10-07T07:46:12.500Z
     notes: []
+  - _ulid: 01M4AN8G8DZ5C8Y8WDKKHE72GX
+    slugs:
+      - review-create-per-run-862ff96a
+    title: Independent per-run enhancer fix-cycle review 862ff96a
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M4AN8G8C19C0Q21W2TKX9BKP
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T07:46:45.645Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@create-per-run-enhancer"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+      head_branch: feat/create-per-run-enhancer
+      head_commit: 862ff96aa945553ee52d60bfec3153a27a7dcb44
+    threads: []
+    verdicts: []
+    created_at: 2026-10-07T07:46:45.645Z
+    updated_at: null
+    notes: []
