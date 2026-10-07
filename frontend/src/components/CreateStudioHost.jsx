@@ -53,6 +53,7 @@ export default function CreateStudioHost() {
   const [opening, setOpening] = useState(false)
   const [saving, setSaving] = useState(null)
   const [cancelling, setCancelling] = useState(false)
+  const [generationPending, setGenerationPending] = useState(false)
   const [saved, setSaved] = useState({})
   const [autoSave, setAutoSave] = useState(savedOutputPreference)
   const outputDestination = useRef('preview')
@@ -106,6 +107,7 @@ export default function CreateStudioHost() {
   const trigger = useRef(null)
   const closeButton = useRef(null)
   const navigationFocus = useRef(null)
+  const workspaceNavigationRevision = useRef(0)
   const host = useRef(null)
   const studioFrame = useRef(null)
   const bridge = useRef(null)
@@ -121,7 +123,6 @@ export default function CreateStudioHost() {
   const pendingActions = useRef(0)
   const actionErrorVisible = useRef(false)
   const instantEnabled = useRef(false)
-  const instantEpoch = useRef(0)
   const authoredRevision = useRef(0)
   const instantVersion = useRef(null)
   const draftsWaiting = useRef(false)
@@ -141,7 +142,6 @@ export default function CreateStudioHost() {
 
   const stopInstant = useCallback(() => {
     instantEnabled.current = false
-    instantEpoch.current += 1
     setRunInstant(false)
   }, [])
 
@@ -234,6 +234,7 @@ export default function CreateStudioHost() {
     draftsWaiting.current = false
     draftSources.current.clear()
     generateLock.current = false
+    setGenerationPending(false)
     acknowledgedPrompts.current.clear()
     initialLaunch.current = true
     openingLock.current = false
@@ -553,7 +554,7 @@ export default function CreateStudioHost() {
     setSnapshot(nextSnapshot)
     setBridgeConnecting(!nextSnapshot.ready && !nextSnapshot.error)
     if (!actionErrorVisible.current) setBridgeError(nextSnapshot.error || '')
-    if (nextSnapshot.ready && nextSnapshot.fields?.editing?.available !== false) {
+    if (nextSnapshot.ready && nextSnapshot.fields?.editing?.available !== false && !draftsWaiting.current && !generateLock.current) {
       setControlTab(previous => previous === 'finalize' ? previous : nextSnapshot.fields?.editing?.value === true ? 'edit' : 'create')
     }
   }, [])
@@ -714,18 +715,20 @@ export default function CreateStudioHost() {
   const generateImage = useCallback(async (instantRequest) => {
     if (generateLock.current) throw new Error('An image is already being added to the queue.')
     const requestGeneration = generation.current
-    const epoch = instantEpoch.current
     const version = authoredRevision.current
     const isInstant = instantRequest === true
+    const navigationRevision = workspaceNavigationRevision.current
     generateLock.current = true
+    setGenerationPending(true)
     generationCancelled.current = false
     instantVersion.current = version
     try {
       const saveRevision = saveSettingsRevision.current
       const ownsRequest = () => generation.current === requestGeneration && !generationCancelled.current
         && saveSettingsRevision.current === saveRevision && authoredRevision.current === version && visible.current
-        && (!isInstant || instantEnabled.current && instantEpoch.current === epoch && !draftsWaiting.current
-          && !acknowledgedPrompts.current.size && !(sessionRef.current?.jobs || []).some(job => ['queued', 'running'].includes(job.status)))
+        // Local next drafts and pausing future Instant runs do not revoke this captured request.
+        // Explicit stop, save changes and session changes use the ownership guards above.
+        && (!isInstant || !acknowledgedPrompts.current.size && !(sessionRef.current?.jobs || []).some(job => ['queued', 'running'].includes(job.status)))
       const output = await prepareOutput()
       if (!ownsRequest()) throw new DOMException('The image run was cancelled before submission.', 'AbortError')
       const nextSnapshot = await studioAction('generate', { outputDestination: output }, ownsRequest)
@@ -744,7 +747,7 @@ export default function CreateStudioHost() {
           setSession(next)
         }
       }
-      if (!isInstant) setMobilePane('results')
+      if (!isInstant && workspaceNavigationRevision.current === navigationRevision) setMobilePane('results')
       return nextSnapshot
     } catch (generateError) {
       if (requestGeneration === generation.current && generateError.name !== 'AbortError') {
@@ -754,7 +757,10 @@ export default function CreateStudioHost() {
       }
       throw generateError
     } finally {
-      if (requestGeneration === generation.current) generateLock.current = false
+      if (requestGeneration === generation.current) {
+        generateLock.current = false
+        if (mounted.current) setGenerationPending(false)
+      }
     }
   }, [studioAction, stopInstant, prepareOutput])
   const uploadReference = useCallback(async (file, target = 'referenceA') => {
@@ -770,7 +776,7 @@ export default function CreateStudioHost() {
   const uploadSubjectMask = useCallback(file => studioAction('upload-mask', { file }), [studioAction])
 
   const importDroppedFiles = useCallback(async (files, target, readFile) => {
-    if (!visible.current || dropLock.current) return
+    if (!visible.current || dropLock.current || generateLock.current) return
     const version = ++dropSequence.current
     const requestGeneration = generation.current
     const currentBridge = bridge.current
@@ -927,7 +933,6 @@ export default function CreateStudioHost() {
 
   function changeRunInstant(enabled) {
     if (!enabled && instantEnabled.current) cancelGeneration()
-    instantEpoch.current += 1
     instantEnabled.current = enabled
     instantVersion.current = null
     setRunInstant(enabled)
@@ -1054,6 +1059,7 @@ export default function CreateStudioHost() {
   }
 
   function changeControlTab(tab) {
+    workspaceNavigationRevision.current += 1
     setControlTab(tab)
     if (tab === 'edit') openReferenceTools('edit', 'A')
     else if (tab === 'create') setCenterView('preview')
@@ -1391,14 +1397,14 @@ export default function CreateStudioHost() {
   const exitNavigation = <div className="create-exit-slot"><button type="button" ref={closeButton} onClick={closeStudio}>Exit</button></div>
   const modeNavigation = <div className="create-mode-actions">
       {session && <div className="create-view-switch"><button type="button" data-create-view="simple" aria-pressed={simpleView} onClick={showSimpleStudio}>Simple</button>
-        <button type="button" data-create-view="advanced" aria-pressed={!showSetup && studioView === 'advanced'} onClick={showAdvancedStudio}>Advanced</button></div>}
-      <button type="button" data-create-view="setup" aria-pressed={showSetup} onClick={() => { if (!showSetup) navigationFocus.current = 'setup'; stopInstant(); setShowSetup(true) }}>Setup</button>
+        <button type="button" data-create-view="advanced" disabled={generationPending || cancelling} aria-pressed={!showSetup && studioView === 'advanced'} onClick={showAdvancedStudio}>Advanced</button></div>}
+      <button type="button" data-create-view="setup" disabled={generationPending || cancelling} aria-pressed={showSetup} onClick={() => { if (!showSetup) navigationFocus.current = 'setup'; stopInstant(); setShowSetup(true) }}>Setup</button>
       {opened && <CreateSettings key={serverRevision} backendOnly onStatusChange={handleStatus} />}
     </div>
   const workspaceNavigation = <nav className="create-workspace-navigation" aria-label="Studio navigation">{exitNavigation}{modeNavigation}</nav>
   const mobileNavigation = <div className="create-mobile-workspace-nav" role="group" aria-label="Workspace panel">
     {[['controls', 'Controls'], ['results', 'Preview'], ['effects', 'Effects'], ['models', 'Models'], ['history', 'History']].map(([pane, label]) =>
-      <button type="button" key={pane} aria-pressed={mobilePane === pane} onClick={() => setMobilePane(pane)}>{label}</button>)}
+      <button type="button" key={pane} aria-pressed={mobilePane === pane} onClick={() => { workspaceNavigationRevision.current += 1; setMobilePane(pane) }}>{label}</button>)}
   </div>
 
   return (
@@ -1422,7 +1428,7 @@ export default function CreateStudioHost() {
             <SimpleCreateControls key={session.id + ':' + controlsRevision} sessionId={session.id} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
               connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : dropPending ? bridgeBusy || 'drop-file' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
               onPatch={patchStudio} onGenerate={generateImage} onEnhancerConfig={configureEnhancer} onLoadPreset={loadUpdatedV5} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={retryConnection} onAdvanced={showAdvancedStudio}
-              runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null} jobsContent={simpleView ? jobsContent : null} finalizeContent={simpleView ? finalizeContent : null}
+              runInstant={runInstant} onRunInstantChange={changeRunInstant} onPauseInstant={stopInstant} onDraftChange={reportControlDrafts} runPending={generationPending || cancelling} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null} jobsContent={simpleView ? jobsContent : null} finalizeContent={simpleView ? finalizeContent : null}
               exitNavigation={simpleView ? exitNavigation : null} modeNavigation={simpleView ? modeNavigation : null} navigation={simpleView ? workspaceNavigation : null} mobileNavigation={simpleView ? mobileNavigation : null}>
               {simpleView ? resultsContent : null}
             </SimpleCreateControls>

@@ -1082,6 +1082,8 @@ class Controller:
             save_nodes[str(node_id)] = self.final_output({"prompt": body["prompt"], "workflow": workflow}, str(node_id))
             if node["class_type"] == "DonutImageSave":
                 node["inputs"]["root"] = "output" if destination == "comfy" else "temp"
+                node["inputs"]["extension"] = "webp"
+                node["inputs"]["lossless_webp"] = True
                 node["inputs"]["show_previews"] = True
             if destination != "comfy":
                 if node["class_type"] == "SaveImage":

@@ -55,16 +55,28 @@ unrecognized editable graphs open in the Advanced editor.
 ## Local prompt enhancement
 
 Open **Prompt enhancer** below the image/face descriptions in the simple Create
-or Edit controls. Choose **Download model**, then enable **Enhance every run**.
+or Edit controls. Choose **Download model**, then enable prompt enhancement.
 **Preserver** is MiniCPM5-2B mondk Abliterated **Q6_K** (2.07 GB); **Rewriter** is
 Qwen3.5-4B HauhauCS Aggressive **Q4_K_M** (2.71 GB). Each Create, Edit, Advanced,
 and Run Instant submission resolves the scene and face briefs through the
-backend wildcard processor before supplying them to the selected local model.
+backend wildcard processor before generating or reusing an enhancement.
 Inline choices such as `{red|blue}` and nested choices select their options
 using that image's actual execution seed, so alternatives become one scene
-before enhancement. The LLM uses the same seed. Larger image
+before enhancement. New LLM inference uses the same seed. Larger image
 seeds map deterministically into llama.cpp's 32-bit sampling range. Fixed briefs,
 model and seed repeat sampling; changing the seed allows new variations.
+
+**Every run** is the default timing. **When prompts change** reuses the current
+studio's last successful enhancement until the image brief, face brief, resolved
+wildcard choices, or enhancer model changes. Loading another workflow starts
+fresh. A reused result keeps its original enhancement seed while the image uses
+the current run's seed; the preview identifies reuse. Failed or cancelled work
+cannot supply a reusable result.
+
+You can edit the next prompt and its generation settings while enhancement or
+cancellation is ongoing. These edits stay in the next draft and leave the
+captured run unchanged. Generate becomes available once the current submission
+settles; completion cannot replace newer draft edits.
 
 Original editable briefs stay unchanged. Write explicit directions to invent,
 choose or vary details when desired; fixed facts and literal trigger tokens must
@@ -245,8 +257,8 @@ Prompt controls still target the three `DF_Text_Box` nodes, their nested
 `DonutText` nodes, and `DonutPromptConditioning`; no replacement sampler or
 synthetic generation path is used. v5's frontend VAE migrations remain enabled.
 
-The default save path is relative to the owned output folder. `DonutImageSave`
-uses PNG, disables overwrite, and embeds workflow and execution metadata.
+The default save path is relative to the owned output folder. Create runs use
+lossless WebP, disable overwrite, and retain workflow and execution metadata.
 The controller further scopes output paths to each studio's own session.
 
 [assets/donut-create.js](assets/donut-create.js) adapts the DonutUI bootstrap,
@@ -301,7 +313,8 @@ Finalize selects one permanent destination. **Save output** defaults on and
 remembers an explicit off choice. If no destination is selected, the first
 saving-enabled run creates or reuses an Images-only **Created Images** directory
 in the selected output library before queueing; opening Create alone creates no
-folder. Choose an image directory for automatic DMC imports, or **ComfyUI output
+folder. Saved library images are full-resolution lossless WebP; their hidden
+workflow companions retain executed settings. Choose an image directory for automatic DMC imports, or **ComfyUI output
 folder** to keep backend outputs without importing them into DMC. With saving disabled, runs
 remain temporary until explicitly saved. Execution rewrites the known image save
 sinks; the editable workflow and its generation settings remain intact.

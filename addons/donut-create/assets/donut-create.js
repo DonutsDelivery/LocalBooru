@@ -697,6 +697,7 @@
   let presetControlsRevision = null;
   let outputDestination = 'preview';
   let pendingEnhancement = null, queueInFlight = false, compilingEnhancement = false, lastEnhancement = null, queueCancellationRevision = 0;
+  let reusableEnhancement = null, enhancementGraphRevision = 0;
   let outputPreparation = null, outputRequestSequence = 0;
   let nodeInfo = {}, loraNames = [], lastQueuedPromptIds = [];
   const uploadedReferences = new Set();
@@ -1003,6 +1004,7 @@
   }
 
   async function finishLoad() {
+    reusableEnhancement = null; enhancementGraphRevision++;
     initialized = true;
     let workflow = (app.rootGraph || app.graph).serialize();
     try {
@@ -1511,20 +1513,24 @@
   function validEnhancementRun(run) {
     return object(run) && Number.isSafeInteger(run.seed) && run.seed >= 0 && ['qwen', 'minicpm'].includes(run.model)
       && typeof run.main_prompt === 'string' && run.main_prompt.trim() && run.main_prompt.length <= 16000
-      && typeof run.face_prompt === 'string' && run.face_prompt.length <= 8000 && validFacePrompts(run.face_prompts, run.face_prompt);
+      && typeof run.face_prompt === 'string' && run.face_prompt.length <= 8000 && validFacePrompts(run.face_prompts, run.face_prompt)
+      && (run.reused === undefined && run.enhancement_seed === undefined
+        || run.reused === true && Number.isSafeInteger(run.enhancement_seed) && run.enhancement_seed >= 0);
   }
   function enhancerConfig() {
     const value = (app?.rootGraph || app?.graph)?.extra?.dmc_prompt_enhancer;
-    return value === undefined ? {enabled: false, model: 'qwen'} : {...value};
+    return value === undefined ? {enabled: false, model: 'qwen', timing: 'always'} : {timing: 'always', ...value};
   }
   function validateEnhancerConfig(value) {
-    if (!object(value) || Object.keys(value).length !== 2 || typeof value.enabled !== 'boolean'
-      || !['qwen', 'minicpm'].includes(value.model)) throw new Error('Choose a valid per-run enhancer configuration.');
+    if (!object(value) || ![2, 3].includes(Object.keys(value).length)
+      || Object.keys(value).some(key => !['enabled', 'model', 'timing'].includes(key)) || typeof value.enabled !== 'boolean'
+      || !['qwen', 'minicpm'].includes(value.model) || Object.hasOwn(value, 'timing') && !['always', 'changed'].includes(value.timing)) throw new Error('Choose a valid per-run enhancer configuration.');
   }
   function configureEnhancer(value) {
     requireEditor(); validateEnhancerConfig(value);
     const graph = app.rootGraph || app.graph;
-    const changed = canonical(enhancerConfig()) !== canonical(value);
+    const changed = canonical(enhancerConfig()) !== canonical({timing: 'always', ...value});
+    if (enhancerConfig().model !== value.model) reusableEnhancement = null;
     if (changed) { graph.extra = {...graph.extra, dmc_prompt_enhancer: {...value}}; saveDraft(); }
     return changed;
   }
@@ -1535,7 +1541,7 @@
     catch { /* The cancelled transaction remains invalid even if disconnected. */ }
   }
   function cancelGeneration(message = 'The image run was cancelled before submission.') {
-    queueCancellationRevision++;
+    queueCancellationRevision++; reusableEnhancement = null;
     if (outputPreparation) outputPreparation.finish(new Error(message));
     const token = pendingEnhancement;
     if (!token || token.cancelled) return;
@@ -1585,14 +1591,14 @@
       throw new Error('Enhance every run needs bound scene and face prompt controls and a main brief.');
     }
     const imageBrief = scene.widget.value, faceBrief = face.widget.value, seed = executionSeed(compiled.output);
-    const graph = app.rootGraph || app.graph, authored = recipe(graph.serialize());
+    const graph = app.rootGraph || app.graph, authored = recipe(graph.serialize()), graphRevision = enhancementGraphRevision;
     let reject;
     const cancelled = new Promise((_, fail) => { reject = fail; });
     const token = {reject, cancelled: null, id: null}; pendingEnhancement = token;
     const timeout = setTimeout(() => cancelGeneration('The prompt enhancer timed out. Retry this image run.'), 9 * 60 * 1000);
     const valid = () => {
       if (token.cancelled) throw token.cancelled;
-      if (graph !== (app.rootGraph || app.graph) || recipe(graph.serialize()) !== authored) throw new Error('The workflow changed while enhancing. Run again with the current draft.');
+      if (graph !== (app.rootGraph || app.graph) || graphRevision !== enhancementGraphRevision || recipe(graph.serialize()) !== authored) throw new Error('The workflow changed while enhancing. Run again with the current draft.');
     };
     token.validate = valid;
     async function request(options, starting = false) {
@@ -1629,20 +1635,30 @@
       // LLM to rewrite. Keep authored choice lists in the widgets and recipe.
       const resolvedImageBrief = await expandBrief(imageBrief, 16000);
       const resolvedFaceBrief = await expandBrief(faceBrief, 8000, true);
-      const availability = await request(); valid();
-      if (!availability.models?.some(model => model.id === settings.model && model.ready) || availability.busy) throw new Error('The selected prompt enhancer is not ready or is busy. Install it or wait before running.');
-      let status = await request({method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({kind: 'enhance', model: settings.model, image_brief: resolvedImageBrief, face_brief: resolvedFaceBrief, seed})}, true);
-      while (true) {
-        valid();
-        const job = status.job;
-        if (!token.id || job?.id !== token.id || job.kind !== 'enhance' || job.model !== settings.model || job.seed !== seed) throw new Error('The enhancer returned an unexpected run. Retry this image run.');
-        if (job.state === 'complete') break;
-        if (job.state !== 'running') throw new Error(job.state === 'cancelled' ? 'The prompt enhancement was cancelled.' : 'The prompt enhancement failed. Retry this image run.');
-        await Promise.race([new Promise(resolve => setTimeout(resolve, 500)), cancelled]);
-        status = await request();
+      const reuseKey = canonical({imageBrief, faceBrief, resolvedImageBrief, resolvedFaceBrief, model: settings.model});
+      const cached = settings.timing === 'changed' && reusableEnhancement?.graph === graph
+        && reusableEnhancement.graphRevision === graphRevision && reusableEnhancement.key === reuseKey ? reusableEnhancement : null;
+      // One owner-local successful result, never a history of earlier briefs.
+      if (!cached) reusableEnhancement = null;
+      let result;
+      if (cached) result = cached.run;
+      else {
+        const availability = await request(); valid();
+        if (!availability.models?.some(model => model.id === settings.model && model.ready) || availability.busy) throw new Error('The selected prompt enhancer is not ready or is busy. Install it or wait before running.');
+        let status = await request({method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({kind: 'enhance', model: settings.model, image_brief: resolvedImageBrief, face_brief: resolvedFaceBrief, seed})}, true);
+        while (true) {
+          valid();
+          const job = status.job;
+          if (!token.id || job?.id !== token.id || job.kind !== 'enhance' || job.model !== settings.model || job.seed !== seed) throw new Error('The enhancer returned an unexpected run. Retry this image run.');
+          if (job.state === 'complete') break;
+          if (job.state !== 'running') throw new Error(job.state === 'cancelled' ? 'The prompt enhancement was cancelled.' : 'The prompt enhancement failed. Retry this image run.');
+          await Promise.race([new Promise(resolve => setTimeout(resolve, 500)), cancelled]);
+          status = await request();
+        }
+        result = status.job.result;
       }
-      const result = status.job.result;
+      valid();
       if (!object(result) || typeof result.main_prompt !== 'string' || !result.main_prompt.trim() || result.main_prompt.length > 16000
         || typeof result.face_prompt !== 'string' || result.face_prompt.length > 8000
         || !validFacePrompts(result.face_prompts, result.face_prompt)) throw new Error('The enhancer returned incomplete or ambiguous face prompts. Retry this image run.');
@@ -1686,11 +1702,14 @@
         }
       }
       const run = {seed, model: settings.model, main_prompt: result.main_prompt, face_prompt: result.face_prompt,
-        ...(result.face_prompts !== undefined ? {face_prompts: result.face_prompts.map(entry => ({...entry}))} : {})};
+        ...(result.face_prompts !== undefined ? {face_prompts: result.face_prompts.map(entry => ({...entry}))} : {}),
+        ...(cached ? {reused: true, enhancement_seed: cached.enhancementSeed} : {})};
       token.run = run;
+      if (settings.timing === 'changed') token.reusable = {graph, graphRevision, key: reuseKey, run, enhancementSeed: cached?.enhancementSeed ?? seed};
       return {...compiled, output: enhanced.output, workflow: {...compiled.workflow,
         extra: {...compiled.workflow?.extra, dmc_prompt_enhancement: run}}};
     } catch (error) {
+      reusableEnhancement = null;
       void cancelOwnedEnhancement(token); throw error;
     } finally { clearTimeout(timeout); }
   }
@@ -2216,9 +2235,14 @@
           extra: {...args[1].workflow.extra, dmc_output_destination: preparedDestination}}};
         const result = await originalQueue(...args);
         if (result?.error || result?.node_errors && Object.keys(result.node_errors).length) throw new Error(result.error?.message || 'The backend rejected this workflow. Check the Advanced editor for node errors.');
+        if (!result?.prompt_id) reusableEnhancement = null;
         if (attempt && result?.prompt_id) attempt.accepted++;
         if (result?.prompt_id) {
-          if (pendingEnhancement?.run) lastEnhancement = pendingEnhancement.run;
+          if (pendingEnhancement?.run && cancellationRevision === queueCancellationRevision && !pendingEnhancement.cancelled) {
+            pendingEnhancement.validate();
+            lastEnhancement = pendingEnhancement.run;
+            reusableEnhancement = pendingEnhancement.reusable || null;
+          }
           lastQueuedPromptIds = [...new Set([...lastQueuedPromptIds, result.prompt_id])].slice(-128);
           try {
             const revision = result.dmc_workflow_revision;
@@ -2238,7 +2262,7 @@
           catch (error) { showError(error); }
         }
         return result;
-      } catch (error) { if (attempt) attempt.error = error; showError(error); throw error; }
+      } catch (error) { reusableEnhancement = null; if (attempt) attempt.error = error; showError(error); throw error; }
       finally { pendingEnhancement = null; queueInFlight = false; }
     };
     app.registerExtension({

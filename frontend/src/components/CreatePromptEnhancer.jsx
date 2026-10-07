@@ -9,17 +9,24 @@ function facePositionText(position) {
   return descriptions.join('; ') || 'no additional position details'
 }
 
-export default function CreatePromptEnhancer({ sessionId, config, disabled, unavailableReason, onConfigure, onPauseInstant }) {
+export default function CreatePromptEnhancer({ sessionId, config, disabled, unavailableReason, onConfigure, onPauseInstant, onDraftChange, runPending = false }) {
   const modelRoles = { qwen: 'Rewriter', minicpm: 'Preserver' }
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
+  const [draftConfig, setDraftConfig] = useState(null)
+  const [configuring, setConfiguring] = useState(false)
+  const draftConfigRef = useRef(null)
+  const [failedConfig, setFailedConfig] = useState(null)
+  const draftReporter = useRef(onDraftChange)
   const alive = useRef(false)
   const operation = useRef(null)
   const requestRevision = useRef(0)
-  const model = config?.model || 'minicpm'
-  const enabled = config?.enabled === true
+  const settings = draftConfig || config
+  const model = settings?.model || 'minicpm'
+  const enabled = settings?.enabled === true
+  const timing = settings?.timing === 'changed' ? 'changed' : 'always'
   const selected = status?.models?.find(item => item.id === model)
   const job = status?.job
   const working = pending || status?.busy
@@ -31,6 +38,7 @@ export default function CreatePromptEnhancer({ sessionId, config, disabled, unav
     alive.current = true
     return () => {
       alive.current = false
+      draftReporter.current?.(false)
       // Per-run work is owned by the queue adapter, not this settings panel.
       if (operation.current) cancelEnhancer(sessionId, operation.current).catch(() => {})
     }
@@ -57,16 +65,37 @@ export default function CreatePromptEnhancer({ sessionId, config, disabled, unav
     return () => { controller.abort(); clearTimeout(timer) }
   }, [open, sessionId])
 
-  async function configure(next) {
-    setPending(true)
+  useEffect(() => { draftReporter.current = onDraftChange }, [onDraftChange])
+
+  function configure(next) {
+    // The active run owns its configuration; this panel edits the next one.
+    draftConfigRef.current = next
+    setDraftConfig(next)
+    onDraftChange?.(true)
+    onPauseInstant?.()
     setError('')
-    try {
-      onPauseInstant?.()
-      await onConfigure(next)
-    } catch (failure) {
-      if (alive.current) setError(createErrorMessage(failure))
-    } finally { if (alive.current) setPending(false) }
   }
+
+  useEffect(() => {
+    if (!draftConfig || runPending || configuring || failedConfig === draftConfig || !onConfigure) return
+    async function persist() {
+      setConfiguring(true)
+      try {
+        await onConfigure(draftConfig)
+        if (alive.current && draftConfigRef.current === draftConfig) {
+          draftConfigRef.current = null
+          setDraftConfig(null)
+          draftReporter.current?.(false)
+        }
+      } catch (failure) {
+        if (alive.current && draftConfigRef.current === draftConfig) {
+          setFailedConfig(draftConfig)
+          setError(createErrorMessage(failure))
+        }
+      } finally { if (alive.current) setConfiguring(false) }
+    }
+    persist()
+  }, [draftConfig, runPending, configuring, onConfigure, failedConfig])
 
   async function install() {
     if (pending) return
@@ -102,26 +131,31 @@ export default function CreatePromptEnhancer({ sessionId, config, disabled, unav
   return <details className="create-enhancer" open={open} onToggle={event => setOpen(event.currentTarget.open)}>
     <summary>Prompt enhancer</summary>
     {open && <div>
-      <p className="create-control-note">Runs locally before every image run when enabled. Uses your image and face briefs with that run’s seed; your original inputs stay unchanged. Ask it to invent or vary details within your brief. Downloads once, then works offline. Keeps the selected model in system RAM between runs for faster starts, leaving GPU memory for image generation.</p>
+      <p className="create-control-note">Runs locally before image generation when enabled. Every run creates fresh prompts from your image and face briefs with that run’s seed. When prompts change reuses the last successful enhancement while the resolved briefs and model stay the same. Your original inputs stay unchanged. Ask it to invent or vary details within your brief. Downloads once, then works offline. Keeps the selected model in system RAM between runs for faster starts, leaving GPU memory for image generation.</p>
       <p className="create-control-note">Leave the face brief blank to derive one identifiable visible face from Describe your image. A supplied face brief takes priority; scenes with hidden or ambiguous faces keep the face prompt empty.</p>
       <p className="create-control-note">For multiple faces, describe which characters are left of or above others, or give facial descriptions explicitly from left to right. Each visible character keeps a separate face prompt.</p>
-      <label className="create-field">Enhancer model<select value={model} disabled={working || !onConfigure} onChange={event => configure({ enabled, model: event.target.value })}>
+      <label className="create-field">Enhancer model<select value={model} disabled={!onConfigure} onChange={event => configure({ enabled, model: event.target.value, timing })}>
         {(status?.models || [{ id: 'minicpm', name: 'MiniCPM5-2B · loading…' }]).map(item => <option key={item.id} value={item.id}>{modelRoles[item.id] ? `${modelRoles[item.id]} · ` : ''}{item.name}{item.size ? ` · ${item.quantization} · ${formatCreateBytes(item.size)}` : ''}</option>)}
       </select></label>
-      <label className="create-instant-toggle"><input type="checkbox" checked={enabled} disabled={working || (!enabled && (disabled || !selected?.ready || status?.supported === false)) || !onConfigure} onChange={event => configure({ enabled: event.target.checked, model })} />Enhance every run</label>
+      <label className="create-instant-toggle"><input type="checkbox" checked={enabled} disabled={(!enabled && (disabled || !selected?.ready || status?.supported === false)) || !onConfigure} onChange={event => configure({ enabled: event.target.checked, model, timing })} />Enable prompt enhancement</label>
+      <label className="create-field">Timing<select value={timing} disabled={!onConfigure} onChange={event => configure({ enabled, model, timing: event.target.value })}>
+        <option value="always">Every run</option><option value="changed">When prompts change</option>
+      </select></label>
+      {draftConfig && runPending && <p role="status" className="create-control-note">Enhancer settings are prepared for the next run.</p>}
       {unavailableReason && <p role="status" className="create-control-note">{unavailableReason}</p>}
       {status?.loaded_model === model && !working && <p role="status" className="create-control-note">Model loaded in RAM · Ready for the next run.</p>}
       {status?.supported === false && <p role="alert">The managed enhancer is unavailable on this platform.</p>}
       <div className="create-enhancer-actions">
-        <button type="button" disabled={!selected || working || !status.supported} onClick={install}>{selected?.ready ? 'Repair / verify model' : 'Download model'}</button>
+        <button type="button" disabled={!selected || working || runPending || configuring || !!draftConfig || !status.supported} onClick={install}>{selected?.ready ? 'Repair / verify model' : 'Download model'}</button>
         {job?.state === 'running' && <button type="button" disabled={pending} onClick={cancel}>Cancel enhancement / setup</button>}
       </div>
       {working && <p role="status">{job?.state !== 'running' ? 'Enhancer is in use by another studio.' : job.kind === 'install' ? `Setting up model… ${Math.round((status.setup?.progress || 0) * 100)}%` : 'Enhancing this run’s prompts…'}</p>}
       {job?.state === 'cancelled' && <p role="status">Cancelled. Your original prompts are unchanged.</p>}
       {(error || job?.error) && <p className="create-error" role="alert">{error || job.error}</p>}
+      {draftConfig && failedConfig === draftConfig && <button type="button" disabled={runPending || configuring} onClick={() => configure({ ...draftConfig })}>Retry enhancer settings</button>}
       {result && <section className="create-enhancer-preview" aria-label="Enhanced prompt preview">
         <h3>Last run’s enhanced prompts</h3>
-        <p className="create-control-note">{modelRoles[result.model] || result.model} · Seed {result.seed}</p>
+        <p className="create-control-note">{modelRoles[result.model] || result.model} · {result.reused ? `Image seed ${result.seed} · Reused enhancement from seed ${result.enhancement_seed ?? result.seed}` : `Seed ${result.seed}`}</p>
         <label className="create-field">Enhanced image prompt<textarea readOnly rows={6} value={result.main_prompt} /></label>
         {faces.length ? <section aria-label="Ordered character face prompts">
           <p className="create-control-note">{relativeFaces ? 'Character face prompts with relative positions.' : 'Character face prompts, ordered from left to right.'}</p>
