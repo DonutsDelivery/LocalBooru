@@ -301,10 +301,17 @@ class Enhancer(VerifiedDownloads):
                    "--api-key", key, "--ctx-size", "16384", "--parallel", "1", "--n-gpu-layers", "0",
                    "--device", "none", "--no-op-offload", "--no-kv-offload",
                    "--threads", str(min(4, os.cpu_count() or 1)), "--log-disable", "--no-webui", "--no-context-shift"]
+        # An existing llama installation's environment must not enable remote
+        # models, RPC, log files, adapters, or other unselected runtime options.
+        environment = {name: value for name, value in os.environ.items()
+                       if not name.startswith('LLAMA_') and name != 'HF_TOKEN'}
+        library_key = 'DYLD_LIBRARY_PATH' if platform.system() == 'Darwin' else 'LD_LIBRARY_PATH'
+        if os.name != 'nt':
+            environment[library_key] = str(executable.parent) + (os.pathsep + environment[library_key] if environment.get(library_key) else '')
         # No shared model server, GPU unload, prompt cache file, or prompt-bearing logs.
         try:
             spawn = asyncio.create_task(asyncio.create_subprocess_exec(*command, cwd=executable.parent,
-                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL))
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, env=environment))
             try:
                 self.process = await asyncio.shield(spawn)
             except asyncio.CancelledError:

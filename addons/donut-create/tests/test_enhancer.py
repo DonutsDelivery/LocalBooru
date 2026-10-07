@@ -132,7 +132,7 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             def client(**options):
                 options['transport'] = httpx.MockTransport(respond)
                 return client_type(**options)
-            with patch.object(module, '_read_json', return_value={'server':'llama-server'}), patch.object(module.asyncio, 'create_subprocess_exec', new=AsyncMock(return_value=process)), patch.object(module.httpx, 'AsyncClient', side_effect=client):
+            with patch.dict(os.environ, {'LLAMA_ARG_RPC': 'unselected.invalid:1234', 'LLAMA_ARG_LOG_FILE': '/synthetic/log', 'HF_TOKEN': 'synthetic-secret'}), patch.object(module, '_read_json', return_value={'server':'llama-server'}), patch.object(module.asyncio, 'create_subprocess_exec', new=AsyncMock(return_value=process)) as spawn, patch.object(module.httpx, 'AsyncClient', side_effect=client):
                 if token_count == 5:
                     result = await self.enhancer.infer('minicpm', 'Synthetic owl.', 'The owl looks left.')
                     self.assertEqual(result['face_prompt'], 'The owl looks left.')
@@ -140,6 +140,9 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaisesRegex(ValueError, 'context'):
                         await self.enhancer.infer('minicpm', 'Synthetic owl.', 'The owl looks left.')
                     self.assertNotIn('/v1/chat/completions', [r.url.path for r in requests])
+                environment = spawn.call_args.kwargs['env']
+                self.assertFalse(any(name.startswith('LLAMA_') for name in environment))
+                self.assertNotIn('HF_TOKEN', environment)
             process.terminate.assert_called_once()
             self.assertIsNone(self.enhancer.process)
 
