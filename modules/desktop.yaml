@@ -1231,12 +1231,14 @@ features:
         title: Managed local prompt enhancement
         type: requirement
         description: Create offers optional local prompt enhancement with a downloaded model managed by the
-          add-on. Users can inspect and apply a complete scene description and a separate narrowly
-          scoped face description while preserving their original brief. Enhancement works offline
-          after setup and does not require a separately configured model server.
+          add-on. When enabled, every generation derives a fresh scene and face prompt from the
+          original user briefs using the image run seed. Original editable inputs remain unchanged;
+          users can inspect the actual per-run outputs. Creative instructions may request compatible
+          invented details while explicit constraints stay intact. Works offline after setup without
+          external model-server configuration.
         status:
           maturity: draft
-          implementation: implemented
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
@@ -1274,6 +1276,20 @@ features:
               releases its helper resources after completion or cancellation, and does not interrupt
               unrelated image-generation work.
             when: The user enhances a brief offline or stops the add-on
+          - given: An installed model and Enhance every run enabled
+            id: ac-per-run-seed
+            then: Each run enhances its original scene and face inputs before submission using the actual
+              execution seed; fixed model, briefs and seed yield repeatable LLM sampling, changed
+              seeds allow variety, failures or cancellation cannot submit an unenhanced run, and
+              original draft inputs are not replaced or recursively enhanced.
+            when: Create, Edit, Advanced or Run Instant queues an image run
+          - given: A brief contains concrete constraints and explicit directions to invent, choose or vary other
+              scene details
+            id: ac-creative-instructions
+            then: It follows the creative directions within their stated scope, preserves fixed facts and
+              literal triggers, and keeps the generated face description tied to the same subject
+              and consistent with that run.
+            when: The enhancer constructs a per-run prompt
         tags: []
         created: 2026-10-07T01:09:52.281Z
         notes: []

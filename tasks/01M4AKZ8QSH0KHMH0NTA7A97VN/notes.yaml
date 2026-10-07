@@ -1,0 +1,11 @@
+notes:
+  - _ulid: 01M4AKZ93AEQFYKQP6XH4DSWSE
+    content: User explicitly clarified enhancer is a per-run variation stage using the same image run
+      seed. Orchestrate backend seeded inference/policy and adapter queue transformation, root owns
+      UI/integration. Reuse API queue interceptor after widget hooks so actual execution seed is
+      authoritative. Keep source graph intact, capture actual generated prompt pair for
+      review/metadata and fail closed on errors/cancel/stale ownership. Configure once via persisted
+      enhancer toggle/model; no per-run apply step or downloads without explicit install.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T07:24:14.826Z

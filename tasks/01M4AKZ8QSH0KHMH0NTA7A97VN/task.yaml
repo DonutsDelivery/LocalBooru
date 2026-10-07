@@ -1,0 +1,32 @@
+_ulid: 01M4AKZ8QSH0KHMH0NTA7A97VN
+slugs:
+  - create-per-run-enhancer
+title: Run seed-matched prompt enhancement for every generation
+type: task
+description: Replace manual apply-before-generation flow with optional per-run enhancement,
+  unchanged source briefs, execution-seed sampling, creative instructions and visible actual
+  outputs. Cover all studio run paths, cancellation/stale drafts/failures and metadata.
+spec_ref: "@create-managed-prompt-enhancer"
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-07T07:24:14.635Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-07T07:24:14.635Z
+created_at: 2026-10-07T07:24:14.457Z
+started_at: 2026-10-07T07:24:14.635Z
+todos: []
