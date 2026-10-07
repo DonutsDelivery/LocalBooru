@@ -17300,6 +17300,18 @@ reviews:
           from: open
           to: closed
         timestamp: 2026-10-07T05:55:47.997Z
+      - _ulid: 01M4AEYM9T2HVVF3PK9WFSNC8Q
+        actor: DonutsDelivery
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01M4AEX892WP6XJG7PC3P7PZWH
+        timestamp: 2026-10-07T05:56:30.650Z
+      - _ulid: 01M4AEYMP38A3ZK9TE06PQ705F
+        actor: DonutsDelivery
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01M4AEX892WP6XJG7PC3P7PZWH
+        timestamp: 2026-10-07T05:56:31.043Z
     examined_commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
     external_links: []
     lifecycle_state: closed
@@ -17331,7 +17343,15 @@ reviews:
               changed-production ESLint on the repaired candidate. No other blocker found in full
               lifecycle/cancellation/recovery review."
             created_at: 2026-10-07T05:55:45.570Z
+          - _ulid: 01M4AEYM6QDGHMJS3VBJ5RHMDM
+            author: DonutsDelivery
+            body: "Fixed in274ef9f3: shared ensureCurrent helper runs on success and error paths; no throw in
+              finally. Re-ran changed-production ESLint successfully, seven focused regressions7/7
+              and Node216/216. Other source is unchanged."
+            created_at: 2026-10-07T05:56:30.551Z
         kind: blocker
+        resolved_at: 2026-10-07T05:56:30.945Z
+        resolved_by: DonutsDelivery
     verdicts:
       - applies_to_version:
           type: code_compare
@@ -17342,5 +17362,5 @@ reviews:
         role: reviewer
         created_at: 2026-10-07T05:55:47.996Z
     created_at: 2026-10-07T05:54:56.240Z
-    updated_at: 2026-10-07T05:55:47.997Z
+    updated_at: 2026-10-07T05:56:30.945Z
     notes: []
