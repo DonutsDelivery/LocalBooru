@@ -41,3 +41,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T05:57:03.421Z
+  - _ulid: 01M4AF4A6DGETPY8GGKVZ0QMGN
+    content: Approved replacement review @review-create-quiet-stop-274ef9f3 required gatespassing/zero
+      blockers; integrated main56785c5e2bea66d85b7023d30bb9f052a83b73a3. Clean merged
+      taskworktree+branch removed. Main gallery suites6/6 pass with temporary test-only explicit
+      Vite fs allowance (removed afterward). Owned npm app:install started under wrapper
+      PID436557/run-cargo436584, log/tmp/dmc-stop-install.log, root session38360; queued behind
+      unrelated native C++ build holding hostheavylock PID391151. Do not bypass/terminate it. App
+      installation and isolated exact-binary acceptance still pending; delegate owns continuation,
+      task remainspending_review until shipping finished.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T05:59:36.909Z
