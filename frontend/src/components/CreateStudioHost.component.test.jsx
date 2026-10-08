@@ -14,7 +14,7 @@ const api = vi.hoisted(() => ({
   getApiUrl: vi.fn(() => '/remote/api'),
   getAddon: vi.fn(), getAddons: vi.fn(),
   installAddon: vi.fn(), startAddon: vi.fn(),
-  fetchDirectories: vi.fn(), fetchLibraries: vi.fn(),
+  fetchCreateDestinations: vi.fn(), fetchDirectories: vi.fn(async () => ({ directories: [] })), fetchLibraries: vi.fn(),
   fetchCollections: vi.fn(), getSavedSearches: vi.fn(),
 }))
 vi.mock('../api', async importOriginal => ({ ...await importOriginal(), ...api }))
@@ -52,7 +52,7 @@ function selectNewServer() {
     { id: 'new-output', filename: 'new-server.png', media_type: 'image/png', type: 'output', prompt_id: 'new-job' },
   ] }
   api.fetchLibraries.mockResolvedValue({ libraries: [{ uuid: 'library-new', name: 'New server', mounted: true, accessible: true }] })
-  api.fetchDirectories.mockResolvedValue({ directories: [{ id: 77, library_id: 'library-new', name: 'Fresh images', show_images: true, enabled: true, path_exists: true }] })
+  api.fetchCreateDestinations.mockResolvedValue({ directories: [{ id: 77, library_id: 'library-new', name: 'Fresh images', show_images: true, enabled: true, path_exists: true }] })
 }
 
 async function reconnectStudio() {
@@ -100,7 +100,7 @@ beforeEach(() => {
     { uuid: 'offline', name: 'Offline', mounted: false },
     { uuid: 'readonly', name: 'Read only', mounted: true, read_only: true },
   ] })
-  api.fetchDirectories.mockResolvedValue({ directories: [
+  api.fetchCreateDestinations.mockResolvedValue({ directories: [
     { id: 1, library_id: 'library-a', name: 'Images A', show_images: true, path_exists: true },
     { id: 1, library_id: 'library-b', name: 'Images B', show_images: true, path_exists: true },
     { id: 2, library_id: 'library-a', name: 'Videos only', show_images: false, path_exists: true },
@@ -113,8 +113,8 @@ beforeEach(() => {
   api.apiClient.post.mockImplementation(async (url, body) => {
     if (url === `${CREATE_API}/sessions`) return { data: session }
     if (url === '/create/output-directory') {
-      const current = await api.fetchDirectories()
-      api.fetchDirectories.mockResolvedValue({ directories: [...current.directories,
+      const current = await api.fetchCreateDestinations()
+      api.fetchCreateDestinations.mockResolvedValue({ directories: [...current.directories,
         { id: 90, library_id: body.library_id, name: 'Created Images', show_images: true, enabled: true, path_exists: true }] })
       return { data: { library_id: body.library_id, directory_id: 90, name: 'Created Images' } }
     }
@@ -514,11 +514,11 @@ describe('Donut Create studio', () => {
   test('does not label a save directory error as a studio connection failure', async () => {
     const pendingStatus = deferred()
     api.apiClient.get.mockImplementation(async () => pendingStatus.promise)
-    api.fetchDirectories.mockRejectedValue(new Error('Synthetic directory unavailable'))
+    api.fetchCreateDestinations.mockRejectedValue(new Error('Synthetic directory unavailable'))
     render(<CreateStudioHost />)
     openStudio()
     const loading = await screen.findByRole('region', { name: 'Studio connection' })
-    await waitFor(() => expect(api.fetchDirectories).toHaveBeenCalled())
+    await waitFor(() => expect(api.fetchCreateDestinations).toHaveBeenCalled())
     await act(async () => {})
     expect(within(loading).getByText('Preparing your studio')).toBeTruthy()
     expect(within(loading).queryByText('Studio connection interrupted')).toBeNull()
@@ -1033,7 +1033,7 @@ describe('Donut Create studio', () => {
     const oldCreation = deferred()
     const oldDirectories = deferred()
     api.apiClient.post.mockImplementationOnce(() => oldCreation.promise)
-    api.fetchDirectories.mockImplementationOnce(() => oldDirectories.promise)
+    api.fetchCreateDestinations.mockImplementationOnce(() => oldDirectories.promise)
     render(<CreateStudioHost />)
     openStudio()
     await waitFor(() => expect(api.apiClient.post).toHaveBeenCalled())
@@ -1117,11 +1117,40 @@ describe('Donut Create default output', () => {
       data: { channel: 'donut-create-output-v1', sessionId: session.id, requestId, action: 'prepare-output', ...(overrides.data || {}) } })))
   }
   async function resolveDirectory(pending, libraryId = 'library-b') {
-    const current = await api.fetchDirectories()
-    api.fetchDirectories.mockResolvedValue({ directories: [...current.directories,
+    const current = await api.fetchCreateDestinations()
+    api.fetchCreateDestinations.mockResolvedValue({ directories: [...current.directories,
       { id: 90, library_id: libraryId, name: 'Created Images', show_images: true, enabled: true, path_exists: true }] })
     await act(async () => pending.resolve({ data: { library_id: libraryId, directory_id: 90, name: 'Created Images' } }))
   }
+
+  // AC: @donut-create-plugin ac-family-mode-save
+  test.each(['selected', 'automatic'])('keeps saving to a %s destination hidden from the Family Mode gallery', async mode => {
+    const request = readyBridge()
+    api.fetchDirectories.mockResolvedValue({ directories: [] })
+    api.fetchCreateDestinations.mockResolvedValue({ directories: [{
+      id: 90, library_id: 'library-b', name: 'Created Images', family_safe: false,
+      show_images: true, enabled: true, path_exists: true,
+    }] })
+    const original = api.apiClient.post.getMockImplementation()
+    api.apiClient.post.mockImplementation((url, ...args) => url === '/create/output-directory'
+      ? Promise.resolve({ data: { library_id: 'library-b', directory_id: 90, name: 'Created Images' } })
+      : original(url, ...args))
+    render(<CreateStudioHost />); openStudio()
+    const generate = await readyGenerate()
+    if (mode === 'selected') fireEvent.change(screen.getByLabelText('Output destination'), { target: { value: 'library-b:90' } })
+    fireEvent.click(generate)
+    await waitFor(() => expect(request.mock.calls.some(([action]) => action === 'generate')).toBe(true))
+    fireEvent.click(screen.getByRole('tab', { name: 'Finalize' }))
+    expect(screen.getByLabelText('Output destination').value).toBe('library-b:90')
+    expect(api.fetchDirectories).not.toHaveBeenCalled()
+    expect(api.apiClient.post.mock.calls.filter(([url]) => url === '/create/output-directory')).toHaveLength(mode === 'selected' ? 0 : 1)
+    session = { ...session, outputs: [{ id: 'hidden-final', filename: 'synthetic.webp', type: 'temp', storage: 'temporary', final: true, media_type: 'image/webp' }] }
+    await waitFor(() => expect(api.apiClient.post).toHaveBeenCalledWith('/create/import', {
+      session_id: 'scoped-session', output_id: 'hidden-final', library_id: 'library-b', directory_id: 90,
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) })), { timeout: 5000 })
+    expect(screen.getByRole('switch', { name: 'Save output' }).checked).toBe(true)
+    expect(screen.queryByText(/not available for saving|Could not load save directories/)).toBeNull()
+  })
 
   // AC: @donut-create-plugin ac-default-save-output
   test('starts on, creates the selected library default only when generating and saves new final output', async () => {
