@@ -25,7 +25,11 @@ use tokio_tungstenite::{
 
 use crate::{
     db::library::LibraryContext,
-    server::{error::AppError, middleware::auth::AuthUser, state::AppState},
+    server::{
+        error::AppError,
+        middleware::{auth::AuthUser, AccessTier},
+        state::AppState,
+    },
     services::{importer, metadata},
 };
 
@@ -38,6 +42,7 @@ pub fn router() -> Router<AppState> {
         .route("/studio/{session_id}/{*rest}", any(studio))
         .route("/output/{session_id}/{output_id}", get(output))
         .route("/import", post(import_output))
+        .route("/destinations", get(create_destinations))
         .route("/output-directory", post(create_output_directory))
         .route("/workflow", get(image_workflow))
 }
@@ -336,6 +341,64 @@ struct ImportedOutput {
 #[derive(Deserialize)]
 struct OutputDirectoryRequest {
     library_id: Option<String>,
+}
+
+/// Save destinations are a write capability, separate from gallery browsing.
+/// Family Mode continues to filter the gallery, but must not discard a save folder.
+async fn create_destinations(
+    State(state): State<AppState>,
+    req: Request,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let (mut parts, _) = req.into_parts();
+    require_write(&state, &mut parts).await?;
+    let tier = parts
+        .extensions
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|info| AccessTier::from_ip(&info.0.ip()))
+        .ok_or_else(|| {
+            AppError::Forbidden("Save destinations require a known client address".into())
+        })?;
+    tokio::task::spawn_blocking(move || {
+        let mut directories = Vec::new();
+        for lib in state.library_manager().all_mounted() {
+            let conn = lib.main_pool.get()?;
+            let mut stmt = conn.prepare(
+                "SELECT id,path,name,lan_visible,public_access FROM watch_directories WHERE enabled=1 AND show_images=1",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<bool>>(3)?.unwrap_or(true),
+                    row.get::<_, Option<bool>>(4)?.unwrap_or(false),
+                ))
+            })?;
+            for row in rows {
+                let (id, path, name, lan_visible, public_access) = row?;
+                let visible = match tier {
+                    AccessTier::Localhost => true,
+                    AccessTier::LocalNetwork => lan_visible,
+                    AccessTier::Public => public_access,
+                };
+                if !visible || !std::path::Path::new(&path).is_dir() {
+                    continue;
+                }
+                let name = name.unwrap_or_else(|| {
+                    std::path::Path::new(&path)
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or(path)
+                });
+                directories.push(serde_json::json!({
+                    "id":id,"library_id":lib.uuid,"name":name,
+                    "enabled":true,"show_images":true,"path_exists":true,
+                }));
+            }
+        }
+        Ok(Json(serde_json::json!({"directories":directories})))
+    })
+    .await?
 }
 
 async fn create_output_directory(
@@ -1479,6 +1542,173 @@ mod tests {
         assert_eq!(cfg, 1.75);
     }
 
+    // AC: @donut-create-plugin ac-family-mode-save
+    #[tokio::test]
+    async fn hidden_family_directory_remains_a_save_destination_and_stays_hidden() {
+        use tower::ServiceExt;
+        let (_temp, state, lib, root) = fixture();
+        lib.main_pool
+            .get()
+            .unwrap()
+            .execute("UPDATE watch_directories SET family_safe=0 WHERE id=7", [])
+            .unwrap();
+        state.set_family_mode_locked(true);
+        let mut request = Request::new(Body::empty());
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 50000))));
+        let choices = create_destinations(State(state.clone()), request)
+            .await
+            .unwrap()
+            .0;
+        assert!(choices["directories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["id"] == 7 && d["library_id"] == lib.uuid));
+        let (file, _, _) = staged_png(&root);
+        let saved = save_output(
+            &state,
+            &lib,
+            &ImportRequest {
+                session_id: "synthetic-session".into(),
+                output_id: "synthetic-output".into(),
+                library_id: lib.uuid.clone(),
+                directory_id: 7,
+                execution_metadata: None,
+            },
+            destination(&lib, 7).unwrap(),
+            file,
+        )
+        .unwrap();
+        assert!(root.join(saved.filename).is_file());
+        let family_safe: bool = lib
+            .main_pool
+            .get()
+            .unwrap()
+            .query_row(
+                "SELECT family_safe FROM watch_directories WHERE id=7",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!family_safe);
+        let app = super::super::directories::router().with_state(state);
+        let mut request = Request::builder()
+            .uri(format!("/?library_id={}&media_type=image", lib.uuid))
+            .body(Body::empty())
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 50000))));
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let gallery: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(gallery["directories"].as_array().unwrap().is_empty());
+    }
+
+    // AC: @donut-create-plugin ac-family-mode-save
+    #[tokio::test]
+    async fn save_destinations_keep_network_visibility_and_availability_checks() {
+        let (_temp, state, lib, root) = fixture();
+        lib.main_pool
+            .get()
+            .unwrap()
+            .execute(
+                "UPDATE watch_directories SET family_safe=0,lan_visible=0,public_access=1 WHERE id=7",
+                [],
+            )
+            .unwrap();
+        state.set_family_mode_locked(true);
+        state.main_db().get().unwrap().execute(
+            "INSERT INTO users(username,password_hash,can_write,is_active,access_level) VALUES('destination-writer','unused',1,1,'public')", [],
+        ).unwrap();
+        let id = state
+            .main_db()
+            .get()
+            .unwrap()
+            .query_row(
+                "SELECT id FROM users WHERE username='destination-writer'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let token = crate::server::middleware::auth::create_jwt(
+            id,
+            "destination-writer",
+            "public",
+            true,
+            state.jwt_secret(),
+        )
+        .unwrap();
+        for (ip, hidden_visible) in [
+            ([127, 0, 0, 1], true),
+            ([192, 168, 1, 2], false),
+            ([8, 8, 8, 8], true),
+        ] {
+            let mut request = Request::builder()
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap();
+            request
+                .extensions_mut()
+                .insert(ConnectInfo(SocketAddr::from((ip, 50000))));
+            let choices = create_destinations(State(state.clone()), request)
+                .await
+                .unwrap()
+                .0;
+            assert_eq!(
+                choices["directories"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|d| d["library_id"] == lib.uuid),
+                hidden_visible
+            );
+        }
+        for column in ["enabled", "show_images"] {
+            lib.main_pool
+                .get()
+                .unwrap()
+                .execute(
+                    &format!("UPDATE watch_directories SET {column}=0 WHERE id=7"),
+                    [],
+                )
+                .unwrap();
+            let mut request = Request::new(Body::empty());
+            request
+                .extensions_mut()
+                .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 50000))));
+            let choices = create_destinations(State(state.clone()), request)
+                .await
+                .unwrap()
+                .0;
+            assert!(!choices["directories"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| d["library_id"] == lib.uuid));
+            lib.main_pool
+                .get()
+                .unwrap()
+                .execute(
+                    &format!("UPDATE watch_directories SET {column}=1 WHERE id=7"),
+                    [],
+                )
+                .unwrap();
+        }
+        std::fs::remove_dir(root).unwrap();
+        let mut request = Request::new(Body::empty());
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 50000))));
+        let choices = create_destinations(State(state), request).await.unwrap().0;
+        assert!(choices["directories"].as_array().unwrap().is_empty());
+    }
+
     // AC: @donut-create-plugin ac-access-boundary
     #[tokio::test]
     async fn creation_requires_current_write_identity() {
@@ -1557,6 +1787,7 @@ mod tests {
         let app = crate::server::build_router(state, None);
         for (method, uri) in [
             ("GET", "/api/addons/donut-create/api/create/status"),
+            ("GET", "/api/create/destinations"),
             ("POST", "/api/create/import"),
         ] {
             for (authorization, expected) in [

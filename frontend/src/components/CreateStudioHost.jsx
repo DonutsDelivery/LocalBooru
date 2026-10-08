@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { fetchDirectories, fetchLibraries, getAddon } from '../api'
+import { fetchCreateDestinations, fetchLibraries, getAddon } from '../api'
 import {
   cancelStudioJobs,
   createDirectoryOptions,
@@ -436,7 +436,7 @@ export default function CreateStudioHost() {
     const requestGeneration = generation.current
     const version = ++directoryRequestVersion.current
     const signal = requests.current.signal
-    const [libraryData, directoryData] = await Promise.all([fetchLibraries({ signal }), fetchDirectories(true, null, 'image', { signal })])
+    const [libraryData, directoryData] = await Promise.all([fetchLibraries({ signal }), fetchCreateDestinations({ signal })])
     if (!mounted.current || signal.aborted || requestGeneration !== generation.current || version !== directoryRequestVersion.current || !ownsSelection()) return
     const libraryOptions = createLibraryOptions(libraryData.libraries || [])
     const directoryOptions = createDirectoryOptions(directoryData.directories || [], libraryData.libraries || [])

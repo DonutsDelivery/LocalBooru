@@ -708,6 +708,12 @@ export async function fetchDirectories(forceRefresh = false, libraryId = null, m
   return response.data
 }
 
+// Write-authorized save choices remain usable when Family Mode hides their gallery.
+export async function fetchCreateDestinations(requestConfig) {
+  const response = await api.get('/create/destinations', requestConfig)
+  return response.data
+}
+
 export function invalidateDirectoriesCache() {
   directoriesCache = null
   directoriesCacheTime = 0
