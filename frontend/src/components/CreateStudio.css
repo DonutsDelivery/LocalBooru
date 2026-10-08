@@ -52,6 +52,32 @@
   gap: 6px;
 }
 
+.create-studio-dialog > .create-workspace-navigation {
+  align-items: center;
+  min-height: 56px;
+  padding: 0 8px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.create-studio-dialog > .create-workspace-navigation > .create-exit-slot,
+.create-studio-dialog > .create-workspace-navigation > .create-mode-actions {
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+}
+
+.create-studio-dialog > .create-workspace-navigation .create-backend-controls {
+  width: auto;
+}
+
+.create-studio-dialog > .create-workspace-navigation .create-backend-controls > summary {
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
 .create-studio-dialog .create-mode-actions button {
   font-size: 0.72rem;
   padding: 8px 7px;
@@ -138,14 +164,10 @@
 .create-loading-status p { margin: 0; color: var(--text-secondary); font-size: 0.83rem; line-height: 1.6; }
 .create-loading-stage { display: inline-flex; align-items: center; justify-content: center; gap: 9px; margin: 22px 0 16px; font-size: 0.75rem; color: var(--text-secondary); }
 .create-loading-status small { display: block; font-size: 0.7rem; line-height: 1.6; color: var(--text-secondary); opacity: 0.65; }
-.create-awaiting-studio > .create-workspace-navigation .create-exit-slot { width: 300px; box-sizing: border-box; border-right: 1px solid var(--border); padding: 6px 10px; }
-.create-awaiting-studio > .create-workspace-navigation .create-mode-actions { width: 280px; box-sizing: border-box; border-left: 1px solid var(--border); padding: 6px 10px; }
 
 @media (max-width: 1100px) {
   .create-studio-loading { grid-template-columns: 240px minmax(0, 1fr); }
   .create-loading-effects { display: none; }
-  .create-awaiting-studio > .create-workspace-navigation .create-exit-slot { width: 240px; }
-  .create-awaiting-studio > .create-workspace-navigation .create-mode-actions { width: auto; }
 }
 
 @media (max-width: 760px) {
@@ -153,8 +175,6 @@
   .create-loading-sidebar { display: none; }
   .create-loading-canvas { flex: 1; padding: 16px; }
   .create-loading-status { padding: 24px 8px; }
-  .create-awaiting-studio > .create-workspace-navigation .create-exit-slot,
-  .create-awaiting-studio > .create-workspace-navigation .create-mode-actions { width: auto; border-left: 0; border-right: 0; }
 }
 
 .create-settings {
