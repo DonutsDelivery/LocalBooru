@@ -801,3 +801,20 @@ test('ordinary video Space still controls playback rather than curation Favorite
   const api = await import('../../api')
   expect(api.toggleFavorite).not.toHaveBeenCalled()
 })
+
+
+// AC: @curation-game ac-9
+test('curation video Space controls playback without favoriting; F still approves', async () => {
+  mocks.playback.toggleVideoPlay = vi.fn()
+  const curationMode = { busy: false, lastAction: null, onKeep: vi.fn(), onDiscard: vi.fn(), onUndo: vi.fn() }
+  const { container } = render(<Lightbox images={images} currentIndex={0} onClose={mocks.noop}
+    onNav={mocks.noop} curationMode={curationMode} />)
+  await videoReady(container)
+  fireEvent.keyDown(window, { key: ' ', code: 'Space' })
+  expect(mocks.playback.toggleVideoPlay).toHaveBeenCalledOnce()
+  expect(curationMode.onKeep).not.toHaveBeenCalled()
+  expect(curationMode.onDiscard).not.toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: 'Favorite' }).title).not.toMatch(/Space/)
+  fireEvent.keyDown(window, { key: 'f' })
+  expect(curationMode.onKeep).toHaveBeenCalledOnce()
+})
