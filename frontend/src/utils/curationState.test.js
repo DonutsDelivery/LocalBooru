@@ -8,6 +8,7 @@ import {
   imageLocatorKey,
   markCurationRefillFailure,
   mergeCandidates,
+  rotateCurationCandidates,
   seedCandidates,
 } from './curationState.js'
 
@@ -50,6 +51,7 @@ test('a committed final decision survives refill failure without being replayed'
   assert.equal(committed.processed, 1)
   assert.deepEqual(committed.queue, [])
   assert.deepEqual(committed.lastAction, { kind: 'discard', item, countedDate: '2026-07-19' })
+  assert.deepEqual(committed.actionHistory, [committed.lastAction])
 
   const failed = markCurationRefillFailure(committed, new Error('offline'))
   assert.equal(failed.processed, 1)
@@ -59,6 +61,17 @@ test('a committed final decision survives refill failure without being replayed'
   assert.equal(failed.loading, false)
 })
 
+test('committed decisions retain ordered history for repeated undo', () => {
+  const first = { id: 1, directory_id: 2, library_id: 'a' }
+  const second = { id: 2, directory_id: 2, library_id: 'a' }
+  const initial = { queue: [first, second], actionHistory: [], processed: 0 }
+  const discarded = commitCurationAction(initial, 'discard', first, null)
+  const favorited = commitCurationAction({ ...discarded, busy: false }, 'keep', second, null)
+  assert.deepEqual(favorited.actionHistory.map(action => action.item.id), [1, 2])
+  assert.equal(favorited.lastAction.item.id, 2)
+})
+
+// AC: @curation-game ac-2
 test('query preserves filters and forces non-favorite first page', () => {
   const query = buildCurationQuery({ library_id: 'lib', directory_id: null, tags: 'cat', sort: 'oldest' })
   assert.equal(query.library_id, 'lib')
@@ -69,6 +82,7 @@ test('query preserves filters and forces non-favorite first page', () => {
   assert.equal(query.page, 1)
 })
 
+// AC: @curation-game ac-2
 test('queue skips favorites and dedupes composite locators', () => {
   const a = { id: 1, directory_id: 2, library_id: 'a', is_favorite: false }
   const other = { ...a, library_id: 'b' }
@@ -83,6 +97,19 @@ test('queue keeps video candidates in the current gallery order', () => {
   assert.deepEqual(seedCandidates([video, image]), [video, image])
 })
 
+test('queue navigation rotates pending candidates without dropping any', () => {
+  const queue = [
+    { id: 1, directory_id: 2, library_id: 'a' },
+    { id: 2, directory_id: 2, library_id: 'a' },
+    { id: 3, directory_id: 2, library_id: 'a' },
+  ]
+  assert.deepEqual(rotateCurationCandidates(queue, 1).map(item => item.id), [2, 3, 1])
+  assert.deepEqual(rotateCurationCandidates(queue, -1).map(item => item.id), [3, 1, 2])
+  assert.strictEqual(rotateCurationCandidates(queue, 0), queue)
+  assert.strictEqual(rotateCurationCandidates([queue[0]], 1)[0], queue[0])
+})
+
+// AC: @curation-game ac-6
 test('repeated first-page refills reach items beyond fifty without skips', () => {
   const items = Array.from({ length: 61 }, (_, index) => ({
     id: index + 1,

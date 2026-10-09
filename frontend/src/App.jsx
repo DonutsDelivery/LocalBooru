@@ -2163,7 +2163,7 @@ function Gallery({ mediaType = 'image' }) {
           currentIndex={curation.active ? 0 : lightboxImages.findIndex(image => imageMatchesLocator(image, lightboxIndex))}
           total={curation.active ? curation.queue.length : standaloneLightbox ? 1 : total}
           onClose={curation.active ? curation.exit : handleLightboxClose}
-          onNav={curation.active ? (() => {}) : handleLightboxNav}
+          onNav={curation.active ? curation.navigate : handleLightboxNav}
           onTagClick={handleTagClick}
           onImageUpdate={handleImageUpdate}
           onSidebarHover={setLightboxSidebarHover}
@@ -2171,6 +2171,7 @@ function Gallery({ mediaType = 'image' }) {
           onDelete={handleImageDelete}
           curationMode={curation.active ? {
             busy: curation.busy,
+            gestureVersion: curation.gestureVersion,
             processed: curation.processed,
             remaining: curation.queue.length,
             lastAction: curation.lastAction,

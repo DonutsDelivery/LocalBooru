@@ -1362,26 +1362,26 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             onClose()
             return
           case 'ArrowLeft':
-          case 'd':
-          case 'D':
-            e.preventDefault()
-            curationMode.onDiscard()
-            return
-          case 'ArrowRight':
-          case 'k':
-          case 'K':
-            e.preventDefault()
-            curationMode.onKeep()
-            return
           case 'Backspace':
           case 'u':
           case 'U':
             e.preventDefault()
             if (curationMode.lastAction) curationMode.onUndo()
             return
-          case 'Delete':
+          case 'ArrowRight':
+          case 'd':
+          case 'D':
+            e.preventDefault()
+            curationMode.onDiscard()
+            return
+          case 'k':
+          case 'K':
           case 'f':
           case 'F':
+            e.preventDefault()
+            curationMode.onKeep()
+            return
+          case 'Delete':
             e.preventDefault()
             return
         }
@@ -1592,8 +1592,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Handle click navigation - left side = prev, right side = next
   const handleNavClick = (e) => {
-    if (curationMode) return
-    if (consumeRevealTap()) return
+    if (!curationMode && consumeRevealTap()) return
     // Don't navigate if we handled this as a touch gesture or if touch moved
     if (zoomPan.touchMoved.current || zoomPan.touchHandled.current) {
       zoomPan.touchMoved.current = false
@@ -1601,15 +1600,25 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       return
     }
 
-    // Don't navigate on videos (navigation uses buttons only)
-    if (isVideo(image?.original_filename)) return
-
     // Don't navigate if clicking on interactive elements (but allow video area for navigation)
-    if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, .lightbox-video-controls, .lightbox-adjust-container')) return
+    if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, .lightbox-video-controls, .lightbox-adjust-container, .curation-controls')) return
 
     const rect = e.currentTarget.getBoundingClientRect()
     const clickX = e.clientX - rect.left
     const width = rect.width
+
+    if (curationMode) {
+      if (curationMode.busy) return
+      if (clickX < width / 2) {
+        if (curationMode.lastAction) curationMode.onUndo()
+      } else {
+        curationMode.onDiscard()
+      }
+      return
+    }
+
+    // Video click zones seek or toggle playback in handleVideoClick.
+    if (isVideo(image?.original_filename)) return
 
     // When zoomed in, only allow tap-to-navigate on touch devices. Desktop users
     // pan with the mouse, and a click while zoomed should not jump to next/prev.
@@ -2948,26 +2957,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       </div>
 
       {curationMode && (
-        <>
-          <div className="curation-status">
-            <strong>Curated {curationMode.processed}</strong>
-            <span>{curationMode.remaining} queued</span>
-            {curationMode.goal?.enabled && (
-              <span>{curationMode.goal.cadence === 'weekly' ? 'Weekly' : 'Daily'} goal {curationMode.progress} / {curationMode.goal.target}</span>
-            )}
-          </div>
-          <div className="curation-controls" onClick={event => event.stopPropagation()}>
-            <button className="curation-action discard" onClick={curationMode.onDiscard} disabled={curationMode.busy} title="Discard (D or Left Arrow)">
-              <span aria-hidden="true">✕</span> Discard
-            </button>
-            <button className="curation-undo" onClick={curationMode.onUndo} disabled={curationMode.busy || !curationMode.lastAction} title="Undo last action (U)">
-              ↶ <span>Undo</span>
-            </button>
-            <button className="curation-action keep" onClick={curationMode.onKeep} disabled={curationMode.busy} title="Keep (K or Right Arrow)">
-              <span aria-hidden="true">★</span> Keep
-            </button>
-          </div>
-        </>
+        <div className="curation-controls" onClick={event => event.stopPropagation()}>
+          <button className="curation-action keep" onClick={curationMode.onKeep} disabled={curationMode.busy} title="Favorite and keep (F or K)">
+            <span aria-hidden="true">★</span> Favorite
+          </button>
+        </div>
       )}
 
       {!isVideoFile && (

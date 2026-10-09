@@ -697,3 +697,63 @@ test('community video plays protected original without local resolution or addon
   expect(mocks.bridge.acquireSvpVideoHostEpoch).not.toHaveBeenCalled()
   expect(mocks.bridge.configureLocalVideoResolution).not.toHaveBeenCalled()
 })
+
+
+function curationView(overrides = {}) {
+  const curationMode = { busy: false, lastAction: { kind: 'discard' },
+    onKeep: vi.fn(), onDiscard: vi.fn(), onUndo: vi.fn(), ...overrides }
+  const onNav = vi.fn()
+  const image = { id: 1, directory_id: 1, filename: 'synthetic.webp', original_filename: 'synthetic.webp', url: '/synthetic.webp' }
+  return { ...render(<Lightbox images={[image]} currentIndex={0} onClose={mocks.noop}
+    onNav={onNav} curationMode={curationMode} />), curationMode, onNav }
+}
+
+// AC: @curation-game ac-9
+test('recovered curation viewer exposes one Favorite approval control', () => {
+  const { container, curationMode } = curationView()
+  const controls = container.querySelector('.curation-controls')
+  expect(controls.querySelectorAll('button')).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Favorite' }))
+  expect(curationMode.onKeep).toHaveBeenCalledOnce()
+  expect(curationMode.onDiscard).not.toHaveBeenCalled()
+  expect(container.querySelector('.curation-status')).toBeNull()
+})
+
+// AC: @curation-game ac-5
+// AC: @curation-game ac-9
+test('recovered keyboard controls go forward by discard and backward by undo; Favorite approves', () => {
+  const { curationMode, onNav } = curationView()
+  fireEvent.keyDown(window, { key: 'ArrowRight' })
+  expect(curationMode.onDiscard).toHaveBeenCalledOnce()
+  expect(curationMode.onKeep).not.toHaveBeenCalled()
+  fireEvent.keyDown(window, { key: 'ArrowLeft' })
+  expect(curationMode.onUndo).toHaveBeenCalledOnce()
+  fireEvent.keyDown(window, { key: 'f' })
+  expect(curationMode.onKeep).toHaveBeenCalledOnce()
+  fireEvent.keyDown(window, { key: 'Delete' })
+  expect(screen.queryByText('Delete permanently?')).toBeNull()
+  expect(onNav).not.toHaveBeenCalled()
+})
+
+// AC: @curation-game ac-9
+test('left and right curation click areas restore and discard without favoriting', () => {
+  const { container, curationMode } = curationView()
+  const area = container.querySelector('.lightbox')
+  area.getBoundingClientRect = () => ({ left: 0, width: 1000 })
+  fireEvent.click(area, { clientX: 750 })
+  fireEvent.click(area, { clientX: 250 })
+  expect(curationMode.onDiscard).toHaveBeenCalledOnce()
+  expect(curationMode.onUndo).toHaveBeenCalledOnce()
+  expect(curationMode.onKeep).not.toHaveBeenCalled()
+})
+
+// AC: @curation-gesture-decisions-recovery ac-3
+test('busy curation ignores decisions and repeated keys', () => {
+  const { container, curationMode } = curationView({ busy: true })
+  fireEvent.keyDown(window, { key: 'ArrowRight' })
+  fireEvent.keyDown(window, { key: 'f', repeat: true })
+  fireEvent.click(screen.getByRole('button', { name: 'Favorite' }))
+  fireEvent.click(container.querySelector('.lightbox'), { clientX: 750 })
+  expect(curationMode.onKeep).not.toHaveBeenCalled()
+  expect(curationMode.onDiscard).not.toHaveBeenCalled()
+})

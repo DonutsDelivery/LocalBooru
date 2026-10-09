@@ -14,6 +14,7 @@ import {
   createCurationActionLock,
   markCurationRefillFailure,
   mergeCandidates,
+  rotateCurationCandidates,
   seedCandidates,
 } from '../utils/curationState'
 import {
@@ -27,6 +28,7 @@ const initialState = {
   active: false,
   query: null,
   queue: [],
+  actionHistory: [],
   lastAction: null,
   processed: 0,
   loading: false,
@@ -147,7 +149,8 @@ export function useCurationGame({ loadedImages, filters, onGalleryRefresh }) {
       actionLock.current.release()
       return
     }
-    const action = snapshot.lastAction
+    const history = snapshot.actionHistory || []
+    const action = history[history.length - 1] || snapshot.lastAction
     setState(previous => ({ ...previous, busy: true }))
     try {
       if (action.kind === 'keep') await setFavorite(action.item, false)
@@ -160,10 +163,12 @@ export function useCurationGame({ loadedImages, filters, onGalleryRefresh }) {
         }
       }
       setProgressVersion(value => value + 1)
+      const actionHistory = history.slice(0, -1)
       const next = {
         ...snapshot,
         queue: [action.item, ...snapshot.queue],
-        lastAction: null,
+        actionHistory,
+        lastAction: actionHistory[actionHistory.length - 1] || null,
         processed: Math.max(0, snapshot.processed - 1),
         busy: false,
         loading: false,
@@ -178,6 +183,18 @@ export function useCurationGame({ loadedImages, filters, onGalleryRefresh }) {
     } finally {
       actionLock.current.release()
     }
+  }, [])
+
+  const navigate = useCallback((direction) => {
+    const snapshot = stateRef.current
+    if (snapshot.busy || snapshot.queue.length < 2) return
+
+    const queue = rotateCurationCandidates(snapshot.queue, direction)
+    if (queue === snapshot.queue) return
+
+    const next = { ...snapshot, queue }
+    stateRef.current = next
+    setState(next)
   }, [])
 
   const retryRefill = useCallback(async () => {
@@ -260,6 +277,7 @@ export function useCurationGame({ loadedImages, filters, onGalleryRefresh }) {
     progress,
     gestureVersion: progressVersion,
     start,
+    navigate,
     keep: () => applyAction('keep'),
     discard: () => applyAction('discard'),
     undo,
