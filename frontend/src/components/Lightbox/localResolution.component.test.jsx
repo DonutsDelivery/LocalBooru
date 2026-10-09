@@ -757,3 +757,47 @@ test('busy curation ignores decisions and repeated keys', () => {
   expect(curationMode.onKeep).not.toHaveBeenCalled()
   expect(curationMode.onDiscard).not.toHaveBeenCalled()
 })
+
+
+// AC: @curation-game ac-9
+test('Space uses the Favorite action once and prevents native button/scroll activation', () => {
+  const { curationMode, onNav } = curationView()
+  const press = new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true })
+  fireEvent(window, press)
+  expect(press.defaultPrevented).toBe(true)
+  expect(curationMode.onKeep).toHaveBeenCalledOnce()
+  expect(curationMode.onDiscard).not.toHaveBeenCalled()
+  expect(curationMode.onUndo).not.toHaveBeenCalled()
+  expect(onNav).not.toHaveBeenCalled()
+  fireEvent.keyDown(window, { key: ' ', repeat: true })
+  expect(curationMode.onKeep).toHaveBeenCalledOnce()
+  expect(screen.getByRole('button', { name: 'Favorite' }).title).toMatch(/Space/)
+})
+
+// AC: @curation-game ac-9
+test.each(['input', 'textarea'])('typing a space in a %s does not favorite a curation image', tag => {
+  const { container, curationMode } = curationView()
+  const editor = document.createElement(tag)
+  container.append(editor)
+  fireEvent.keyDown(editor, { key: ' ', code: 'Space' })
+  expect(curationMode.onKeep).not.toHaveBeenCalled()
+})
+
+// AC: @curation-gesture-decisions-recovery ac-3
+test('Space cannot favorite while a curation decision is busy', () => {
+  const { curationMode } = curationView({ busy: true })
+  fireEvent.keyDown(window, { key: ' ', code: 'Space' })
+  expect(curationMode.onKeep).not.toHaveBeenCalled()
+})
+
+
+// AC: @curation-game ac-10
+test('ordinary video Space still controls playback rather than curation Favorite', async () => {
+  mocks.playback.toggleVideoPlay = vi.fn()
+  const { container } = mount()
+  await videoReady(container)
+  fireEvent.keyDown(window, { key: ' ', code: 'Space' })
+  expect(mocks.playback.toggleVideoPlay).toHaveBeenCalledOnce()
+  const api = await import('../../api')
+  expect(api.toggleFavorite).not.toHaveBeenCalled()
+})

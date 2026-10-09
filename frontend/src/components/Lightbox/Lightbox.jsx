@@ -1374,6 +1374,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             e.preventDefault()
             curationMode.onDiscard()
             return
+          case ' ':
           case 'k':
           case 'K':
           case 'f':
@@ -2958,7 +2959,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
       {curationMode && (
         <div className="curation-controls" onClick={event => event.stopPropagation()}>
-          <button className="curation-action keep" onClick={curationMode.onKeep} disabled={curationMode.busy} title="Favorite and keep (F or K)">
+          <button className="curation-action keep" onClick={curationMode.onKeep} disabled={curationMode.busy} title="Favorite and keep (Space, F or K)">
             <span aria-hidden="true">★</span> Favorite
           </button>
         </div>
