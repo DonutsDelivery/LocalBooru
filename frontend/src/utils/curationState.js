@@ -22,16 +22,27 @@ export function createCurationActionLock() {
 }
 
 export function commitCurationAction(state, kind, item, countedDate) {
+  const action = { kind, item, countedDate }
   return {
     ...state,
     queue: state.queue.slice(1),
-    lastAction: { kind, item, countedDate },
+    actionHistory: [...(state.actionHistory || []), action],
+    lastAction: action,
     processed: state.processed + 1,
     busy: true,
     loading: true,
     complete: false,
     refillError: null,
   }
+}
+
+// Curation always acts on queue[0]. Rotate pending candidates so the lightbox
+// can browse without changing which item a later decision commits.
+export function rotateCurationCandidates(queue, direction) {
+  if (!Array.isArray(queue) || queue.length < 2) return queue
+  if (direction > 0) return [...queue.slice(1), queue[0]]
+  if (direction < 0) return [queue[queue.length - 1], ...queue.slice(0, -1)]
+  return queue
 }
 
 export function markCurationRefillFailure(state, error) {
