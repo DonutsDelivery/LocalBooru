@@ -18,7 +18,7 @@ vi.mock('../../tauriAPI', () => ({
   videoControlAPI: { subscribeToEvents: native.subscribeToEvents },
 }))
 
-import { MusicPlayerProvider, useMusicPlayer } from './MusicPlayer'
+import { MusicPlayerProvider, useMusicBrowser, useMusicPlayer } from './MusicPlayer'
 
 const song = (id, artist = 'Artist A') => ({
   id, title: `Song ${id}`, artist, library_id: 'library-a',
@@ -172,4 +172,20 @@ test('replaying the same album track restarts it while shuffle changes do not', 
   fireEvent.click(screen.getByRole('button', { name: 'Start album' }))
   expect(audio.currentTime).toBe(0)
   expect(HTMLMediaElement.prototype.load.mock.calls.length).toBe(loads + 1)
+})
+
+test('switching servers discards music filters that belong to the previous server', async () => {
+  sessionStorage.setItem('dmc_music_browse', JSON.stringify({ mode: 'songs', byMode: {
+    albums: { query: '', artist: '', album: '', genre: '', year: '', favorites: false, folder: '7', collection: '', library: 'local-library', scroll: 0, page: 3 },
+    songs: { query: '', artist: '', album: '', genre: '', year: '', favorites: false, folder: '', collection: '', library: 'local-library', scroll: 0, page: 1 },
+  } }))
+  function BrowseHarness() {
+    const { browse } = useMusicBrowser()
+    return <output data-testid="browse">{`${browse.mode}:${browse.byMode.songs.library}:${browse.byMode.albums.folder}`}</output>
+  }
+  render(<MusicPlayerProvider><BrowseHarness /></MusicPlayerProvider>)
+  expect(screen.getByTestId('browse').textContent).toBe('songs:local-library:7')
+  act(() => { window.dispatchEvent(new CustomEvent('donut-create-server-changed')) })
+  expect(screen.getByTestId('browse').textContent).toBe('albums::')
+  expect(JSON.parse(sessionStorage.getItem('dmc_music_browse')).byMode.songs.library).toBe('')
 })

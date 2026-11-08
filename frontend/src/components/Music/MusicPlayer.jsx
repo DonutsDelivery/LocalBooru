@@ -41,6 +41,17 @@ export function MusicPlayerProvider({ children }) {
 
   useEffect(() => { sessionStorage.setItem('dmc_music_browse', JSON.stringify(browse)) }, [browse])
 
+  // Library, folder, collection and artist filters name rows on one server.
+  // Carrying them to another server asks it for ids it does not have.
+  useEffect(() => {
+    const resetBrowse = () => {
+      try { sessionStorage.removeItem('dmc_music_browse') } catch { /* storage may be unavailable */ }
+      setBrowse(emptyBrowse())
+    }
+    window.addEventListener('donut-create-server-changed', resetBrowse)
+    return () => window.removeEventListener('donut-create-server-changed', resetBrowse)
+  }, [])
+
   const updateBrowse = useCallback((mode, patch) => {
     setBrowse(previous => ({ ...previous, byMode: {
       ...previous.byMode,
