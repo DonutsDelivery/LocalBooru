@@ -1456,6 +1456,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn collect_symlinked_dirs_finds_links_and_survives_loops() {
         let root = temp_test_dir("collect-links");
         let outside = temp_test_dir("collect-links-target");
@@ -1476,6 +1477,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn existing_symlinked_subdir_reports_events_under_link_path() {
         let root = temp_test_dir("existing-link");
         let outside = temp_test_dir("existing-link-target");
@@ -1495,6 +1497,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn symlinked_subdir_created_after_start_gets_watched() {
         let root = temp_test_dir("late-link");
         let outside = temp_test_dir("late-link-target");
@@ -1545,6 +1548,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn symlink_into_the_root_keeps_real_event_paths() {
         let root = temp_test_dir("inner-link");
         std::fs::create_dir_all(root.join("real")).unwrap();
@@ -1560,6 +1564,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn polling_watcher_detects_files_in_symlinked_subdir() {
         let root = temp_test_dir("poll-link");
         let outside = temp_test_dir("poll-link-target");
