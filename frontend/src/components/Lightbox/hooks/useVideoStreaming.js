@@ -4,8 +4,6 @@ import {
   getMediaUrl,
   getAssetUrl,
   isUsingLocalServer,
-  playVideoInterpolated,
-  stopInterpolatedStream,
   getSVPConfig,
   playVideoSVP,
   stopSVPStream,
@@ -50,7 +48,7 @@ const svpMSEClient = {
 }
 
 /**
- * Hook for managing HLS/SVP/OpticalFlow video streaming
+ * Hook for managing HLS/SVP video streaming
  * @param {object} addonStatus - { svpInstalled } from useAddonStatus
  */
 export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus = {}) {
@@ -69,13 +67,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   const { applyNormalization, resetGain, setOutputVolume, setOutputMuted } = useAudioNormalization(mediaRef)
   // HLS streaming ref
   const hlsRef = useRef(null)
-
-  // Retained stream state for compatibility with existing lightbox consumers.
-  // FFmpeg interpolation is retired; SVP is the sole interpolation engine.
-  const [opticalFlowConfig] = useState({ enabled: false })
-  const [opticalFlowLoading, setOpticalFlowLoading] = useState(false)
-  const [opticalFlowError, setOpticalFlowError] = useState(null)
-  const [opticalFlowStreamUrl, setOpticalFlowStreamUrl] = useState(null)
 
   // SVP interpolation state
   const [svpConfig, setSvpConfig] = useState(null)
@@ -98,7 +89,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   const mseSeekTokenRef = useRef(0)
   const mseSeekOwnerRef = useRef(null)
 
-  // Transcode stream state (fallback when SVP/OpticalFlow not available)
+  // Transcode stream state (fallback when SVP not available)
   const [transcodeStreamUrl, setTranscodeStreamUrl] = useState(null)
   const [transcodeSourceRevision, setTranscodeSourceRevision] = useState(0)
   const [transcodeTotalDuration, setTranscodeTotalDuration] = useState(null)
@@ -136,7 +127,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
   // Refs for callbacks (used by auto-start effect)
   const startSVPStreamRef = useRef(null)
-  const startInterpolatedStreamRef = useRef(null)
   const handleQualityChangeRef = useRef(null)
 
 
@@ -170,16 +160,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       return () => clearTimeout(timer)
     }
   }, [svpError])
-
-  // Auto-dismiss optical flow error toast after 5 seconds
-  useEffect(() => {
-    if (opticalFlowError) {
-      const timer = setTimeout(() => {
-        setOpticalFlowError(null)
-      }, 5000)
-      return () => clearTimeout(timer)
-    }
-  }, [opticalFlowError])
 
   // Auto-dismiss stream error toast after 5 seconds
   useEffect(() => {
@@ -502,47 +482,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     }
   }, [image, currentQuality, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition])
 
-  // Start optical flow interpolation for video (called automatically when enabled)
-  const startInterpolatedStream = useCallback(async (startPosition = null) => {
-    if (!image || !opticalFlowConfig?.enabled || !isVideo(image.filename)) return
-    if (opticalFlowStreamUrl || opticalFlowLoading) return // Already active or starting
-    const svpStopGeneration = playbackTransitionOwnerRef.current.currentGeneration() || undefined
-
-    // Get current playback position before stopping other streams
-    const playbackPosition = startPosition ?? getCurrentAbsoluteTime()
-
-    // Stop any existing SVP stream
-    if (svpStreamUrl) {
-      setSvpStreamUrl(null)
-      await stopSVPStream(svpStopGeneration)
-    }
-
-    // Stop any existing transcode stream
-    if (transcodeStreamUrl) {
-      setTranscodeStreamUrl(null)
-      await stopTranscodeStream()
-    }
-
-    setOpticalFlowLoading(true)
-    setOpticalFlowError(null)
-
-    try {
-      const result = await playVideoInterpolated(image.file_path, playbackPosition, currentQuality)
-
-      if (result.success && result.stream_url) {
-        setOpticalFlowStreamUrl(result.stream_url)
-        if (result.source_resolution) setSourceResolution(result.source_resolution)
-      } else {
-        setOpticalFlowError(result.error || 'Failed to start interpolated playback')
-      }
-    } catch (err) {
-      console.error('Optical flow error:', err)
-      setOpticalFlowError(err.message || 'Failed to start interpolated playback')
-    }
-
-    setOpticalFlowLoading(false)
-  }, [image, opticalFlowConfig, opticalFlowStreamUrl, opticalFlowLoading, svpStreamUrl, transcodeStreamUrl, currentQuality, getCurrentAbsoluteTime])
-
   // Start SVP interpolation for video (called manually via button or auto-start)
   // Optional startPosition parameter - if not provided, defaults to 0 for new videos or current position for mode switches
   const startSVPStream = useCallback(async (
@@ -577,12 +516,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     const mseShouldResume = transition.intent.shouldPlay
 
     try {
-      if (opticalFlowStreamUrl) {
-        setOpticalFlowStreamUrl(null)
-        await stopInterpolatedStream()
-        if (!isPlaybackTransitionCurrent(transition)) return
-      }
-
       if (transcodeStreamUrl) {
         setTranscodeStreamUrl(null)
         await stopTranscodeStream()
@@ -683,11 +616,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       if (svpStartingRef.current === startAttempt) svpStartingRef.current = null
     }
     // svpLoading stays true until the owning HLS source has buffered playable media.
-  }, [image, svpInstalled, svpConfig, svpStreamUrl, svpLoading, opticalFlowStreamUrl, transcodeStreamUrl, currentQuality, mseSvpPlayback, mediaRef, resetGain, failOpenMSE, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition])
+  }, [image, svpInstalled, svpConfig, svpStreamUrl, svpLoading, transcodeStreamUrl, currentQuality, mseSvpPlayback, mediaRef, resetGain, failOpenMSE, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition])
 
   // Update refs after callbacks are defined (used by auto-start effect and SVP menu restart)
   startSVPStreamRef.current = startSVPStream
-  startInterpolatedStreamRef.current = startInterpolatedStream
 
   useEffect(() => {
     if (svpStreamUrl !== 'mse://svp-session' || !mediaRef.current) return
@@ -750,9 +682,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
     // Reset all streaming state for the new video
     resetGain()
-    setOpticalFlowError(null)
-    setOpticalFlowStreamUrl(null)
-    setOpticalFlowLoading(false)
     setStreamError(null)
     setSvpError(null)
     setSvpStreamUrl(null)
@@ -779,7 +708,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     const backendCleanup = shouldStopVideoBackends && !backendOwnershipChanged
       ? Promise.all([
           stopSVPStream(playbackGeneration).catch(() => {}),
-          stopInterpolatedStream().catch(() => {}),
           stopTranscodeStream().catch(() => {}),
         ])
       : Promise.resolve()
@@ -811,7 +739,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     setSvpStreamUrl(null)
     setSvpLoading(false)
     setTranscodeStreamUrl(null)
-    setOpticalFlowStreamUrl(null)
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
     if (svpHlsRef.current) { svpHlsRef.current.destroy(); svpHlsRef.current = null }
     if (transcodeHlsRef.current) { transcodeHlsRef.current.destroy(); transcodeHlsRef.current = null }
@@ -821,7 +748,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     const backendCleanup = shouldStopVideoBackends
       ? Promise.all([
           stopSVPStream(playbackGeneration).catch(() => {}),
-          stopInterpolatedStream().catch(() => {}),
           stopTranscodeStream().catch(() => {}),
         ])
       : Promise.resolve()
@@ -882,7 +808,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   currentQualityRef.current = currentQuality
 
   // Auto-start interpolated stream when video opens
-  // Priority: SVP (if enabled) > Optical Flow (if enabled) > Transcode (if quality != original)
+  // Priority: SVP (if enabled) > Transcode (if quality != original)
   // NOTE: currentQuality is intentionally NOT a dependency — quality changes are handled by handleQualityChange
   useEffect(() => {
     if (!enabled) return
@@ -892,9 +818,8 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
     // Wait for the sole supported interpolation engine to load.
     // Without this gate, the effect fires 3 times during startup:
-    //   1. initial mount (both configs null)
+    //   1. initial mount (config null)
     //   2. svpConfig loads (undefined→false)
-    //   3. opticalFlowConfig loads (undefined→false)
     // Each fire starts a transcode that kills the previous one via stop_all_transcode_streams().
     if (svpConfig === null) return
 
@@ -902,7 +827,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       const quality = currentQualityRef.current
       console.log('[Auto-start] Checking...', {
         svpEnabled: svpConfig?.enabled,
-        opticalFlowEnabled: opticalFlowConfig?.enabled,
         currentQuality: quality
       })
       // Desktop LocalBooru uses the original WebKit player with the
@@ -927,111 +851,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       }
     }
   }, [enabled, currentImageKey, cleanupSeq, svpConfig?.enabled, nativeSvpPlayback])
-
-  // Setup HLS player when optical flow stream is active
-  useEffect(() => {
-    if (!opticalFlowStreamUrl || !mediaRef.current) return
-
-    const video = mediaRef.current
-    let cancelled = false
-    let playOnReady = null
-    let shouldAutoResume = !video.paused
-    let manuallyPaused = false
-
-    const playOpticalFlowVideo = () => {
-      if (cancelled || !shouldAutoResume || manuallyPaused) return
-      video.play().catch(() => {})
-    }
-
-    const trackManualPause = () => {
-      if (!streamTransitioningRef.current) {
-        manuallyPaused = true
-        shouldAutoResume = false
-      }
-    }
-
-    const trackManualPlay = () => {
-      manuallyPaused = false
-      shouldAutoResume = true
-    }
-
-    if (Hls.isSupported()) {
-      // Pause video during transition to prevent playing old buffered content
-      video.pause()
-      video.addEventListener('pause', trackManualPause)
-      video.addEventListener('play', trackManualPlay)
-
-      // Cleanup previous instance - destroy() is synchronous and handles cleanup
-      if (hlsRef.current) {
-        hlsRef.current.destroy()
-        hlsRef.current = null
-      }
-
-      // Remove direct video src (if any) - HLS will use MediaSource instead
-      video.removeAttribute('src')
-
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: false,
-        startPosition: 0,
-        backBufferLength: 30,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-      })
-
-      // Use getMediaUrl to handle dev mode (different ports for frontend/backend)
-      hls.loadSource(getMediaUrl(opticalFlowStreamUrl))
-      hls.attachMedia(video)
-
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (cancelled) return
-        if (video.readyState >= 3) {
-          playOpticalFlowVideo()
-        } else {
-          playOnReady = () => {
-            playOpticalFlowVideo()
-            video.removeEventListener('canplay', playOnReady)
-          }
-          video.addEventListener('canplay', playOnReady)
-        }
-      })
-
-      hls.on(Hls.Events.ERROR, (event, data) => {
-        if (cancelled) return
-        if (data.fatal) {
-          console.error('HLS fatal error:', data)
-          hls.destroy()
-          hlsRef.current = null
-          setOpticalFlowError('Stream playback error.')
-          setOpticalFlowStreamUrl(null)
-        }
-      })
-
-      hlsRef.current = hls
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari/iOS native HLS support
-      video.src = getMediaUrl(opticalFlowStreamUrl)
-      video.addEventListener('loadedmetadata', () => {
-        playOpticalFlowVideo()
-      })
-    } else {
-      setOpticalFlowError('HLS playback is not supported in this browser')
-      setOpticalFlowStreamUrl(null)
-    }
-
-    return () => {
-      cancelled = true
-      if (playOnReady) {
-        video.removeEventListener('canplay', playOnReady)
-      }
-      video.removeEventListener('pause', trackManualPause)
-      video.removeEventListener('play', trackManualPlay)
-      if (hlsRef.current) {
-        hlsRef.current.destroy()
-        hlsRef.current = null
-      }
-    }
-  }, [opticalFlowStreamUrl, mediaRef])
 
   // Setup HLS player when transcode stream is active (fallback when no interpolation)
   useEffect(() => {
@@ -1552,7 +1371,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       svpMseControllerRef.current = null
       if (shouldStopVideoBackends) {
         stopSVPStream(playbackGeneration).catch(() => {})
-        stopInterpolatedStream().catch(() => {})
         stopTranscodeStream().catch(() => {})
       }
     }
@@ -1560,9 +1378,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
   // Reset streaming state (called when image changes)
   const resetStreamingState = useCallback(async (shouldStopStreams = false) => {
-    // Reset optical flow state for new video
-    setOpticalFlowError(null)
-    setOpticalFlowStreamUrl(null)
     setStreamError(null)
     // Reset SVP state for new video
     setSvpError(null)
@@ -1600,7 +1415,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       await Promise.all([
         mseCleanup,
         stopSVPStream(playbackTransitionOwnerRef.current.currentGeneration() || undefined).catch(() => {}),
-        stopInterpolatedStream().catch(() => {}),
         stopTranscodeStream().catch(() => {})
       ])
     }
@@ -1630,7 +1444,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       if (qualityId === 'original') {
         await Promise.all([
           stopSVP(transition.generation).catch(() => {}),
-          stopInterpolatedStream().catch(() => {}),
           stopTranscodeStream().catch(() => {}),
         ])
         if (!isPlaybackTransitionCurrent(transition)) return
@@ -1645,7 +1458,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         setSvpBufferedDuration(0)
         setSvpPendingSeek(null)
         setSvpLoading(false)
-        setOpticalFlowStreamUrl(null)
         setTranscodeStreamUrl(null)
         setTranscodeStartOffset(0)
         setTranscodeTotalDuration(null)
@@ -1713,17 +1525,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         return
       }
 
-      if (opticalFlowStreamUrl || opticalFlowConfig?.enabled) {
-        await stopInterpolatedStream()
-        if (!isPlaybackTransitionCurrent(transition)) return
-        const result = await playVideoInterpolated(image.file_path, absoluteTime, qualityId)
-        if (!isPlaybackTransitionCurrent(transition)) return
-        if (!result.success) throw new Error(result.error || 'Failed to start interpolated stream')
-        setOpticalFlowStreamUrl(result.stream_url)
-        finishPlaybackTransition(transition)
-        return
-      }
-
       if (transcodeHlsRef.current) { transcodeHlsRef.current.destroy(); transcodeHlsRef.current = null }
       setTranscodeStreamUrl(null)
       await stopTranscodeStream()
@@ -1757,7 +1558,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         finishPlaybackTransition(transition)
       }
     }
-  }, [image, mediaRef, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, svpInstalled, svpConfig, opticalFlowConfig, applyNormalization, restartSVPFromPosition, stopSVP, startSVPStream, resetGain, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition, nativeSvpPlayback, codecFallbackActive])
+  }, [image, mediaRef, svpStreamUrl, transcodeStreamUrl, svpInstalled, svpConfig, applyNormalization, restartSVPFromPosition, stopSVP, startSVPStream, resetGain, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition, nativeSvpPlayback, codecFallbackActive])
   handleQualityChangeRef.current = handleQualityChange
 
   // Check if browser can't decode the video codec (e.g. HEVC on Linux WebKitGTK/Chromium)
@@ -1765,7 +1566,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   const checkCodecFallback = useCallback((video) => {
     if (!enabled || image?._remote) return
     // Only check when playing direct (no stream active, original quality)
-    if (svpStreamUrl || opticalFlowStreamUrl || transcodeStreamUrl) return
+    if (svpStreamUrl || transcodeStreamUrl) return
     // Use ref guard to prevent multiple starts (state update is async)
     if (codecFallbackStartedRef.current) return
     if (!image || !isVideo(image.filename)) return
@@ -1807,14 +1608,9 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         finishPlaybackTransition(transition)
       })
     }
-  }, [enabled, image, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition])
+  }, [enabled, image, svpStreamUrl, transcodeStreamUrl, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition])
 
   return {
-    // Optical flow state
-    opticalFlowConfig,
-    opticalFlowLoading,
-    opticalFlowError,
-    opticalFlowStreamUrl,
     // SVP state
     nativeSvpPlayback,
     svpConfig,
@@ -1847,7 +1643,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     restartSVPFromPosition,
     cancelPendingSVPRestart,
     restartTranscodeFromPosition,
-    startInterpolatedStream,
     startSVPStream,
     startSVPStreamRef,
     stopSVP,

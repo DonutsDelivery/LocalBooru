@@ -859,6 +859,26 @@ function DirectoriesPage() {
                         {taggingActive[dirKey] ? '⏹' : '▶'} Tag
                       </button>
                       )}
+                      {taggerInstalled && (
+                      <button
+                        className="toggle-btn tag-btn"
+                        onClick={async () => {
+                          if (!confirm(`Re-tag all ${dir.image_count} items in "${dir.name}"?\n\nThis restores ratings and updates auto tags. Manual tags are kept.\nLarge folders can take a long time.`)) {
+                            return
+                          }
+                          try {
+                            const result = await tagUntagged(dir.id, { retag: true })
+                            setTaggingActive(prev => ({ ...prev, [dirKey]: true }))
+                            toast.success(`Queued ${result.queued} images for re-tagging`)
+                          } catch (err) {
+                            toast.error('Re-tag failed: ' + err.message)
+                          }
+                        }}
+                        title="Run the auto-tagger again on every image (restores ratings; manual tags are kept)"
+                      >
+                        ↻ Re-tag
+                      </button>
+                      )}
                       {ageDetectorInstalled && (
                       <button
                         className={`toggle-btn ${dir.auto_age_detect ? 'active' : ''}`}

@@ -474,7 +474,7 @@ fn get_defaults() -> Value {
         "auto_tagger": {
             "model": "vit-v3",
             "general_threshold": 0.35,
-            "character_threshold": 0.75,
+            "character_threshold": 0.85,
             "device": "auto"
         },
         "age_detection": {
@@ -534,6 +534,32 @@ pub(crate) fn get_config_section(data_dir: &Path, section: &str) -> Value {
     let saved_section = settings.get(section).cloned().unwrap_or_else(|| json!({}));
 
     deep_merge(&default_section, &saved_section)
+}
+
+/// Resolve the global age-detection toggle from raw (un-defaulted) saved settings.
+///
+/// The Rust backend stores the toggle as `age_detection.enabled`. Releases up to
+/// v0.3.x stored it as a top-level `age_detection_enabled` string ("true"/"false").
+/// When the new key has never been saved, fall back to the legacy key so upgraded
+/// users keep their choice. Once `age_detection.enabled` exists it always wins.
+pub(crate) fn age_detection_enabled_in(saved: &Value) -> bool {
+    if let Some(enabled) = saved
+        .get("age_detection")
+        .and_then(|section| section.get("enabled"))
+        .and_then(Value::as_bool)
+    {
+        return enabled;
+    }
+    match saved.get("age_detection_enabled") {
+        Some(Value::Bool(enabled)) => *enabled,
+        Some(Value::String(text)) => text.trim().eq_ignore_ascii_case("true"),
+        _ => false,
+    }
+}
+
+/// Whether the global age-detection toggle is on (with legacy-key fallback).
+pub(crate) fn is_age_detection_enabled(data_dir: &Path) -> bool {
+    age_detection_enabled_in(&load_settings(data_dir))
 }
 
 /// Update a single config section: deep-merge the incoming body with the
@@ -837,78 +863,6 @@ async fn update_video_playback(
     let result = tokio::task::spawn_blocking(move || {
         get_desktop_player_mode(&data_dir);
         update_config_section(&data_dir, "video_playback", &body)
-    })
-    .await??;
-
-    Ok(Json(result))
-}
-
-// ─── Optical flow ────────────────────────────────────────────────────────────
-
-/// GET /optical-flow — Get optical flow configuration + backend status.
-///
-/// Frame interpolation is handled natively via FFmpeg's minterpolate filter,
-/// so no addon/sidecar is required.
-async fn get_optical_flow(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
-    let data_dir = state.data_dir().to_path_buf();
-
-    let result = tokio::task::spawn_blocking(move || {
-        let mut config = get_config_section(&data_dir, "optical_flow");
-        if let Some(obj) = config.as_object_mut() {
-            // FFmpeg minterpolate is always available — no addon needed
-            obj.insert(
-                "backend".into(),
-                json!({
-                    "any_backend_available": true,
-                    "name": "ffmpeg_minterpolate"
-                }),
-            );
-        }
-        config
-    })
-    .await?;
-
-    Ok(Json(result))
-}
-
-/// Valid quality presets for optical flow.
-const OPTICAL_FLOW_QUALITIES: &[&str] = &[
-    "low",
-    "medium",
-    "high",
-    "svp",
-    "gpu_native",
-    "realtime",
-    "fast",
-    "balanced",
-    "quality",
-];
-
-/// POST /optical-flow — Update optical flow configuration with validation.
-async fn update_optical_flow(
-    State(state): State<AppState>,
-    Json(mut body): Json<Value>,
-) -> Result<Json<Value>, AppError> {
-    // Validate quality enum
-    if let Some(quality) = body.get("quality").and_then(|v| v.as_str()) {
-        if !OPTICAL_FLOW_QUALITIES.contains(&quality) {
-            return Err(AppError::BadRequest(format!(
-                "Invalid quality '{}'. Must be one of: {}",
-                quality,
-                OPTICAL_FLOW_QUALITIES.join(", ")
-            )));
-        }
-    }
-
-    // Clamp target_fps to 15-120
-    if let Some(fps) = body.get("target_fps").and_then(|v| v.as_i64()) {
-        body["target_fps"] = json!(fps.clamp(15, 120));
-    }
-
-    let data_dir = state.data_dir().to_path_buf();
-
-    let result = tokio::task::spawn_blocking(move || {
-        update_config_section(&data_dir, "optical_flow", &body)
     })
     .await??;
 
@@ -1236,13 +1190,7 @@ async fn get_age_detection_status(State(state): State<AppState>) -> Result<Json<
         None => (false, false),
     };
 
-    let config =
-        tokio::task::spawn_blocking(move || get_config_section(&data_dir, "age_detection")).await?;
-
-    let enabled = config
-        .get("enabled")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let enabled = tokio::task::spawn_blocking(move || is_age_detection_enabled(&data_dir)).await?;
 
     Ok(Json(json!({
         "enabled": enabled,
@@ -1879,77 +1827,12 @@ async fn bridge_stream(
         .unwrap())
 }
 
-// ─── Optical flow bridge ─────────────────────────────────────────────────────
-
-/// POST /optical-flow/play — Start interpolated stream via FFmpeg minterpolate.
-async fn bridge_optical_flow_play(
-    State(state): State<AppState>,
-    Json(body): Json<Value>,
-) -> Result<Json<Value>, AppError> {
-    let file_path = body
-        .get("file_path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| AppError::BadRequest("file_path is required".into()))?;
-
-    let path = Path::new(file_path);
-    if !path.exists() {
-        return Err(AppError::NotFound("Video file not found".into()));
-    }
-    // Reject paths outside the media library before interpolating.
-    crate::server::utils::validate_path_in_watch_dir(&state, file_path)?;
-
-    let start_position = body
-        .get("start_position")
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.0);
-
-    // Read target_fps from optical_flow config
-    let data_dir = state.data_dir().to_path_buf();
-    let config =
-        tokio::task::spawn_blocking(move || get_config_section(&data_dir, "optical_flow")).await?;
-    let target_fps = config
-        .get("target_fps")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(60) as u32;
-
-    // Parse quality preset (if provided)
-    let quality = parse_quality_preset(body.get("quality_preset").and_then(|v| v.as_str()));
-
-    let info = state
-        .transcode_manager()
-        .start_interpolated_stream(file_path, start_position, &quality, target_fps)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to start interpolated stream: {}", e)))?;
-
-    Ok(Json(json!({
-        "success": true,
-        "stream_id": info.stream_id,
-        "stream_url": info.stream_url,
-        "duration": info.duration,
-        "start_position": info.start_position,
-        "source_resolution": {
-            "width": info.source_resolution.width,
-            "height": info.source_resolution.height,
-        }
-    })))
-}
+// ─── Optical flow bridge (retired; stop kept for existing clients) ──────────
 
 /// POST /optical-flow/stop — Stop interpolated streams.
 async fn bridge_optical_flow_stop(State(state): State<AppState>) -> Json<Value> {
     state.transcode_manager().stop_all();
     Json(json!({ "success": true, "message": "All interpolated streams stopped" }))
-}
-
-/// GET /optical-flow/stream/{stream_id}/{filename} — Serve HLS files.
-///
-/// Reuses the same TranscodeManager, so stream URLs from optical-flow/play
-/// also work through the transcode/stream endpoint. This endpoint is kept
-/// for backward compatibility with the frontend API paths.
-async fn bridge_optical_flow_stream(
-    State(state): State<AppState>,
-    AxumPath((stream_id, filename)): AxumPath<(String, String)>,
-) -> Result<Response, AppError> {
-    serve_transcode_file(State(state), AxumPath((stream_id, filename))).await
 }
 
 // ─── SVP bridge ──────────────────────────────────────────────────────────────
@@ -2894,5 +2777,51 @@ mod tests {
         validate_auto_tagger_config(&mut config).unwrap();
         assert_eq!(config["general_threshold"], json!(1.0));
         assert_eq!(config["character_threshold"], json!(0.0));
+    }
+
+    #[test]
+    fn age_detection_toggle_prefers_new_key_and_falls_back_to_legacy_top_level_key() {
+        // Nothing saved: disabled.
+        assert!(!age_detection_enabled_in(&json!({})));
+        // Legacy string key from v0.3.x is honoured when the new key is absent.
+        assert!(age_detection_enabled_in(
+            &json!({"age_detection_enabled": "true"})
+        ));
+        assert!(!age_detection_enabled_in(
+            &json!({"age_detection_enabled": "false"})
+        ));
+        assert!(age_detection_enabled_in(
+            &json!({"age_detection_enabled": true})
+        ));
+        // An age_detection section without `enabled` does not hide the legacy key.
+        assert!(age_detection_enabled_in(
+            &json!({"age_detection": {}, "age_detection_enabled": "true"})
+        ));
+        // The new key always wins once it has been saved.
+        assert!(!age_detection_enabled_in(
+            &json!({"age_detection": {"enabled": false}, "age_detection_enabled": "true"})
+        ));
+        assert!(age_detection_enabled_in(
+            &json!({"age_detection": {"enabled": true}, "age_detection_enabled": "false"})
+        ));
+    }
+
+    #[test]
+    fn is_age_detection_enabled_reads_saved_settings_file() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "localbooru-age-toggle-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        assert!(!is_age_detection_enabled(&data_dir));
+        std::fs::write(
+            settings_path(&data_dir),
+            r#"{"age_detection_enabled": "true", "age_detection_installed": "true"}"#,
+        )
+        .unwrap();
+        assert!(is_age_detection_enabled(&data_dir));
+        update_config_section(&data_dir, "age_detection", &json!({"enabled": false})).unwrap();
+        assert!(!is_age_detection_enabled(&data_dir));
+        std::fs::remove_dir_all(data_dir).unwrap();
     }
 }

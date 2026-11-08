@@ -72,6 +72,8 @@ pub struct CastMedia {
     pub transcode_stream_id: Option<String>,
     #[serde(default)]
     pub svp_stream_id: Option<String>,
+    #[serde(default)]
+    pub subtitle_url: Option<String>,
     pub position: f64,
     pub duration: f64,
 }
@@ -100,6 +102,10 @@ const CAST_ADDON_PORT: u16 = 18006;
 const SVP_ADDON_ID: &str = "svp";
 static REGISTERED_MEDIA: LazyLock<Mutex<HashMap<String, PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+/// Sidecar WebVTT subtitle files exposed to cast devices, keyed by an
+/// unguessable id (same trust model as `REGISTERED_MEDIA`).
+static REGISTERED_SUBTITLES: LazyLock<Mutex<HashMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
@@ -114,7 +120,9 @@ pub fn router() -> Router<AppState> {
 }
 
 pub fn media_router() -> Router<AppState> {
-    Router::new().route("/{media_id}/file/{filename}", get(serve_cast_file))
+    Router::new()
+        .route("/{media_id}/file/{filename}", get(serve_cast_file))
+        .route("/{media_id}/subs/{filename}", get(serve_cast_subs))
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -149,6 +157,49 @@ fn register_media(file_path: &Path) -> String {
     media_id
 }
 
+/// Find a WebVTT subtitle file next to a video.
+///
+/// Prefers files whose name starts with the video's stem (e.g. `video.en.vtt`),
+/// falling back to any `.vtt` in the same directory. Candidates are sorted by
+/// file name so the choice is deterministic.
+fn find_subtitle_file(video_path: &Path) -> Option<PathBuf> {
+    let parent = video_path.parent()?;
+    let stem = video_path.file_stem()?.to_str()?;
+
+    let mut vtt_files: Vec<PathBuf> = std::fs::read_dir(parent)
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("vtt"))
+        })
+        .collect();
+    vtt_files.sort();
+
+    vtt_files
+        .iter()
+        .find(|path| {
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with(stem))
+        })
+        .or_else(|| vtt_files.first())
+        .cloned()
+}
+
+fn register_subtitle(subtitle_path: &Path) -> String {
+    let subtitle_id = Uuid::new_v4().to_string();
+    REGISTERED_SUBTITLES
+        .lock()
+        .expect("cast subtitle registry poisoned")
+        .insert(subtitle_id.clone(), subtitle_path.to_path_buf());
+    subtitle_id
+}
+
 fn unregister_media_url(media_url: &str) {
     let Some((_, rest)) = media_url.split_once("/api/cast-media/") else {
         return;
@@ -160,10 +211,17 @@ fn unregister_media_url(media_url: &str) {
         .lock()
         .expect("cast media registry poisoned")
         .remove(media_id);
+    REGISTERED_SUBTITLES
+        .lock()
+        .expect("cast subtitle registry poisoned")
+        .remove(media_id);
 }
 
 async fn cleanup_registered_cast_media(state: &AppState, current_media: &CastMedia) {
     unregister_media_url(&current_media.media_url);
+    if let Some(subtitle_url) = &current_media.subtitle_url {
+        unregister_media_url(subtitle_url);
+    }
     if let Some(stream_id) = &current_media.transcode_stream_id {
         state.transcode_manager().stop_stream(stream_id);
     }
@@ -197,7 +255,7 @@ fn config_u32(config: &Value, key: &str) -> Option<u32> {
 
 fn cast_direct_play_reject(path: &Path, reason: &str) -> bool {
     log::info!(
-        "[Cast] Transcoding for Chromecast direct-play compatibility: {} ({})",
+        "[Cast] Transcoding for cast direct-play compatibility: {} ({})",
         path.display(),
         reason
     );
@@ -522,6 +580,40 @@ async fn serve_cast_file(
     Ok(response.into_response())
 }
 
+/// Serve a registered sidecar subtitle as WebVTT. Cast receivers fetch text
+/// tracks cross-origin, so the response allows any origin.
+async fn serve_cast_subs(
+    AxumPath((subtitle_id, _filename)): AxumPath<(String, String)>,
+    request: Request,
+) -> Result<Response, AppError> {
+    let subtitle_path = REGISTERED_SUBTITLES
+        .lock()
+        .expect("cast subtitle registry poisoned")
+        .get(&subtitle_id)
+        .cloned()
+        .ok_or_else(|| AppError::NotFound("Subtitle not found".into()))?;
+
+    if !subtitle_path.is_file() {
+        return Err(AppError::NotFound("Subtitle file not found".into()));
+    }
+
+    let mut response = ServeFile::new(&subtitle_path)
+        .oneshot(request)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to serve cast subtitle: {}", e)))?
+        .into_response();
+    let headers = response.headers_mut();
+    headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("text/vtt; charset=utf-8"),
+    );
+    headers.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        axum::http::HeaderValue::from_static("*"),
+    );
+    Ok(response)
+}
+
 /// Send a GET request to the cast addon and return the JSON response body.
 async fn addon_get(client: &reqwest::Client, path: &str) -> Result<Value, AppError> {
     let url = format!("{}{}", addon_base_url(), path);
@@ -644,7 +736,9 @@ async fn play(
                 Some(svp_stream.stream_id),
                 svp_stream.duration,
             )
-        } else if is_chromecast && !is_chromecast_direct_play_safe(&file_path).await {
+        } else if !is_chromecast_direct_play_safe(&file_path).await {
+            // Applies to every device type (as in 0.3.x): files that are not
+            // MP4/H.264/AAC are served as HLS so DLNA renderers get them too.
             let quality = QualityPreset {
                 resolution: Some("720p".into()),
                 bitrate: Some("5M".into()),
@@ -684,6 +778,15 @@ async fn play(
                 None,
             )
         };
+    // Sidecar subtitle (.vtt) next to the video, served to the device by URL.
+    let subtitle_url = find_subtitle_file(&file_path).map(|subtitle_path| {
+        let subtitle_id = register_subtitle(&subtitle_path);
+        log::info!("[Cast] Found subtitle: {}", subtitle_path.display());
+        format!(
+            "http://{}:{}/api/cast-media/{}/subs/subtitles.vtt",
+            local_ip, port, subtitle_id
+        )
+    });
     let title = file_path
         .file_stem()
         .and_then(|name| name.to_str())
@@ -697,11 +800,15 @@ async fn play(
         "content_type": content_type,
         "title": title,
         "image_id": image_id,
+        "subtitle_url": subtitle_url.clone(),
     });
     let result = match addon_post(state.http_client(), "/play", &addon_body).await {
         Ok(result) => result,
         Err(e) => {
             unregister_media_url(&media_url);
+            if let Some(subtitle_url) = &subtitle_url {
+                unregister_media_url(subtitle_url);
+            }
             if let Some(stream_id) = &transcode_stream_id {
                 state.transcode_manager().stop_stream(stream_id);
             }
@@ -746,6 +853,7 @@ async fn play(
             media_url: media_url.clone(),
             transcode_stream_id,
             svp_stream_id,
+            subtitle_url: subtitle_url.clone(),
             position: 0.0,
             duration,
         });
@@ -755,6 +863,7 @@ async fn play(
         "success": true,
         "status": "casting",
         "media_url": media_url,
+        "subtitle_url": subtitle_url,
         "file_path": body.file_path,
         "duration": duration,
     })))
@@ -926,4 +1035,56 @@ async fn status(
     };
 
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+#[cfg(test)]
+mod subtitle_tests {
+    use super::*;
+
+    fn touch(dir: &Path, name: &str) {
+        std::fs::write(dir.join(name), b"WEBVTT\n").unwrap();
+    }
+
+    #[test]
+    fn prefers_vtt_sharing_the_video_stem() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(dir.path(), "a_other.vtt");
+        touch(dir.path(), "movie.en.vtt");
+        touch(dir.path(), "movie.mp4");
+        let found = find_subtitle_file(&dir.path().join("movie.mp4")).unwrap();
+        assert_eq!(found.file_name().unwrap(), "movie.en.vtt");
+    }
+
+    #[test]
+    fn falls_back_to_any_vtt_in_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(dir.path(), "b.vtt");
+        touch(dir.path(), "a.VTT");
+        touch(dir.path(), "movie.mp4");
+        let found = find_subtitle_file(&dir.path().join("movie.mp4")).unwrap();
+        assert_eq!(found.file_name().unwrap(), "a.VTT");
+    }
+
+    #[test]
+    fn ignores_non_vtt_files_and_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(dir.path(), "movie.srt");
+        touch(dir.path(), "movie.mp4");
+        std::fs::create_dir(dir.path().join("movie.vtt")).unwrap();
+        assert!(find_subtitle_file(&dir.path().join("movie.mp4")).is_none());
+    }
+
+    #[test]
+    fn unregistering_a_cast_media_url_drops_the_subtitle_registration() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(dir.path(), "movie.vtt");
+        let id = register_subtitle(&dir.path().join("movie.vtt"));
+        let url = format!(
+            "http://192.168.1.2:8790/api/cast-media/{}/subs/subtitles.vtt",
+            id
+        );
+        assert!(REGISTERED_SUBTITLES.lock().unwrap().contains_key(&id));
+        unregister_media_url(&url);
+        assert!(!REGISTERED_SUBTITLES.lock().unwrap().contains_key(&id));
+    }
 }

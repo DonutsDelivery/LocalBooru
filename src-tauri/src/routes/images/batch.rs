@@ -218,6 +218,28 @@ pub async fn batch_retag(
     })))
 }
 
+/// Reject manual age detection while the global toggle is off.
+fn ensure_age_detection_enabled(data_dir: &std::path::Path) -> Result<(), AppError> {
+    if crate::routes::settings::is_age_detection_enabled(data_dir) {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest("Age detection is not enabled".into()))
+    }
+}
+
+/// Clear stored age detection results for one image in a directory DB.
+fn clear_age_detection_data(
+    conn: &rusqlite::Connection,
+    image_id: i64,
+) -> Result<usize, rusqlite::Error> {
+    conn.execute(
+        "UPDATE images SET num_faces = NULL, min_detected_age = NULL,
+         max_detected_age = NULL, detected_ages = NULL, age_detection_data = NULL
+         WHERE id = ?1",
+        params![image_id],
+    )
+}
+
 /// POST /api/images/batch/age-detect — Queue age detection for multiple images.
 pub async fn batch_age_detect(
     State(state): State<AppState>,
@@ -229,6 +251,8 @@ pub async fn batch_age_detect(
     let total_requested = request.image_ids.len();
 
     let (queued, errors) = tokio::task::spawn_blocking(move || {
+        ensure_age_detection_enabled(state_clone.data_dir())?;
+
         let mut queued = 0i64;
         let mut errors: Vec<serde_json::Value> = Vec::new();
 
@@ -240,6 +264,20 @@ pub async fn batch_age_detect(
                     continue;
                 }
             };
+
+            // Clear existing results so the image is re-detected from scratch.
+            if let Some(dir_id) = dir_id {
+                let cleared = (|| -> Result<(), AppError> {
+                    let pool = state_clone.directory_db().get_pool(dir_id)?;
+                    let conn = pool.get()?;
+                    clear_age_detection_data(&conn, *image_id)?;
+                    Ok(())
+                })();
+                if let Err(e) = cleared {
+                    errors.push(json!({"id": image_id, "error": e.to_string()}));
+                    continue;
+                }
+            }
 
             let payload = json!({
                 "image_id": image_id,
@@ -471,4 +509,74 @@ fn move_single_image(state: &AppState, image_id: i64, target_path: &str) -> Resu
     }
 
     Err(AppError::NotFound("Image not found".into()))
+}
+
+#[cfg(test)]
+mod age_detect_tests {
+    use super::*;
+    use crate::db::schema::init_directory_db;
+    use rusqlite::Connection;
+
+    #[test]
+    fn batch_age_detect_is_rejected_while_age_detection_is_disabled() {
+        let data_dir =
+            std::env::temp_dir().join(format!("localbooru-batch-age-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        assert!(matches!(
+            ensure_age_detection_enabled(&data_dir),
+            Err(AppError::BadRequest(_))
+        ));
+        std::fs::write(
+            data_dir.join("settings.json"),
+            r#"{"age_detection": {"enabled": true}}"#,
+        )
+        .unwrap();
+        assert!(ensure_age_detection_enabled(&data_dir).is_ok());
+
+        std::fs::remove_dir_all(data_dir).unwrap();
+    }
+
+    #[test]
+    fn batch_age_detect_clears_prior_results_for_only_the_requested_image() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_directory_db(&conn).unwrap();
+        for hash in ["a", "b"] {
+            conn.execute(
+                "INSERT INTO images (filename, file_hash, num_faces, min_detected_age,
+                 max_detected_age, detected_ages, age_detection_data)
+                 VALUES (?1, ?1, 2, 10, 40, '10,40', '{}')",
+                params![hash],
+            )
+            .unwrap();
+        }
+
+        assert_eq!(clear_age_detection_data(&conn, 1).unwrap(), 1);
+        let cleared: (bool, bool, bool, bool, bool) = conn
+            .query_row(
+                "SELECT num_faces IS NULL, min_detected_age IS NULL, max_detected_age IS NULL,
+                        detected_ages IS NULL, age_detection_data IS NULL
+                 FROM images WHERE id = 1",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(cleared, (true, true, true, true, true));
+        let untouched: Option<String> = conn
+            .query_row(
+                "SELECT age_detection_data FROM images WHERE id = 2",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(untouched.as_deref(), Some("{}"));
+    }
 }

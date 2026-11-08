@@ -1,3 +1,4 @@
+pub mod danbooru_tags;
 pub mod directory_watcher;
 pub mod events;
 pub mod file_tracker;

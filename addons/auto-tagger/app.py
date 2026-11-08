@@ -88,7 +88,7 @@ MODEL_INPUT_SIZE = 448
 
 # Default thresholds (can be overridden via env vars)
 GENERAL_THRESHOLD = float(os.environ.get("TAGGER_THRESHOLD", "0.35"))
-CHARACTER_THRESHOLD = float(os.environ.get("TAGGER_CHARACTER_THRESHOLD", "0.75"))
+CHARACTER_THRESHOLD = float(os.environ.get("TAGGER_CHARACTER_THRESHOLD", "0.85"))
 
 # ─── Model directory resolution ──────────────────────────────────────────────
 

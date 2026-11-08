@@ -69,7 +69,7 @@ vi.mock('./hooks/useVideoStreaming', async () => {
     mocks.audio = audio
     return { nativeSvpPlayback: mocks.embedded, svpConfigLoaded: mocks.configLoaded, svpConfig, setSvpConfig,
       sourceResolution: { width: 1920, height: 1080 }, setSourceResolution: mocks.sourceResolution,
-      streamTransitioningRef: { current: false }, opticalFlowConfig: { enabled: false },
+      streamTransitioningRef: { current: false },
       capturePlaybackIntent: () => ({ position: ref.current.currentTime, shouldPlay: !ref.current.paused }),
       handleQualityChange: mocks.handleEncodedQuality, setSvpError: mocks.noop, setSvpLoading: mocks.noop,
       checkCodecFallback: mocks.noop, getCurrentAbsoluteTime: () => ref.current?.currentTime ?? 0,

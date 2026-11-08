@@ -608,9 +608,14 @@ async fn reset_queue(State(state): State<AppState>) -> Result<Json<Value>, AppEr
 #[derive(Deserialize)]
 struct TagUntaggedParams {
     directory_id: Option<i64>,
+    /// Re-tag every image, not only untagged ones. Restores ratings that
+    /// 2.0.0-2.1.0 never saved; manual tags are kept.
+    #[serde(default)]
+    retag: bool,
 }
 
-/// POST /api/library/tag-untagged — Enqueue TASK_TAG tasks for all untagged images.
+/// POST /api/library/tag-untagged — Enqueue TASK_TAG tasks for all untagged
+/// images, or for every image with `retag=true`.
 async fn tag_untagged(
     State(state): State<AppState>,
     Query(params): Query<TagUntaggedParams>,
@@ -627,10 +632,11 @@ async fn tag_untagged(
         for dir_id in dir_ids {
             if let Ok(pool) = state_clone.directory_db().get_pool(dir_id) {
                 if let Ok(conn) = pool.get() {
-                    // Find images with no tags
-                    let mut stmt = conn.prepare(
-                        "SELECT id FROM images WHERE id NOT IN (SELECT DISTINCT image_id FROM image_tags)",
-                    )?;
+                    let mut stmt = conn.prepare(if params.retag {
+                        "SELECT id FROM images"
+                    } else {
+                        "SELECT id FROM images WHERE id NOT IN (SELECT DISTINCT image_id FROM image_tags)"
+                    })?;
 
                     let image_ids: Vec<i64> = stmt
                         .query_map([], |row| row.get(0))
@@ -662,45 +668,56 @@ async fn tag_untagged(
     .await?
 }
 
-/// POST /api/library/detect-ages — Enqueue TASK_AGE_DETECT tasks for all images.
+/// POST /api/library/detect-ages — Enqueue TASK_AGE_DETECT tasks for images that
+/// lack age data, in directories that opted in via `auto_age_detect`.
 async fn detect_ages(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let state_clone = state.clone();
-    tokio::task::spawn_blocking(move || {
-        let dir_ids = state_clone.directory_db().get_all_directory_ids();
+    tokio::task::spawn_blocking(move || -> Result<Json<Value>, AppError> {
+        if !crate::routes::settings::is_age_detection_enabled(state_clone.data_dir()) {
+            return Ok(Json(
+                json!({ "error": "Age detection is not enabled", "queued": 0 }),
+            ));
+        }
+
+        let lib = state_clone.library_manager().primary().clone();
+        let dir_ids: Vec<i64> = {
+            let conn = lib.main_pool.get()?;
+            let mut stmt =
+                conn.prepare("SELECT id FROM watch_directories WHERE auto_age_detect = 1")?;
+            let ids = stmt
+                .query_map([], |row| row.get(0))?
+                .filter_map(|row| row.ok())
+                .collect();
+            ids
+        };
+        if dir_ids.is_empty() {
+            return Ok(Json(
+                json!({ "message": "No directories have age detection enabled", "queued": 0 }),
+            ));
+        }
+
         let mut queued: i64 = 0;
-
         for dir_id in dir_ids {
-            if let Ok(pool) = state_clone.directory_db().get_pool(dir_id) {
-                if let Ok(conn) = pool.get() {
-                    // Enqueue age detection for all images
-                    let mut stmt = conn.prepare("SELECT id FROM images")?;
-
-                    let image_ids: Vec<i64> = stmt
-                        .query_map([], |row| row.get(0))
-                        .ok()
-                        .map(|rows| rows.filter_map(|r| r.ok()).collect())
-                        .unwrap_or_default();
-
-                    for image_id in image_ids {
-                        let payload = json!({
-                            "image_id": image_id,
-                            "directory_id": dir_id
-                        });
-                        if let Ok(Some(_)) = task_queue::enqueue_task(
-                            &state_clone,
-                            task_queue::TASK_AGE_DETECT,
-                            &payload,
-                            5, // low priority
-                            Some(image_id),
-                        ) {
-                            queued += 1;
-                        }
-                    }
-                }
+            match task_queue::enqueue_missing_age_detection(&state_clone, &lib, dir_id) {
+                Ok(count) => queued += i64::from(count),
+                Err(e) => log::warn!(
+                    "[Library] Failed to queue age detection for directory #{}: {}",
+                    dir_id,
+                    e
+                ),
             }
         }
 
-        Ok::<_, AppError>(Json(json!({ "queued": queued })))
+        if queued == 0 {
+            return Ok(Json(json!({
+                "message": "No images need age detection (check directory settings)",
+                "queued": 0
+            })));
+        }
+        Ok(Json(json!({
+            "message": format!("Queued age detection for {} images", queued),
+            "queued": queued
+        })))
     })
     .await?
 }

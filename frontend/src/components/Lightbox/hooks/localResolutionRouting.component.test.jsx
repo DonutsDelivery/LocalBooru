@@ -7,7 +7,6 @@ const api = vi.hoisted(() => ({
   getMediaUrl: vi.fn(path => path), getAssetUrl: vi.fn(path => `asset://${path}`),
   isUsingLocalServer: vi.fn(() => state.embedded),
   getSVPConfig: vi.fn(async () => ({ enabled: state.svp })),
-  playVideoInterpolated: vi.fn(), stopInterpolatedStream: vi.fn(async () => {}),
   playVideoSVP: vi.fn(async () => ({ success: true, stream_url: '/synthetic-svp.m3u8' })),
   stopSVPStream: vi.fn(async () => { api.cleanupTargets.push({ type: 'svp', embedded: state.embedded }) }),
   playVideoTranscode: vi.fn(async () => ({ success: true, stream_url: '/synthetic-transcode.m3u8' })),
