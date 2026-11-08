@@ -22,6 +22,7 @@ import { useAutoAdvance } from './hooks/useAutoAdvance'
 import { useShareStream } from './hooks/useShareStream'
 import { useCastSession } from './hooks/useCastSession'
 import { useVideoGestures } from './hooks/useVideoGestures'
+import { isDoubleClickZone } from './utils/doubleClickZone'
 import { useAddonStatus } from '../../hooks/useAddonStatus'
 import { useImageWorkflow } from '../../hooks/useImageWorkflow'
 import { curationActionForSwipe } from '../../utils/lightboxGestures.js'
@@ -804,10 +805,23 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     // Don't zoom if clicking on interactive elements
     if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, .lightbox-adjustments, .lightbox-video-controls')) return
 
+    // Only the middle, where a single click doesn't navigate or seek. Video
+    // zones are measured on the video element, like handleVideoClick does.
+    const isVideoMedia = isVideo(image?.original_filename)
+    const zoneEl = (isVideoMedia && e.target.closest?.('video')) || e.currentTarget
+    const rect = zoneEl.getBoundingClientRect()
+    if (!isDoubleClickZone({
+      ratio: (e.clientX - rect.left) / rect.width,
+      width: e.currentTarget.getBoundingClientRect().width,
+      isVideo: isVideoMedia,
+      zoomed: zoomPan.zoom.scale > 1,
+      curation: !!curationMode,
+    })) return
+
     resetHideTimer()
 
     // Videos: double-click toggles fullscreen (VLC behavior)
-    if (isVideo(image?.original_filename)) {
+    if (isVideoMedia) {
       handleToggleFullscreen()
       return
     }
@@ -830,7 +844,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       // Reset zoom
       zoomPan.setZoom({ scale: 1, x: 0, y: 0 })
     }
-  }, [zoomPan, resetHideTimer, image?.original_filename, handleToggleFullscreen])
+  }, [zoomPan, resetHideTimer, image?.original_filename, handleToggleFullscreen, curationMode])
 
   // Toggle favorite
   const handleToggleFavorite = useCallback(async () => {
