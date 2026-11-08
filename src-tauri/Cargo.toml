@@ -1,6 +1,6 @@
 [package]
 name = "localbooru"
-version = "2.1.0"
+version = "2.1.1"
 description = "Local image, video, and music library"
 authors = ["DonutsDelivery <donutsdelivery@users.noreply.github.com>"]
 license = "GPL-3.0-only"
