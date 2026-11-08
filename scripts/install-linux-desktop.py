@@ -78,18 +78,11 @@ def main():
     if not staged:
         text = text.replace("Icon=" + APP_ID, "Icon=" + str(icon))
     atomic_write(applications / (APP_ID + ".desktop"), text.encode())
+    # One install, one desktop entry: retire legacy ids instead of hiding them.
     for name in LEGACY_IDS:
         legacy = applications / name
         if legacy.is_file() and "Name=DonutMediaCenter\n" in legacy.read_text():
-            if staged:
-                legacy.unlink()
-            else:
-                # Old bookmarks and launchers continue working without duplicate app-menu entries.
-                lines = legacy.read_text().splitlines()
-                lines = [line for line in lines if not line.startswith(("Icon=", "StartupWMClass=", "NoDisplay="))]
-                lines[lines.index("[Desktop Entry]") + 1:lines.index("[Desktop Entry]") + 1] = [
-                    "Icon=" + APP_ID, "StartupWMClass=localbooru", "NoDisplay=true"]
-                atomic_write(legacy, ("\n".join(lines) + "\n").encode())
+            legacy.unlink()
     if not staged:
         refresh(data_dir)
     print("Registered DonutMediaCenter desktop entry and icon:", applications / (APP_ID + ".desktop"))
