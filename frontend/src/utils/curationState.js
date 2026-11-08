@@ -21,8 +21,10 @@ export function createCurationActionLock() {
   }
 }
 
+// A kept item is favorited by definition, so remember it that way: going back
+// reopens it as a favorite instead of whatever stale flag the queue had.
 export function commitCurationAction(state, kind, item, countedDate) {
-  const action = { kind, item, countedDate }
+  const action = { kind, item: kind === 'keep' ? { ...item, is_favorite: true } : item, countedDate }
   return {
     ...state,
     queue: state.queue.slice(1),
@@ -34,6 +36,12 @@ export function commitCurationAction(state, kind, item, countedDate) {
     complete: false,
     refillError: null,
   }
+}
+
+// Set the current (queue[0]) item's favorite flag without touching the rest.
+export function setCurrentCurationFavorite(state, isFavorite) {
+  if (!state.queue[0]) return state
+  return { ...state, queue: [{ ...state.queue[0], is_favorite: isFavorite }, ...state.queue.slice(1)] }
 }
 
 // Curation always acts on queue[0]. Rotate pending candidates so the lightbox

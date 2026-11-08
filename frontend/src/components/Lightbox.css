@@ -2777,6 +2777,37 @@ video::cue {
 .curation-action { min-width: 150px; min-height: 64px; gap: 8px; border-radius: 18px; font-size: 1.12rem; line-height: 1; }
 .curation-action.keep { background: rgba(21,120,67,.14); border-color: rgba(112,239,168,.8); color: #70efa8; }
 .curation-action.keep span { font-size: 2rem; }
+.curation-controls button.curation-action.keep.is-favorited {
+  background: linear-gradient(180deg, #ffd45a, #f2a900);
+  border-color: #fff1b8;
+  color: #2b1d00;
+  text-shadow: none;
+  box-shadow: 0 0 0 3px rgba(255,200,40,.35), 0 4px 18px rgba(0,0,0,.35);
+}
+.curation-controls button.curation-action.keep.is-favorited:hover { background: linear-gradient(180deg, #ffe07f, #ffb81f); }
+.curation-action.next { background: rgba(255,255,255,.14); }
+.curation-favorited-badge {
+  position: fixed;
+  top: max(16px, var(--safe-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2050;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 18px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffd45a, #f2a900);
+  border: 1px solid #fff1b8;
+  color: #2b1d00;
+  text-align: center;
+  box-shadow: 0 0 0 3px rgba(255,200,40,.3), 0 6px 22px rgba(0,0,0,.45);
+  pointer-events: none;
+}
+.curation-favorited-badge strong { font-size: 1.05rem; letter-spacing: .02em; }
+.curation-favorited-badge small { font-size: .78rem; font-weight: 600; opacity: .85; }
 
 /* Keep curation decisions clear of the playback timeline and transport. */
 .curation-active.lightbox-video .curation-controls {

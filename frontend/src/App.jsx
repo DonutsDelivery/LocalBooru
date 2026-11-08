@@ -2178,6 +2178,7 @@ function Gallery({ mediaType = 'image' }) {
             goal: curation.goal,
             progress: curation.progress,
             onKeep: curation.keep,
+            onNext: curation.keepFavorited,
             onDiscard: curation.discard,
             onUndo: curation.undo,
           } : null}
