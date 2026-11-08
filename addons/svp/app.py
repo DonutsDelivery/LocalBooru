@@ -272,6 +272,42 @@ def check_nvenc() -> bool:
         return False
 
 
+# Peak-bitrate ceiling for HLS streams whose caller sets no bitrate. Each value is
+# 1.5x the label the quality menu advertises (480p 4, 720p 8, 1080p 12, 1080p
+# enhanced 20, 1440p 30 Mbps), so it trims only VBR peaks: an uncapped
+# `-rc vbr -cq 23` 60 fps encode can exceed 40 Mbps, which a phone cannot
+# download in real time over Wi-Fi.
+HLS_MAX_BITRATE_KBPS = ((480, 6000), (720, 12000), (1080, 20000), (1440, 30000))
+HLS_MAX_BITRATE_FALLBACK_KBPS = 45000
+# One GOP (2 s) per segment. hls.js reloads a live playlist once per target
+# duration, so shorter segments are discovered sooner, and a keyframe-aligned cut
+# means no segment starts on a frame that depends on the previous one.
+HLS_SEGMENT_SECONDS = 2
+
+
+def bitrate_cap_args(height: int) -> list:
+    """Encoder `-maxrate/-bufsize` for an output of `height` pixels."""
+    kbps = next((rate for limit, rate in HLS_MAX_BITRATE_KBPS if height <= limit),
+                HLS_MAX_BITRATE_FALLBACK_KBPS)
+    return ["-maxrate", f"{kbps}k", "-bufsize", f"{kbps * 2}k"]
+
+
+def hls_output_args(target_fps: int, segment_pattern: str, playlist: str) -> list:
+    """HLS muxer arguments: GOP-aligned segments, cut only on keyframes.
+
+    `split_by_time` is deliberately absent. With it ffmpeg cuts a frame before the
+    keyframe, so every segment but the first starts on a P frame and the first is
+    one frame short.
+    """
+    return [
+        "-g", str(target_fps * HLS_SEGMENT_SECONDS), "-keyint_min", str(target_fps),
+        "-f", "hls", "-hls_time", str(HLS_SEGMENT_SECONDS), "-hls_list_size", "0",
+        "-hls_flags", "append_list",
+        "-hls_segment_filename", segment_pattern,
+        playlist,
+    ]
+
+
 # ─── SVP presets ──────────────────────────────────────────────────────────────
 
 SVP_PRESETS = {
@@ -773,18 +809,21 @@ class SVPStream:
                                "-map", "0:v", "-map", "1:a?"])
             encode_cmd.extend(["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"])
 
+            output_height = (self.target_resolution or (self._width, self._height))[1]
             if self.use_nvenc:
                 encode_cmd.extend(["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll"])
                 if self.target_bitrate:
                     encode_cmd.extend(["-rc", "cbr", "-b:v", self.target_bitrate])
                 else:
                     encode_cmd.extend(["-rc", "vbr", "-cq", "23", "-b:v", "0"])
+                    encode_cmd.extend(bitrate_cap_args(output_height))
             else:
                 encode_cmd.extend(["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency"])
                 if self.target_bitrate:
                     encode_cmd.extend(["-b:v", self.target_bitrate])
                 else:
                     encode_cmd.extend(["-crf", "23"])
+                    encode_cmd.extend(bitrate_cap_args(output_height))
 
             encode_cmd.extend(["-c:a", "aac", "-b:a", "192k"])
 
@@ -795,14 +834,8 @@ class SVPStream:
                     f"[SVP {self.stream_id}] Audio peak attenuation: {self._audio_gain_db:+.1f} dB"
                 )
 
-            gop = self.target_fps * 2
-            encode_cmd.extend([
-                "-g", str(gop), "-keyint_min", str(self.target_fps),
-                "-f", "hls", "-hls_time", "4", "-hls_list_size", "0",
-                "-hls_flags", "append_list+split_by_time",
-                "-hls_segment_filename", str(self._temp_dir / "segment_%03d.ts"),
-                str(self.playlist_path),
-            ])
+            encode_cmd.extend(hls_output_args(
+                self.target_fps, str(self._temp_dir / "segment_%03d.ts"), str(self.playlist_path)))
 
             logger.info(f"[SVP {self.stream_id}] Starting pipeline")
             env = get_clean_env()

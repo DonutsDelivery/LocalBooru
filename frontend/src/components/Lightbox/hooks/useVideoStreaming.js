@@ -27,7 +27,8 @@ import { MSESessionController } from '../utils/MSESessionController'
 import { useAudioNormalization } from './useAudioNormalization'
 import { shouldRestartStalledSVP } from './svpStallGuard'
 import { getCodecFallbackStartPosition } from './codecFallback'
-import { shouldStartSVPPlayback } from './svpBuffering'
+import { shouldStartSVPPlayback, svpBufferedAhead } from './svpBuffering'
+import { SVP_HLS_CONFIG } from './svpHlsConfig'
 import { svpPlaybackError } from '../../../utils/svpPlayback'
 import { localRawResizeAvailable } from '../../../utils/localVideoResolution'
 import {
@@ -1229,15 +1230,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       return false
     }
 
-    const bufferedAhead = () => {
-      const ranges = video.buffered
-      for (let i = 0; i < ranges.length; i++) {
-        if (ranges.start(i) <= video.currentTime && ranges.end(i) > video.currentTime) {
-          return ranges.end(i) - video.currentTime
-        }
-      }
-      return 0
-    }
+    const bufferedAhead = () => svpBufferedAhead(video.buffered, video.currentTime)
 
     if (Hls.isSupported()) {
       // Pause video during transition to prevent playing old buffered content
@@ -1265,23 +1258,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       // Remove direct video src (if any) - HLS will use MediaSource instead
       video.removeAttribute('src')
 
-      const hls = new Hls({
-        enableWorker: true,
-        autoStartLoad: true,
-        lowLatencyMode: false,
-        startPosition: 0,
-        backBufferLength: 600,
-        maxBufferLength: 120,
-        maxMaxBufferLength: 600,
-        // Retry manifest loading while SVP produces initial segments
-        manifestLoadingMaxRetry: 30,
-        manifestLoadingRetryDelay: 500,
-        manifestLoadingMaxRetryTimeout: 60000,
-        levelLoadingMaxRetry: 10,
-        levelLoadingRetryDelay: 500,
-        fragLoadingMaxRetry: 10,
-        fragLoadingRetryDelay: 500,
-      })
+      const hls = new Hls(SVP_HLS_CONFIG)
       ownedHls = hls
 
       // Attach media and load source
