@@ -10,6 +10,7 @@ import {
   mergeCandidates,
   rotateCurationCandidates,
   seedCandidates,
+  setCurrentCurationFavorite,
 } from './curationState.js'
 
 // AC: @curation-gesture-decisions-recovery ac-4
@@ -127,4 +128,24 @@ test('repeated first-page refills reach items beyond fifty without skips', () =>
     queue = mergeCandidates(queue, eligible.slice(0, 50))
   }
   assert.deepEqual(visited, items.map(item => item.id))
+})
+
+test('a committed keep remembers the item as favorited so going back reopens it favorited', () => {
+  const item = { id: 1, directory_id: 2, is_favorite: false }
+  const state = { queue: [item, { id: 2 }], processed: 0, actionHistory: [] }
+  const kept = commitCurationAction(state, 'keep', item, '2026-07-19')
+  assert.equal(kept.lastAction.item.is_favorite, true)
+  assert.equal(item.is_favorite, false)
+  const discarded = commitCurationAction(state, 'discard', item, '2026-07-19')
+  assert.equal(discarded.lastAction.item, item)
+})
+
+test('setCurrentCurationFavorite changes only the current item without mutating', () => {
+  const state = { queue: [{ id: 1, is_favorite: true }, { id: 2, is_favorite: true }], busy: true }
+  const next = setCurrentCurationFavorite(state, false)
+  assert.deepEqual(next.queue, [{ id: 1, is_favorite: false }, { id: 2, is_favorite: true }])
+  assert.equal(state.queue[0].is_favorite, true)
+  assert.equal(next.busy, true)
+  const empty = { queue: [] }
+  assert.equal(setCurrentCurationFavorite(empty, true), empty)
 })

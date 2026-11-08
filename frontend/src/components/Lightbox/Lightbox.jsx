@@ -178,6 +178,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [svpPipelineGeneration, setSvpPipelineGeneration] = useState(0)
 
   const image = images[currentIndex]
+  // In curation the queue item is the source of truth, so going back and forth never shows a stale state.
+  const favoriteActive = curationMode ? Boolean(image?.is_favorite) : isFavorited
   const isRemote = image?._remote === true
   const currentImageKey = image?.url ?? image?.file_path ?? image?.id
   const embeddedVideoBackend = isUsingLocalServer()
@@ -835,7 +837,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     if (processing || !image || image._remote) return
     setProcessing(true)
 
-    const wasActive = isFavorited
+    const wasActive = favoriteActive
     setIsFavorited(!wasActive)
 
     try {
@@ -853,7 +855,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
 
     setProcessing(false)
-  }, [image, isFavorited, processing, onImageUpdate])
+  }, [image, favoriteActive, processing, onImageUpdate])
 
   // Delete image with filesystem deletion
   const handleDelete = useCallback(async () => {
@@ -1384,6 +1386,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             e.preventDefault()
             curationMode.onKeep()
             return
+          case 'Enter':
+            // Enter keeps a favorited item and moves on; otherwise leave it alone.
+            if (!image?.is_favorite) break
+            e.preventDefault()
+            curationMode.onNext()
+            return
           case 'Delete':
             e.preventDefault()
             return
@@ -1582,7 +1590,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = ''
     }
-  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm, playback, image?.original_filename, handleToggleFullscreen, subtitles, curationMode, casting, svpControlsReady])
+  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm, playback, image?.original_filename, handleToggleFullscreen, subtitles, curationMode, image?.is_favorite, casting, svpControlsReady])
 
   // Auto-focus Cancel button when delete dialog opens
   useEffect(() => {
@@ -1857,13 +1865,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         </button>
         {!isRemote && <>
         <button
-          className={`lightbox-btn lightbox-favorite ${isFavorited ? 'active' : ''}`}
+          className={`lightbox-btn lightbox-favorite ${favoriteActive ? 'active' : ''}`}
           onClick={handleToggleFavorite}
           disabled={processing}
-          title={isFavorited ? 'Remove from favorites (F)' : 'Add to favorites (F)'}
-          aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
+          title={favoriteActive ? 'Remove from favorites (F)' : 'Add to favorites (F)'}
+          aria-label={favoriteActive ? 'Remove from favorites' : 'Add to favorites'}
         >
-          <svg viewBox="0 0 24 24" fill={isFavorited ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+          <svg viewBox="0 0 24 24" fill={favoriteActive ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
           </svg>
         </button>
@@ -2936,11 +2944,35 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         )}
       </div>
 
+      {curationMode && favoriteActive && (
+        <div className="curation-favorited-badge" role="status">
+          <strong><span aria-hidden="true">★</span> Favorited</strong>
+          <small>Favorite again to remove it, or press Next to keep it and continue.</small>
+        </div>
+      )}
+
       {curationMode && (
-        <div className="curation-controls" onClick={event => event.stopPropagation()}>
-          <button className="curation-action keep" onClick={curationMode.onKeep} disabled={curationMode.busy} title={isVideoFile ? "Favorite and keep (F or K)" : "Favorite and keep (Space, F or K)"}>
-            <span aria-hidden="true">★</span> Favorite
+        <div
+          className="curation-controls"
+          onClick={event => event.stopPropagation()}
+          title="Left or Back: revisit the previous item. Right or D: discard. Favorite toggles. Next keeps a favorited item."
+        >
+          <button
+            className={`curation-action keep ${favoriteActive ? 'is-favorited' : ''}`}
+            onClick={curationMode.onKeep}
+            disabled={curationMode.busy}
+            aria-pressed={favoriteActive}
+            title={favoriteActive
+              ? `Remove favorite and stay on this item (${isVideoFile ? 'F or K' : 'Space, F or K'})`
+              : `Favorite and go to the next item (${isVideoFile ? 'F or K' : 'Space, F or K'})`}
+          >
+            <span aria-hidden="true">★</span> {favoriteActive ? 'Favorited' : 'Favorite'}
           </button>
+          {favoriteActive && (
+            <button className="curation-action next" onClick={curationMode.onNext} disabled={curationMode.busy} title="Keep it favorited and go to the next item (Enter)">
+              Next <span aria-hidden="true">›</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -2959,11 +2991,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
       {/* Mobile favorite button - bottom center like camera shutter */}
       <button
-        className={`lightbox-mobile-favorite ${isFavorited ? 'active' : ''}`}
+        className={`lightbox-mobile-favorite ${favoriteActive ? 'active' : ''}`}
         onClick={handleToggleFavorite}
         disabled={processing}
       >
-        <svg viewBox="0 0 24 24" fill={isFavorited ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+        <svg viewBox="0 0 24 24" fill={favoriteActive ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
           <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
         </svg>
       </button>

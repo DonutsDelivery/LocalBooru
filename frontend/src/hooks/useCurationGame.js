@@ -16,6 +16,7 @@ import {
   mergeCandidates,
   rotateCurationCandidates,
   seedCandidates,
+  setCurrentCurationFavorite,
 } from '../utils/curationState'
 import {
   getCurationProgress,
@@ -101,19 +102,30 @@ export function useCurationGame({ loadedImages, filters, onGalleryRefresh }) {
     }
   }, [filters, loadedImages, refill])
 
-  const applyAction = useCallback(async (kind) => {
+  // alreadyFavorited re-commits a favorited item as kept without calling the API.
+  const applyAction = useCallback(async (kind, { alreadyFavorited = false } = {}) => {
     if (!actionLock.current.tryAcquire()) return
     const snapshot = stateRef.current
     const item = snapshot.queue[0]
-    if (!item) {
+    if (!item || (alreadyFavorited && !item.is_favorite)) {
       actionLock.current.release()
       return
     }
 
     setState(previous => ({ ...previous, busy: true, refillError: null }))
     try {
-      if (kind === 'keep') await setFavorite(item, true)
-      else await discardForCuration(item, localStorage.getItem('localbooru_dumpster_path'))
+      if (kind === 'keep') {
+        if (!alreadyFavorited) await setFavorite(item, true)
+      } else {
+        // A discarded file must not stay favorited; undo re-favorites it.
+        if (item.is_favorite) await setFavorite(item, false)
+        try {
+          await discardForCuration(item, localStorage.getItem('localbooru_dumpster_path'))
+        } catch (error) {
+          if (item.is_favorite) await setFavorite(item, true).catch(() => {})
+          throw error
+        }
+      }
     } catch (error) {
       toast.error(`${kind === 'keep' ? 'Keep' : 'Discard'} failed: ${error.message}`)
       setState(previous => ({ ...previous, busy: false }))
@@ -153,8 +165,19 @@ export function useCurationGame({ loadedImages, filters, onGalleryRefresh }) {
     const action = history[history.length - 1] || snapshot.lastAction
     setState(previous => ({ ...previous, busy: true }))
     try {
-      if (action.kind === 'keep') await setFavorite(action.item, false)
-      else await restoreCurationDiscard(action.item)
+      // Going back after a Favorite keeps it favorited and just reopens the decision.
+      let restoredItem = action.item
+      if (action.kind === 'discard') {
+        await restoreCurationDiscard(action.item)
+        if (action.item.is_favorite) {
+          try {
+            await setFavorite(action.item, true)
+          } catch (error) {
+            toast.error(`Restored, but could not re-favorite: ${error.message}`)
+            restoredItem = { ...action.item, is_favorite: false }
+          }
+        }
+      }
       if (action.countedDate) {
         try {
           undoRecordedCurated(action.countedDate)
@@ -166,7 +189,7 @@ export function useCurationGame({ loadedImages, filters, onGalleryRefresh }) {
       const actionHistory = history.slice(0, -1)
       const next = {
         ...snapshot,
-        queue: [action.item, ...snapshot.queue],
+        queue: [restoredItem, ...snapshot.queue],
         actionHistory,
         lastAction: actionHistory[actionHistory.length - 1] || null,
         processed: Math.max(0, snapshot.processed - 1),
@@ -184,6 +207,28 @@ export function useCurationGame({ loadedImages, filters, onGalleryRefresh }) {
       actionLock.current.release()
     }
   }, [])
+
+  // Favorite on an undecided item favorites it and advances; on an already
+  // favorited item it unfavorites and stays so the decision can be remade.
+  const keep = useCallback(async () => {
+    if (!stateRef.current.queue[0]?.is_favorite) return applyAction('keep')
+    if (!actionLock.current.tryAcquire()) return
+    const item = stateRef.current.queue[0]
+    setState(previous => ({ ...previous, busy: true }))
+    try {
+      await setFavorite(item, false)
+      setState(previous => {
+        const next = { ...setCurrentCurationFavorite(previous, false), busy: false }
+        stateRef.current = next
+        return next
+      })
+    } catch (error) {
+      toast.error(`Remove favorite failed: ${error.message}`)
+      setState(previous => ({ ...previous, busy: false }))
+    } finally {
+      actionLock.current.release()
+    }
+  }, [applyAction])
 
   const navigate = useCallback((direction) => {
     const snapshot = stateRef.current
@@ -278,7 +323,8 @@ export function useCurationGame({ loadedImages, filters, onGalleryRefresh }) {
     gestureVersion: progressVersion,
     start,
     navigate,
-    keep: () => applyAction('keep'),
+    keep,
+    keepFavorited: () => applyAction('keep', { alreadyFavorited: true }),
     discard: () => applyAction('discard'),
     undo,
     retryRefill,
