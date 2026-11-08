@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use notify::event::{ModifyKind, RenameMode};
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Config, Event, EventKind, PollWatcher, RecursiveMode, Watcher};
 use rusqlite::params;
 use tokio::sync::mpsc;
 
@@ -27,19 +27,60 @@ fn is_in_dumpster(path: &std::path::Path) -> bool {
 pub struct DirectoryWatcher {
     state: AppState,
     /// Active watcher handles by directory_id.
-    watches: Arc<Mutex<HashMap<i64, WatchHandle>>>,
+    watches: Arc<WatchMap>,
     /// Parent directories being polled for new subdirectories.
     parent_dirs: Arc<Mutex<HashMap<String, ParentSettings>>>,
     /// Shutdown signal sender.
     shutdown_tx: Option<mpsc::Sender<()>>,
 }
 
+type WatchMap = Mutex<HashMap<i64, WatchHandle>>;
+type EventSink = Arc<dyn Fn(Result<Event, notify::Error>) + Send + Sync>;
+
 struct WatchHandle {
-    _watcher: RecommendedWatcher,
+    watcher: Box<dyn Watcher + Send>,
+    /// Poll watchers for symlinked subdirectories on filesystems without
+    /// usable inotify (FUSE, network mounts).
+    extra_watchers: Vec<Box<dyn Watcher + Send>>,
+    sink: EventSink,
+    /// True when `watcher` is a poll watcher (it follows symlinks on its own).
+    polling: bool,
+    /// Symlinked subdirectories that already have an explicit watch.
+    linked_dirs: HashSet<PathBuf>,
     _path: PathBuf,
     recursive: bool,
-    #[allow(dead_code)]
-    library: Arc<LibraryContext>,
+}
+
+impl WatchHandle {
+    /// Explicitly watch a symlinked subdirectory. Returns true if it is new.
+    ///
+    /// inotify only learns about subdirectories from `ISDIR` events, which
+    /// symlinks never produce, so links created after the watch started would
+    /// otherwise stay unwatched until restart.
+    fn watch_symlinked_dir(&mut self, link: &Path) -> Result<bool, String> {
+        if self.polling || self.linked_dirs.contains(link) {
+            return Ok(false);
+        }
+        if self.linked_dirs.len() >= MAX_SYMLINK_WATCHES {
+            return Err(format!(
+                "more than {} symlinked directories, not watching {}",
+                MAX_SYMLINK_WATCHES,
+                link.display()
+            ));
+        }
+        if needs_polling(link) {
+            let mut poll = new_watcher(true, &self.sink)?;
+            poll.watch(link, RecursiveMode::Recursive)
+                .map_err(|e| format!("Failed to poll {}: {}", link.display(), e))?;
+            self.extra_watchers.push(poll);
+        } else {
+            self.watcher
+                .watch(link, RecursiveMode::Recursive)
+                .map_err(|e| format!("Failed to watch {}: {}", link.display(), e))?;
+        }
+        self.linked_dirs.insert(link.to_path_buf());
+        Ok(true)
+    }
 }
 
 /// Settings inherited by new subdirectories created under a parent.
@@ -56,6 +97,13 @@ struct ParentSettings {
 
 /// How often to poll parent directories for new subdirectories (seconds).
 const PARENT_POLL_INTERVAL_SECS: u64 = 30;
+
+/// How often directories on FUSE/network filesystems are polled for changes
+/// (seconds). inotify never reports changes made outside the local mount.
+const POLL_WATCH_INTERVAL_SECS: u64 = if cfg!(test) { 1 } else { 60 };
+
+/// Upper bound on explicitly watched symlinked subdirectories per directory.
+const MAX_SYMLINK_WATCHES: usize = 256;
 
 impl DirectoryWatcher {
     pub fn new(state: AppState) -> Self {
@@ -416,7 +464,7 @@ fn load_enabled_directories(
 
 fn add_watch(
     state: &AppState,
-    watches: &Arc<Mutex<HashMap<i64, WatchHandle>>>,
+    watches: &Arc<WatchMap>,
     directory_id: i64,
     path: &str,
     recursive: bool,
@@ -432,13 +480,54 @@ fn add_watch(
     let dir_id = directory_id;
     // Capture the tokio runtime handle so we can spawn from the notify thread
     let rt_handle = tokio::runtime::Handle::current();
+    let weak_watches = Arc::downgrade(watches);
+    let polling = needs_polling(&dir_path);
 
-    let mut watcher =
-        notify::recommended_watcher(move |event: Result<Event, notify::Error>| match event {
-            Ok(ev) => handle_fs_event(&state_clone, &lib_clone, dir_id, ev, &rt_handle),
-            Err(e) => log::error!("[Watcher] Error in directory {}: {}", dir_id, e),
-        })
-        .map_err(|e| format!("Failed to create watcher: {}", e))?;
+    let sink: EventSink = Arc::new(move |event: Result<Event, notify::Error>| match event {
+        Ok(ev) => {
+            if !polling && recursive {
+                let links = new_symlinked_dirs(&ev);
+                if !links.is_empty() {
+                    let state = state_clone.clone();
+                    let lib = lib_clone.clone();
+                    let weak = weak_watches.clone();
+                    // Registering a watch waits on the notify thread that is
+                    // running this callback, so hand it to another thread.
+                    rt_handle.spawn_blocking(move || {
+                        register_new_symlinked_dirs(&state, &lib, &weak, dir_id, links);
+                    });
+                }
+            }
+            handle_fs_event(&state_clone, &lib_clone, dir_id, ev, &rt_handle)
+        }
+        Err(e) => log::error!("[Watcher] Error in directory {}: {}", dir_id, e),
+    });
+
+    let handle = start_watch(dir_path, recursive, polling, sink)?;
+
+    if let Ok(mut w) = watches.lock() {
+        w.insert(directory_id, handle);
+    }
+
+    log::info!(
+        "[Watcher] Watching directory {} ({}) [{}{}]",
+        directory_id,
+        path,
+        if recursive { "recursive" } else { "flat" },
+        if polling { ", polling" } else { "" }
+    );
+
+    Ok(())
+}
+
+/// Create the watcher(s) for one directory.
+fn start_watch(
+    dir_path: PathBuf,
+    recursive: bool,
+    polling: bool,
+    sink: EventSink,
+) -> Result<WatchHandle, String> {
+    let mut watcher = new_watcher(polling, &sink)?;
 
     let mode = if recursive {
         RecursiveMode::Recursive
@@ -450,47 +539,195 @@ fn add_watch(
         .watch(&dir_path, mode)
         .map_err(|e| format!("Failed to start watching: {}", e))?;
 
-    // notify's inotify backend doesn't follow symlinks when recursively
-    // discovering subdirectories. Walk the tree ourselves and add explicit
-    // watches for any symlinked directories so their contents are monitored.
-    if recursive {
-        for entry in walkdir::WalkDir::new(&dir_path)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            if entry.path_is_symlink() && entry.file_type().is_dir() {
-                if let Err(e) = watcher.watch(entry.path(), RecursiveMode::Recursive) {
-                    log::warn!(
-                        "[Watcher] Failed to watch symlinked dir {}: {}",
-                        entry.path().display(),
-                        e
-                    );
-                }
+    let mut handle = WatchHandle {
+        watcher,
+        extra_watchers: Vec::new(),
+        sink,
+        polling,
+        linked_dirs: HashSet::new(),
+        _path: dir_path.clone(),
+        recursive,
+    };
+
+    // Give every symlinked subdirectory an explicit watch, using polling for
+    // the ones that live on a filesystem inotify cannot observe.
+    if recursive && !polling {
+        for link in collect_symlinked_dirs(&dir_path) {
+            if let Err(e) = handle.watch_symlinked_dir(&link) {
+                log::warn!("[Watcher] {}", e);
             }
         }
     }
 
-    if let Ok(mut w) = watches.lock() {
-        w.insert(
-            directory_id,
-            WatchHandle {
-                _watcher: watcher,
-                _path: dir_path,
-                recursive,
-                library,
-            },
-        );
+    Ok(handle)
+}
+
+/// inotify on local filesystems, polling where inotify cannot see changes.
+fn new_watcher(polling: bool, sink: &EventSink) -> Result<Box<dyn Watcher + Send>, String> {
+    let sink = sink.clone();
+    let handler = move |event: Result<Event, notify::Error>| sink(event);
+    if polling {
+        let config = Config::default().with_poll_interval(Duration::from_secs(POLL_WATCH_INTERVAL_SECS));
+        PollWatcher::new(handler, config)
+            .map(|w| Box::new(w) as Box<dyn Watcher + Send>)
+            .map_err(|e| format!("Failed to create poll watcher: {}", e))
+    } else {
+        notify::recommended_watcher(handler)
+            .map(|w| Box::new(w) as Box<dyn Watcher + Send>)
+            .map_err(|e| format!("Failed to create watcher: {}", e))
     }
+}
 
-    log::info!(
-        "[Watcher] Watching directory {} ({}) [{}]",
-        directory_id,
-        path,
-        if recursive { "recursive" } else { "flat" }
-    );
+/// Symlinks to directories anywhere under `root` (walkdir skips link loops).
+fn collect_symlinked_dirs(root: &Path) -> Vec<PathBuf> {
+    walkdir::WalkDir::new(root)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path_is_symlink() && e.file_type().is_dir())
+        .map(|e| e.into_path())
+        .collect()
+}
 
-    Ok(())
+/// Paths in a create/rename-in event that are symlinks to directories.
+fn new_symlinked_dirs(event: &Event) -> Vec<PathBuf> {
+    if !matches!(
+        event.kind,
+        EventKind::Create(_)
+            | EventKind::Modify(ModifyKind::Name(RenameMode::To | RenameMode::Both | RenameMode::Any))
+    ) {
+        return Vec::new();
+    }
+    event
+        .paths
+        .iter()
+        .filter(|p| p.is_symlink() && p.is_dir())
+        .cloned()
+        .collect()
+}
+
+/// Watch symlinked directories that appeared after the watch was started and
+/// queue a scan for the files already inside them.
+fn register_new_symlinked_dirs(
+    state: &AppState,
+    lib: &Arc<LibraryContext>,
+    watches: &Weak<WatchMap>,
+    directory_id: i64,
+    links: Vec<PathBuf>,
+) {
+    let Some(watches) = watches.upgrade() else {
+        return;
+    };
+    let mut added = false;
+    let dir_path = {
+        let Ok(mut map) = watches.lock() else {
+            return;
+        };
+        let Some(handle) = map.get_mut(&directory_id) else {
+            return;
+        };
+        for link in &links {
+            match handle.watch_symlinked_dir(link) {
+                Ok(true) => {
+                    added = true;
+                    log::info!("[Watcher] Watching new symlinked directory {}", link.display());
+                }
+                Ok(false) => {}
+                Err(e) => log::warn!("[Watcher] {}", e),
+            }
+        }
+        handle._path.clone()
+    };
+
+    if added {
+        if let Err(e) = task_queue::enqueue_task(
+            state,
+            task_queue::TASK_SCAN_DIRECTORY,
+            &json!({
+                "directory_id": directory_id,
+                "directory_path": dir_path.to_string_lossy(),
+                "library_id": lib.uuid,
+                "recursive": true,
+                "fast_import": true,
+            }),
+            task_queue::PRIORITY_INDEX,
+            None,
+        ) {
+            log::error!(
+                "[Watcher] Failed to queue scan for new symlinked directory in {}: {}",
+                directory_id,
+                e
+            );
+        }
+    }
+}
+
+/// Whether inotify cannot be relied on for `path` because it lives on a FUSE or
+/// network filesystem (changes made outside this mount never raise events).
+fn needs_polling(path: &Path) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let Ok(mountinfo) = std::fs::read_to_string("/proc/self/mountinfo") else {
+            return false;
+        };
+        let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        return mount_fs_type(&mountinfo, &resolved)
+            .map(|t| fs_type_needs_polling(&t))
+            .unwrap_or(false);
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = path;
+        false
+    }
+}
+
+/// Filesystem type of the mount containing `path`, from /proc/self/mountinfo text.
+fn mount_fs_type(mountinfo: &str, path: &Path) -> Option<String> {
+    let mut best: Option<(usize, String)> = None;
+    for line in mountinfo.lines() {
+        let fields: Vec<&str> = line.split(' ').collect();
+        let Some(sep) = fields.iter().position(|f| *f == "-") else {
+            continue;
+        };
+        let (Some(mount_point), Some(fs_type)) = (fields.get(4), fields.get(sep + 1)) else {
+            continue;
+        };
+        let mount_point = PathBuf::from(unescape_mountinfo(mount_point));
+        if path.starts_with(&mount_point) {
+            let depth = mount_point.components().count();
+            // Later entries win ties: they are mounted over earlier ones.
+            if best.as_ref().map_or(true, |(d, _)| depth >= *d) {
+                best = Some((depth, fs_type.to_string()));
+            }
+        }
+    }
+    best.map(|(_, t)| t)
+}
+
+/// mountinfo escapes space, tab, newline and backslash as octal (`\040`).
+fn unescape_mountinfo(field: &str) -> String {
+    let bytes = field.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 3 < bytes.len() && bytes[i + 1..i + 4].iter().all(|b| (b'0'..=b'7').contains(b)) {
+            let v = (bytes[i + 1] - b'0') * 64 + (bytes[i + 2] - b'0') * 8 + (bytes[i + 3] - b'0');
+            out.push(v);
+            i += 4;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn fs_type_needs_polling(fs_type: &str) -> bool {
+    matches!(
+        fs_type,
+        "nfs" | "nfs4" | "cifs" | "smb3" | "smbfs" | "9p" | "afs" | "ceph" | "davfs" | "fuse"
+    ) || (fs_type.starts_with("fuse.") && fs_type != "fuse.portal")
 }
 
 /// Load distinct parent paths and their settings from the DB.
@@ -545,7 +782,7 @@ fn load_parent_directories(state: &AppState) -> Result<Vec<(String, ParentSettin
 /// Uses polling instead of inotify so it works on mounted/network/FUSE drives.
 async fn poll_parent_directories(
     state: AppState,
-    watches: Arc<Mutex<HashMap<i64, WatchHandle>>>,
+    watches: Arc<WatchMap>,
     parent_dirs: Arc<Mutex<HashMap<String, ParentSettings>>>,
 ) {
     loop {
@@ -1111,5 +1348,146 @@ mod tests {
 
         drop(state);
         let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    fn channel_sink() -> (EventSink, std::sync::mpsc::Receiver<Event>) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tx = Mutex::new(tx);
+        let sink: EventSink = Arc::new(move |ev| {
+            if let Ok(ev) = ev {
+                let _ = tx.lock().unwrap().send(ev);
+            }
+        });
+        (sink, rx)
+    }
+
+    /// Wait for an event touching a path that satisfies `pred`.
+    fn wait_for_path(
+        rx: &std::sync::mpsc::Receiver<Event>,
+        secs: u64,
+        pred: impl Fn(&Event, &Path) -> bool,
+    ) -> Option<PathBuf> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(secs);
+        while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+            if let Ok(ev) = rx.recv_timeout(left) {
+                if let Some(p) = ev.paths.iter().find(|p| pred(&ev, p)) {
+                    return Some(p.clone());
+                }
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn mount_fs_type_picks_deepest_mount_and_flags_fuse() {
+        let mountinfo = "\
+24 1 259:2 / / rw - ext4 /dev/root rw
+30 24 0:40 / /mnt/storage rw - ext4 /dev/mapper/storage rw
+31 30 0:50 / /mnt/storage/decrypted rw,nosuid - fuse.gocryptfs /mnt/storage/encrypted-storage rw
+32 24 0:51 / /mnt/my\\040share rw - cifs //nas/share rw
+33 24 0:52 / /run/user/1000/doc rw - fuse.portal portal rw
+";
+        let fs = |p: &str| mount_fs_type(mountinfo, Path::new(p)).unwrap();
+        assert_eq!(fs("/home/user/pics"), "ext4");
+        assert_eq!(fs("/mnt/storage/media"), "ext4");
+        assert_eq!(fs("/mnt/storage/decrypted"), "fuse.gocryptfs");
+        assert_eq!(fs("/mnt/storage/decrypted/a/b"), "fuse.gocryptfs");
+        // A sibling that merely shares a name prefix is not inside the mount.
+        assert_eq!(fs("/mnt/storage/decrypted-other"), "ext4");
+        assert_eq!(fs("/mnt/my share/x"), "cifs");
+
+        assert!(fs_type_needs_polling("fuse.gocryptfs"));
+        assert!(fs_type_needs_polling("nfs4"));
+        assert!(fs_type_needs_polling("cifs"));
+        assert!(!fs_type_needs_polling("ext4"));
+        assert!(!fs_type_needs_polling("btrfs"));
+        assert!(!fs_type_needs_polling("fuseblk"));
+        assert!(!fs_type_needs_polling("fuse.portal"));
+    }
+
+    #[test]
+    fn collect_symlinked_dirs_finds_links_and_survives_loops() {
+        let root = temp_test_dir("collect-links");
+        let outside = temp_test_dir("collect-links-target");
+        std::fs::create_dir_all(root.join("real")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+        // Loop back to the root, and a symlink to a file (not a directory).
+        std::os::unix::fs::symlink(&root, root.join("real").join("loop")).unwrap();
+        std::fs::write(outside.join("f.jpg"), b"x").unwrap();
+        std::os::unix::fs::symlink(outside.join("f.jpg"), root.join("file-link")).unwrap();
+
+        let links = collect_symlinked_dirs(&root);
+        assert!(links.contains(&root.join("link")), "{links:?}");
+        assert!(!links.contains(&root.join("file-link")), "{links:?}");
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
+    }
+
+    #[test]
+    fn existing_symlinked_subdir_reports_events_under_link_path() {
+        let root = temp_test_dir("existing-link");
+        let outside = temp_test_dir("existing-link-target");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+
+        let (sink, rx) = channel_sink();
+        let _handle = start_watch(root.clone(), true, false, sink).unwrap();
+
+        std::fs::write(outside.join("new.jpg"), b"x").unwrap();
+        let hit = wait_for_path(&rx, 5, |_, p| p.ends_with("new.jpg"));
+        assert_eq!(hit, Some(root.join("link").join("new.jpg")));
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
+    }
+
+    #[test]
+    fn symlinked_subdir_created_after_start_gets_watched() {
+        let root = temp_test_dir("late-link");
+        let outside = temp_test_dir("late-link-target");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        let (sink, rx) = channel_sink();
+        let mut handle = start_watch(root.clone(), true, false, sink).unwrap();
+
+        let link = root.join("late");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        // The creation event is what triggers registration in production.
+        let created = wait_for_path(&rx, 5, |ev, p| {
+            *p == link && !new_symlinked_dirs(ev).is_empty()
+        });
+        assert_eq!(created.as_ref(), Some(&link));
+        assert_eq!(handle.watch_symlinked_dir(&link), Ok(true));
+        assert_eq!(handle.watch_symlinked_dir(&link), Ok(false));
+
+        std::fs::write(outside.join("new.jpg"), b"x").unwrap();
+        let hit = wait_for_path(&rx, 5, |_, p| p.ends_with("new.jpg"));
+        assert_eq!(hit, Some(link.join("new.jpg")));
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
+    }
+
+    #[test]
+    fn polling_watcher_detects_files_in_symlinked_subdir() {
+        let root = temp_test_dir("poll-link");
+        let outside = temp_test_dir("poll-link-target");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+
+        let (sink, rx) = channel_sink();
+        let _handle = start_watch(root.clone(), true, true, sink).unwrap();
+
+        std::fs::write(outside.join("new.jpg"), b"x").unwrap();
+        let hit = wait_for_path(&rx, 10, |_, p| p.ends_with("new.jpg"));
+        assert_eq!(hit, Some(root.join("link").join("new.jpg")));
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
     }
 }
