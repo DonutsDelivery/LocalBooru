@@ -1606,6 +1606,7 @@ export async function openSVPProcessingSession(filePath, startPosition, generati
     generation,
     file_path: filePath,
     start_position: startPosition,
+    target_resolution: limits.targetResolution ?? null,
     max_buffer_bytes: limits.maxBytes ?? 128 * 1024 * 1024,
     max_buffer_duration: limits.maxDuration ?? 30
   }, { timeout: 60000 })

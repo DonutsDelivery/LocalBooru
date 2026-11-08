@@ -90,6 +90,27 @@ class RequestedNvofTests(unittest.TestCase):
         self.assertEqual(calls[0][1], {'width': 8, 'height': 6,
                                      'src_width': 8, 'src_height': 6})
 
+    def test_reduced_streams_keep_nvof_vector_source_within_engine_limits(self):
+        # SVPflow NVOF fails below 160x128 or off a 1/1, 1/2, 1/4, 1/6, 1/8
+        # ratio; the stream then silently drops to the far slower CPU engine.
+        # (width, height, preset, expected vector size)
+        cases = [(854, 480, 'balanced', (424, 240)),
+                 (404, 720, 'balanced', (200, 360)),
+                 (608, 1080, 'balanced', (304, 536)),
+                 (1280, 720, 'fast', (320, 176)),
+                 (270, 480, 'balanced', (256, 480))]
+        for width, height, preset, vector in cases:
+            with self.subTest(size=(width, height), preset=preset):
+                calls = self.execute(width=width, height=height, preset=preset)
+                resize = calls[0][1]
+                self.assertEqual((resize['width'], resize['height']), vector)
+                self.assertGreaterEqual(resize['width'], 160)
+                self.assertGreaterEqual(resize['height'], 128)
+                for crop, size in [(resize['src_width'], resize['width']),
+                                   (resize['src_height'], resize['height'])]:
+                    self.assertIn(crop // size, (1, 2, 4, 8))
+                    self.assertEqual(crop % size, 0)
+
     def test_disabled_nvof_preserves_classic_cpu_path(self):
         calls = self.execute(use_nvof=False)
         self.assertEqual([c[0] for c in calls], ['super', 'analyse', 'classic'])

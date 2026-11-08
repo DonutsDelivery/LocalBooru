@@ -26,8 +26,11 @@ class Fmp4SessionProcessor:
         environment_provider: EnvironmentProvider,
         ffmpeg_executable: str = "ffmpeg",
         vspipe_executable: str = "vspipe",
+        decode_size: Optional[tuple[int, int]] = None,
     ):
         self.session = session
+        # Reduced frame size scaled in the decode stage; None keeps the source size.
+        self.decode_size = decode_size
         self.script_builder = script_builder
         self.environment_provider = environment_provider
         self.ffmpeg_executable = ffmpeg_executable
@@ -217,15 +220,12 @@ class Fmp4SessionProcessor:
             [
                 "-i",
                 self.session.file_path,
-                "-an",
-                "-sn",
-                "-f",
-                "rawvideo",
-                "-pix_fmt",
-                "yuv420p",
-                "-",
             ]
         )
+        if self.decode_size is not None:
+            width, height = self.decode_size
+            command.extend(["-vf", f"scale={width}:{height}:flags=lanczos"])
+        command.extend(["-an", "-sn", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"])
         return command
 
     def _encode_command(self, start_position: float, duration: float, target_fps: int) -> list[str]:

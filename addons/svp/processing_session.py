@@ -118,6 +118,7 @@ class ProcessingSession:
         self.session_id = session_id or uuid.uuid4().hex
         self.file_path = request.file_path
         self.graph = request.graph
+        self.target_resolution = request.target_resolution
         self.metadata = metadata
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=False)
