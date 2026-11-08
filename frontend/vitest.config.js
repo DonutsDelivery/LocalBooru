@@ -14,5 +14,7 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.component.test.jsx'],
     restoreMocks: true,
+    // CPU-limited release containers see every host core; cap workers there.
+    maxWorkers: Number(process.env.VITEST_MAX_WORKERS) || undefined,
   },
 })

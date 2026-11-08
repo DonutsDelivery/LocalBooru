@@ -78,7 +78,7 @@ sed -n '1,4p' /tmp/localbooru-msvc-version.log
 sccache --start-server >/dev/null 2>&1 || true
 
 npm --prefix frontend ci
-npm --prefix frontend test
+VITEST_MAX_WORKERS="${VITEST_MAX_WORKERS:-${LOCALBOORU_BUILD_JOBS:-1}}" npm --prefix frontend test
 npm --prefix frontend run build
 
 cargo check --locked --manifest-path src-tauri/Cargo.toml --target "$TARGET"
