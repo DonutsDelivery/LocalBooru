@@ -95,3 +95,10 @@ test('switching source during reuse leaves the next source usable and ignores th
   expect(screen.getByRole('heading', { name: 'Community c' })).toBeTruthy()
   expect(reuse.disabled).toBe(false)
 })
+
+test('adding a community starts with no preset instance address', async () => {
+  render(<MemoryRouter><HubConnection onConnected={vi.fn()} /></MemoryRouter>)
+  const address = await screen.findByLabelText('Community address')
+  expect(address.value).toBe('')
+  expect(address.placeholder).toBe('https://community.example')
+})

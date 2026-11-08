@@ -22,22 +22,6 @@ import {
 } from '../api'
 import './OnlinePage.css'
 
-const SOURCE_DEFAULTS = {
-  donutbooru: { display_name: 'DonutBooru', base_url: 'https://donutbooru.com' },
-}
-
-function sourceDefaults(provider) {
-  return SOURCE_DEFAULTS[provider] || { display_name: '', base_url: '' }
-}
-
-function isPublicDonutBooru(baseUrl) {
-  try {
-    return new URL(baseUrl.trim()).origin === SOURCE_DEFAULTS.donutbooru.base_url
-  } catch {
-    return false
-  }
-}
-
 const assetUrl = (item, kind = 'sample') =>
   getMediaUrl(`/api/online/sources/${encodeURIComponent(item.source_id)}/items/${encodeURIComponent(item.remote_post_id)}/asset/${kind}`)
 
@@ -73,27 +57,13 @@ export default function OnlinePage({ initialTab = 'browse', fixedSourceId = '', 
     currentSource.current = sourceId
   }
   const connections = connectionResult?.source_id === sourceId && connectionResult?.generation === sourceGeneration.current ? connectionResult.connections : []
-  const [form, setForm] = useState({ ...sourceDefaults('donutbooru'), provider_family: 'donutbooru', policy_profile: 'unrestricted', allow_local_network: false })
+  const [form, setForm] = useState({ display_name: '', base_url: '', provider_family: 'donutbooru', policy_profile: 'unrestricted', allow_local_network: false })
   const [connectionForm, setConnectionForm] = useState({ account_display_name: '', auth_kind: 'bearer', secret: '' })
 
   const selectedSource = useMemo(() => sources.find(source => source.source_id === sourceId), [sources, sourceId])
-  const publicDonutBooru = isPublicDonutBooru(form.base_url)
   const hasPublishingAccount = connections.some(connection => connection.has_credential && (!connection.expires_at || connection.expires_at * 1000 > Date.now()))
 
-  const selectProvider = provider => {
-    setForm(current => {
-      const previousDefaults = sourceDefaults(current.provider_family)
-      const nextDefaults = sourceDefaults(provider)
-      return {
-        ...current,
-        provider_family: provider,
-        display_name: !current.display_name.trim() || current.display_name === previousDefaults.display_name
-          ? nextDefaults.display_name : current.display_name,
-        base_url: !current.base_url.trim() || current.base_url.trim().replace(/\/+$/, '') === previousDefaults.base_url
-          ? nextDefaults.base_url : current.base_url,
-      }
-    })
-  }
+  const selectProvider = provider => setForm(current => ({ ...current, provider_family: provider }))
 
   const loadSources = useCallback(async () => {
     const result = await getRemoteSources()
@@ -193,10 +163,10 @@ export default function OnlinePage({ initialTab = 'browse', fixedSourceId = '', 
     event.preventDefault()
     setBusy(true)
     try {
-      const source = await createRemoteSource({ ...form, allow_local_network: publicDonutBooru ? false : form.allow_local_network })
+      const source = await createRemoteSource(form)
       await loadSources()
       setSourceId(source.source_id)
-      setForm({ ...form, ...sourceDefaults(form.provider_family) })
+      setForm({ ...form, display_name: '', base_url: '' })
       setNotice('Source saved. Probe it before relying on its capabilities.')
     } catch (error) {
       setNotice(errorMessage(error))
@@ -359,11 +329,11 @@ export default function OnlinePage({ initialTab = 'browse', fixedSourceId = '', 
         <label>Provider<select value={form.provider_family} onChange={event => selectProvider(event.target.value)}><option value="danbooru">Danbooru-compatible</option><option value="donutbooru">DonutBooru</option></select></label>
         <label>HTTPS base URL<input required type="url" placeholder="https://example.test" value={form.base_url} onChange={event => setForm({ ...form, base_url: event.target.value })} /></label>
         <label>Content policy<select value={form.policy_profile} onChange={event => setForm({ ...form, policy_profile: event.target.value })}><option value="unrestricted">Unrestricted</option><option value="safe">Safe only</option><option value="adult-hidden">Adult content hidden</option></select></label>
-        {!publicDonutBooru && <details className="online-connection-options" key={form.provider_family}>
+        <details className="online-connection-options">
           <summary>Advanced connection settings</summary>
           <label className="online-checkbox"><input type="checkbox" checked={form.allow_local_network} aria-describedby="source-local-network-help" onChange={event => setForm({ ...form, allow_local_network: event.target.checked })} />Allow connections to private network addresses</label>
           <p id="source-local-network-help">Enable only for a source hosted on this computer or a private network, such as localhost or 192.168.1.10. DMC can then connect to private addresses and use HTTP for that source. This does not share your library or allow incoming connections.</p>
-        </details>}
+        </details>
         <button disabled={busy}>Save source</button>
       </form>
       <section className="online-panel"><h2>Connected sources</h2>{sources.length === 0 && <p>No sources configured.</p>}{sources.map(source => <article className="source-row" key={source.source_id}><div><strong>{source.display_name}</strong><small>{source.normalized_base_url}</small><small>{source.capabilities.upload ? 'Browse + publish' : 'Browse only'} · {source.last_probe_at ? 'probed' : 'not probed'}</small></div><div><button onClick={() => probeSource(source.source_id)}>Probe</button><button className="danger" onClick={() => removeSource(source)}>Remove</button></div></article>)}</section>

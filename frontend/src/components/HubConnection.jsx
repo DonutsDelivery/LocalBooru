@@ -5,7 +5,7 @@ import { authorizeHub, createHub, getHubConnection, getRemoteConnections, getSha
 import { openHubBrowser, parseHubEnrollmentLink, safeHubHttpsUrl, validateHubReview } from '../utils/hubConnection'
 import './HubConnection.css'
 
-const defaults = { base_url: 'https://donutbooru.com', peer_id: '', relay_url: '', transport_mode: 'relayed', allow_local_network: false }
+const defaults = { base_url: '', peer_id: '', relay_url: '', transport_mode: 'relayed', allow_local_network: false }
 const message = error => error?.response?.data?.detail || error?.response?.data?.error || error?.message || 'The community request failed.'
 
 function HubDetails({ hub }) {
@@ -232,7 +232,7 @@ export default function HubConnection({ sourceId, onConnected }) {
     <label>Open in DMC link<textarea value={link} disabled={busy} onChange={event => setLink(event.target.value)} placeholder="donutmediacenter://hub/add?url=…&peer_id=…&relay_url=…" /></label>
     <button type="button" disabled={!link.trim() || busy} onClick={loadLink}>Load link</button>
     <form onSubmit={preview}>
-      <label>Community address<input type="url" required value={form.base_url} disabled={busy} onChange={event => change('base_url', event.target.value)} /></label>
+      <label>Community address<input type="url" required value={form.base_url} disabled={busy} onChange={event => change('base_url', event.target.value)} placeholder="https://community.example" /></label>
       <label>Connection<select value={form.transport_mode} disabled={busy} onChange={event => change('transport_mode', event.target.value)}><option value="relayed">Relayed (default)</option><option value="standard">Standard · Iroh direct with relay fallback</option></select></label>
       {form.transport_mode === 'relayed' ? <p>Community traffic uses the published Iroh relay. DMC does not fall back to a direct website connection.</p> : <p>Standard allows a direct Iroh connection to the community, with its published relay as fallback.</p>}
         <label>Published peer identity<input required value={form.peer_id} disabled={busy} onChange={event => change('peer_id', event.target.value)} /></label>
