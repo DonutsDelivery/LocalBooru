@@ -860,7 +860,7 @@ class SVPStream:
                                "-map", "0:v", "-map", "1:a?"])
             encode_cmd.extend(["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"])
 
-            output_height = (self.target_resolution or (self._width, self._height))[1]
+            output_height = self._stream_size[1]
             if self.use_nvenc:
                 encode_cmd.extend(["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll"])
                 if self.target_bitrate:
