@@ -21,3 +21,9 @@ export const SVP_HLS_CONFIG = Object.freeze({
   fragLoadingMaxRetry: 10,
   fragLoadingRetryDelay: 500,
 })
+
+// hls.js writes derived load policies into the config it is given, so each
+// player needs its own unfrozen copy.
+export function svpHlsConfig() {
+  return { ...SVP_HLS_CONFIG }
+}

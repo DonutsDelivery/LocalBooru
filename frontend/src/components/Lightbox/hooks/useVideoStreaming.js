@@ -26,7 +26,7 @@ import { useAudioNormalization } from './useAudioNormalization'
 import { shouldRestartStalledSVP } from './svpStallGuard'
 import { getCodecFallbackStartPosition } from './codecFallback'
 import { shouldStartSVPPlayback, svpBufferedAhead } from './svpBuffering'
-import { SVP_HLS_CONFIG } from './svpHlsConfig'
+import { svpHlsConfig } from './svpHlsConfig'
 import { svpPlaybackError, isSvpSessionUnavailable } from '../../../utils/svpPlayback'
 import { localRawResizeAvailable } from '../../../utils/localVideoResolution'
 import {
@@ -1109,7 +1109,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       // Remove direct video src (if any) - HLS will use MediaSource instead
       video.removeAttribute('src')
 
-      const hls = new Hls(SVP_HLS_CONFIG)
+      const hls = new Hls(svpHlsConfig())
       ownedHls = hls
 
       // Attach media and load source
