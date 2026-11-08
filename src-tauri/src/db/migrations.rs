@@ -458,6 +458,17 @@ pub static DIRECTORY_MIGRATIONS: &[Migration] = &[
         description: "Index import_source for grouped folder queries",
         sql: "CREATE INDEX IF NOT EXISTS idx_images_import_source ON images(import_source);",
     },
+    // v7: Versions 2.0.0-2.1.0 never wrote age tags or AI metadata. Record a
+    // one-time repair per directory; `run_library_repairs` works through each
+    // with a resumable cursor and deletes the row when it finishes.
+    Migration {
+        description: "Queue one-time repair of age tags and AI metadata",
+        sql: "CREATE TABLE IF NOT EXISTS pending_repairs (\
+                name TEXT PRIMARY KEY,\
+                last_image_id INTEGER NOT NULL DEFAULT 0\
+              );\
+              INSERT OR IGNORE INTO pending_repairs (name) VALUES ('age_tags'), ('metadata');",
+    },
 ];
 
 /// Run all pending migrations on a per-directory database.

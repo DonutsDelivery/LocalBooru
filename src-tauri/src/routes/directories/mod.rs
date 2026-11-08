@@ -200,6 +200,79 @@ fn default_true() -> bool {
     true
 }
 
+// ─── Directory stats helpers ─────────────────────────────────────────────────
+
+/// `count / total * 100` rounded to one decimal; 0 when `total` is not positive.
+fn percent_of(count: i64, total: i64) -> f64 {
+    if total > 0 {
+        (count as f64 / total as f64 * 100.0 * 10.0).round() / 10.0
+    } else {
+        0.0
+    }
+}
+
+/// Number of images in a directory DB that have age-detection results.
+fn count_age_detected(conn: &rusqlite::Connection) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM images WHERE num_faces IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )
+}
+
+/// Age-detected image count for a directory; 0 when its DB is missing or unreadable.
+/// Never creates a directory DB as a side effect.
+fn directory_age_detected_count(lib: &LibraryContext, directory_id: i64) -> i64 {
+    if !lib.directory_db.db_exists(directory_id) {
+        return 0;
+    }
+    lib.directory_db
+        .get_pool(directory_id)
+        .ok()
+        .and_then(|pool| pool.get().ok())
+        .and_then(|conn| count_age_detected(&conn).ok())
+        .unwrap_or(0)
+}
+
+/// Pending + processing `tag` task counts keyed by (library uuid, directory id).
+///
+/// Task payloads carry `directory_id` and `library_id`; a missing or `"primary"`
+/// library id refers to the primary library (`primary_uuid`).
+fn pending_tag_task_counts(
+    conn: &rusqlite::Connection,
+    primary_uuid: &str,
+) -> rusqlite::Result<HashMap<(String, i64), i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT CASE WHEN json_valid(payload) THEN json_extract(payload, '$.library_id') END,
+                CASE WHEN json_valid(payload) THEN json_extract(payload, '$.directory_id') END,
+                COUNT(*)
+         FROM task_queue
+         WHERE task_type = 'tag' AND status IN ('pending', 'processing')
+         GROUP BY 1, 2",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, Option<String>>(0)?,
+            row.get::<_, Option<i64>>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+
+    let mut counts: HashMap<(String, i64), i64> = HashMap::new();
+    for row in rows {
+        let (library_id, directory_id, count) = row?;
+        let Some(directory_id) = directory_id else {
+            continue;
+        };
+        let library_id = match library_id.as_deref() {
+            None | Some("") | Some("primary") => primary_uuid.to_string(),
+            Some(id) => id.to_string(),
+        };
+        *counts.entry((library_id, directory_id)).or_insert(0) += count;
+    }
+    Ok(counts)
+}
+
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 /// GET /api/directories — List all watch directories with stats.
@@ -224,6 +297,16 @@ async fn list_directories(
         };
 
         let mut all_dirs: Vec<Value> = Vec::new();
+
+        // The task queue lives in the primary library DB; one grouped query
+        // gives pending/processing tag counts for every directory.
+        let primary_uuid = state_clone.library_manager().primary().uuid.clone();
+        let pending_tags = state_clone
+            .main_db()
+            .get()
+            .ok()
+            .and_then(|conn| pending_tag_task_counts(&conn, &primary_uuid).ok())
+            .unwrap_or_default();
 
         for lib in &libraries {
             let main_conn = lib.main_pool.get()?;
@@ -286,6 +369,12 @@ async fn list_directories(
                         0.0
                     };
 
+                    let age_detected_count = directory_age_detected_count(lib, dir_id);
+                    let pending_tag_tasks = pending_tags
+                        .get(&(lib.uuid.clone(), dir_id))
+                        .copied()
+                        .unwrap_or(0);
+
                     Ok(json!({
                         "id": dir_id,
                         "path": path,
@@ -295,6 +384,9 @@ async fn list_directories(
                         "auto_tag": auto_tag,
                         "auto_age_detect": auto_age_detect,
                         "image_count": image_count,
+                        "age_detected_count": age_detected_count,
+                        "age_detected_pct": percent_of(age_detected_count, image_count),
+                        "pending_tag_tasks": pending_tag_tasks,
                         "tagged_count": tagged_count,
                         "tagged_pct": tagged_pct,
                         "favorited_count": favorited_count,
@@ -793,17 +885,32 @@ async fn get_directory(
     Query(q): Query<LibraryQuery>,
 ) -> Result<Json<Value>, AppError> {
     let lib = state.resolve_library(q.library_id.as_deref())?;
+    let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
         let conn = lib.main_pool.get()?;
 
         let dir = conn.query_row(
             "SELECT id, path, name, enabled, recursive, auto_tag, auto_age_detect,
                     last_scanned_at, created_at, public_access, show_images, show_videos,
-                    metadata_format, family_safe, lan_visible, show_music
+                    metadata_format, family_safe, lan_visible, show_music, image_count
              FROM watch_directories WHERE id = ?1",
             params![directory_id],
             |row| {
+                let image_count: i64 = row.get::<_, Option<i64>>(16)?.unwrap_or(0);
+                let age_detected_count = directory_age_detected_count(&lib, directory_id);
+                let primary_uuid = state_clone.library_manager().primary().uuid.clone();
+                let pending_tag_tasks = state_clone
+                    .main_db()
+                    .get()
+                    .ok()
+                    .and_then(|c| pending_tag_task_counts(&c, &primary_uuid).ok())
+                    .and_then(|m| m.get(&(lib.uuid.clone(), directory_id)).copied())
+                    .unwrap_or(0);
                 Ok(json!({
+                    "image_count": image_count,
+                    "age_detected_count": age_detected_count,
+                    "age_detected_pct": percent_of(age_detected_count, image_count),
+                    "pending_tag_tasks": pending_tag_tasks,
                     "id": row.get::<_, i64>(0)?,
                     "path": row.get::<_, String>(1)?,
                     "name": row.get::<_, Option<String>>(2)?,
@@ -2437,4 +2544,88 @@ async fn dedup_directories(State(state): State<AppState>) -> Result<Json<Value>,
         "removed": total_removed,
         "message": format!("Removed {} duplicate directories", total_removed)
     })))
+}
+
+#[cfg(test)]
+mod directory_stats_tests {
+    use super::*;
+    use crate::db::schema::{init_directory_db, init_main_db};
+    use rusqlite::Connection;
+
+    #[test]
+    fn percent_of_rounds_to_one_decimal_and_handles_zero_total() {
+        assert_eq!(percent_of(1, 3), 33.3);
+        assert_eq!(percent_of(2, 3), 66.7);
+        assert_eq!(percent_of(5, 0), 0.0);
+        assert_eq!(percent_of(4, 4), 100.0);
+    }
+
+    #[test]
+    fn counts_only_images_with_age_detection_results() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_directory_db(&conn).unwrap();
+        for (hash, faces) in [("a", Some(0)), ("b", Some(2)), ("c", None)] {
+            conn.execute(
+                "INSERT INTO images (filename, original_filename, file_hash, num_faces)
+                 VALUES (?1, ?1, ?1, ?2)",
+                params![hash, faces],
+            )
+            .unwrap();
+        }
+        // num_faces = 0 means "detected, no faces" and still counts as processed.
+        assert_eq!(count_age_detected(&conn).unwrap(), 2);
+    }
+
+    #[test]
+    fn pending_tag_counts_group_by_library_and_directory() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_main_db(&conn).unwrap();
+        let rows = [
+            (
+                "tag",
+                r#"{"image_id":1,"directory_id":3,"library_id":"lib-a"}"#,
+                "pending",
+            ),
+            (
+                "tag",
+                r#"{"image_id":2,"directory_id":3,"library_id":"lib-a"}"#,
+                "processing",
+            ),
+            ("tag", r#"{"image_id":3,"directory_id":3}"#, "pending"),
+            (
+                "tag",
+                r#"{"image_id":4,"directory_id":3,"library_id":"primary"}"#,
+                "pending",
+            ),
+            (
+                "tag",
+                r#"{"image_id":5,"directory_id":3,"library_id":"lib-a"}"#,
+                "completed",
+            ),
+            (
+                "tag",
+                r#"{"image_id":6,"directory_id":3,"library_id":"lib-a"}"#,
+                "failed",
+            ),
+            (
+                "age_detect",
+                r#"{"image_id":7,"directory_id":3,"library_id":"lib-a"}"#,
+                "pending",
+            ),
+            ("tag", "not json", "pending"),
+            ("tag", "{}", "pending"),
+        ];
+        for (task_type, payload, status) in rows {
+            conn.execute(
+                "INSERT INTO task_queue (task_type, payload, status) VALUES (?1, ?2, ?3)",
+                params![task_type, payload, status],
+            )
+            .unwrap();
+        }
+
+        let counts = pending_tag_task_counts(&conn, "prim-uuid").unwrap();
+        assert_eq!(counts.get(&("lib-a".to_string(), 3)), Some(&2));
+        assert_eq!(counts.get(&("prim-uuid".to_string(), 3)), Some(&2));
+        assert_eq!(counts.len(), 2);
+    }
 }

@@ -841,8 +841,9 @@ export async function verifyFiles() {
   return response.data
 }
 
-export async function tagUntagged(directoryId = null) {
+export async function tagUntagged(directoryId = null, { retag = false } = {}) {
   const params = directoryId ? { directory_id: directoryId } : {}
+  if (retag) params.retag = true
   const response = await api.post('/library/tag-untagged', null, { params })
   return response.data
 }
@@ -1567,35 +1568,6 @@ export async function updateVideoPlaybackConfig(config) {
   return response.data
 }
 
-// Optical Flow Interpolation API
-export async function getOpticalFlowConfig() {
-  const response = await api.get('/settings/optical-flow')
-  return response.data
-}
-
-export async function updateOpticalFlowConfig(config) {
-  const response = await api.post('/settings/optical-flow', config)
-  return response.data
-}
-
-export async function playVideoInterpolated(filePath, startPosition = 0, qualityPreset = null) {
-  // Longer timeout since buffering can take time
-  const response = await api.post('/settings/optical-flow/play', {
-    file_path: filePath,
-    start_position: startPosition,
-    quality_preset: qualityPreset
-  }, {
-    timeout: 60000  // 60 second timeout for initial buffering
-  })
-  return response.data
-}
-
-export async function stopInterpolatedStream() {
-  // FFmpeg interpolation is retired. Keep the cleanup call harmless while older
-  // Lightbox stream-state paths are retained for compatibility.
-  return { success: true }
-}
-
 // SVP (SmoothVideo Project) Interpolation API
 export async function getSVPConfig() {
   const response = await api.get('/settings/svp')
@@ -1702,7 +1674,7 @@ export async function stopSVPProcessingSession(sessionId, generation) {
   return response.data
 }
 
-// Simple FFmpeg-based transcoding (fallback when SVP/OpticalFlow not available)
+// Simple FFmpeg-based transcoding (fallback when SVP not available)
 export async function playVideoTranscode(filePath, startPosition = 0, qualityPreset = null, signal = undefined) {
   const response = await api.post('/settings/transcode/play', {
     file_path: filePath,

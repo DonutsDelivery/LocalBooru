@@ -1018,11 +1018,36 @@ pub async fn upload_image(
     let state_clone = state.clone();
     let lib = state.library_manager().primary().clone();
     let tmp_path_str = tmp_path.to_string_lossy().to_string();
+    let import_lib = lib.clone();
+    let import_path = tmp_path_str.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        importer::import_image(&state_clone, &lib, &tmp_path_str, dir_id, false)
+        importer::import_image(&state_clone, &import_lib, &import_path, dir_id, false)
     })
     .await??;
+
+    // The temp file is deleted below, before a queued extraction could read it,
+    // so read the generation metadata (and tag prompt words) now.
+    if result.status == importer::ImportStatus::Imported {
+        if let Some(img_id) = result.image_id {
+            if let Err(error) = crate::services::task_queue::extract_image_metadata(
+                &state,
+                &lib,
+                img_id,
+                Some(dir_id),
+                tmp_path_str,
+                true,
+            )
+            .await
+            {
+                log::warn!(
+                    "[Upload] Metadata extraction failed for image #{}: {}",
+                    img_id,
+                    error
+                );
+            }
+        }
+    }
 
     // Clean up temp file
     let _ = tokio::fs::remove_file(&tmp_path).await;

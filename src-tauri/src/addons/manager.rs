@@ -529,7 +529,7 @@ impl AddonManager {
         let character_threshold = config
             .get("character_threshold")
             .and_then(|value| value.as_f64())
-            .unwrap_or(0.75);
+            .unwrap_or(0.85);
 
         envs.extend([
             (

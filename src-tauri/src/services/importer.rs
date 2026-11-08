@@ -8,6 +8,7 @@ use crate::db::library::LibraryContext;
 use crate::server::error::AppError;
 use crate::server::state::AppState;
 use crate::services::events::event_type;
+use crate::services::task_queue;
 use crate::services::video_preview;
 
 /// Video file extensions.
@@ -724,6 +725,9 @@ pub fn import_image(
         );
     }
 
+    // Newly indexed media gets its AI generation metadata read in the background.
+    task_queue::enqueue_import_metadata(state, lib, directory_id, image_id, file_path);
+
     Ok(ImportResult {
         status: ImportStatus::Imported,
         image_id: Some(image_id),
@@ -731,4 +735,61 @@ pub fn import_image(
         filename: Some(filename),
         message: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn queued_metadata_tasks(state: &AppState) -> Vec<serde_json::Value> {
+        let conn = state.main_db().get().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT payload FROM task_queue WHERE task_type = ?1 ORDER BY id")
+            .unwrap();
+        let rows: Vec<String> = stmt
+            .query_map([task_queue::TASK_EXTRACT_METADATA], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        rows.iter()
+            .map(|payload| serde_json::from_str(payload).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn new_png_imports_queue_metadata_extraction_once() {
+        for fast in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let state = AppState::new(root.path(), 0).unwrap();
+            let lib = state.library_manager().primary().clone();
+            let png = root.path().join("generated.png");
+            image::DynamicImage::new_rgb8(2, 2).save(&png).unwrap();
+            let path = png.to_string_lossy().to_string();
+
+            let first = import_image(&state, &lib, &path, 11, fast).unwrap();
+            assert_eq!(first.status, ImportStatus::Imported);
+            let again = import_image(&state, &lib, &path, 11, fast).unwrap();
+            assert_eq!(again.status, ImportStatus::Duplicate);
+
+            let tasks = queued_metadata_tasks(&state);
+            assert_eq!(tasks.len(), 1, "fast={fast}");
+            assert_eq!(tasks[0]["image_id"].as_i64(), first.image_id);
+            assert_eq!(tasks[0]["directory_id"], 11);
+            assert_eq!(tasks[0]["image_path"].as_str(), Some(path.as_str()));
+            assert_eq!(tasks[0]["library_id"].as_str(), Some(lib.uuid.as_str()));
+        }
+    }
+
+    #[test]
+    fn imports_the_extractor_cannot_read_queue_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::new(root.path(), 0).unwrap();
+        let lib = state.library_manager().primary().clone();
+        let jpg = root.path().join("photo.jpg");
+        image::DynamicImage::new_rgb8(3, 3).save(&jpg).unwrap();
+
+        let result = import_image(&state, &lib, &jpg.to_string_lossy(), 11, false).unwrap();
+        assert_eq!(result.status, ImportStatus::Imported);
+        assert!(queued_metadata_tasks(&state).is_empty());
+    }
 }

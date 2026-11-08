@@ -238,12 +238,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     && streaming.svpConfig?.enabled
     && !casting.isCasting
     && !streaming.svpStreamUrl
-    && !streaming.opticalFlowStreamUrl
     && !streaming.transcodeStreamUrl
   )
   const localRawPlayback = Boolean(!isRemote && streaming.nativeSvpPlayback && !casting.isCasting
     && !streaming.codecFallbackActive && !streaming.transcodeStreamUrl
-    && !streaming.svpStreamUrl && !streaming.opticalFlowStreamUrl)
+    && !streaming.svpStreamUrl)
   const resolutionRevision = useMemo(() => nextSVPVideoHostRevision(), [svpVideoHostId])
   const resolutionOwner = useMemo(() => ({ hostId: svpVideoHostId, hostEpoch: svpHostEpoch, hostRevision: resolutionRevision }), [svpVideoHostId, svpHostEpoch, resolutionRevision])
   const svpHostRevision = useMemo(() => nextSVPVideoHostRevision(), [svpVideoHostId, svpPathEnabled])
@@ -389,7 +388,6 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     transcodeBufferedDuration: streaming.transcodeBufferedDuration,
     svpTotalDuration: streaming.svpTotalDuration,
     transcodeTotalDuration: streaming.transcodeTotalDuration,
-    opticalFlowStreamUrl: streaming.opticalFlowStreamUrl,
     streamTransitioningRef: streaming.streamTransitioningRef,
     getCurrentAbsoluteTime: streaming.getCurrentAbsoluteTime,
     restartSVPFromPosition: streaming.restartSVPFromPosition,
@@ -683,8 +681,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     streamTransitioningRef: streaming.streamTransitioningRef,
     getCurrentAbsoluteTime: streaming.getCurrentAbsoluteTime,
     durationRef: playback.durationRef,
-    isStreaming: Boolean(streaming.svpStreamUrl || streaming.transcodeStreamUrl || streaming.opticalFlowStreamUrl),
-    isBuffering: Boolean(streaming.svpLoading || streaming.opticalFlowLoading),
+    isStreaming: Boolean(streaming.svpStreamUrl || streaming.transcodeStreamUrl),
+    isBuffering: Boolean(streaming.svpLoading),
     pendingSeek: streaming.svpPendingSeek,
     bufferedEnd: streaming.svpStreamUrl
       ? streaming.svpStartOffset + streaming.svpBufferedDuration
@@ -1657,7 +1655,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // Also reset hide timer to ensure auto-hide works on mobile/Capacitor
   // Also check if browser can decode the video codec (fallback to transcode if not)
   const handleVideoCanPlay = useCallback((e) => {
-    const streamActive = Boolean(streaming.svpStreamUrl || streaming.transcodeStreamUrl || streaming.opticalFlowStreamUrl)
+    const streamActive = Boolean(streaming.svpStreamUrl || streaming.transcodeStreamUrl)
     if (mediaRef.current === e.target && !casting.isCasting && !streamActive && playback.isPlaying
         && (!svpPathEnabled || (svpInteractionReadyRef.current && e.target.paused))) {
       e.target.play().catch(() => {})
@@ -1671,7 +1669,6 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     resetHideTimer,
     streaming.svpStreamUrl,
     streaming.transcodeStreamUrl,
-    streaming.opticalFlowStreamUrl,
     streaming.checkCodecFallback,
   ])
 
@@ -1691,18 +1688,15 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     if (isRemote || image?.is_local_direct_file) return true
     return streaming.svpConfigLoaded
       && !streaming.svpStreamUrl
-      && !streaming.opticalFlowStreamUrl
       && !streaming.transcodeStreamUrl
       && !streaming.svpLoading
       && !streaming.codecFallbackActive
       && (currentQuality === 'original' || streaming.nativeSvpPlayback)
       && (!streaming.svpConfig?.enabled || streaming.nativeSvpPlayback || streaming.svpError)
-      && (!streaming.opticalFlowConfig?.enabled || streaming.opticalFlowError)
   }, [
-    streaming.svpConfigLoaded, streaming.svpStreamUrl, streaming.opticalFlowStreamUrl,
+    streaming.svpConfigLoaded, streaming.svpStreamUrl,
     streaming.transcodeStreamUrl, streaming.svpLoading, streaming.codecFallbackActive,
     currentQuality, streaming.svpConfig?.enabled, streaming.nativeSvpPlayback, streaming.svpError,
-    streaming.opticalFlowConfig?.enabled, streaming.opticalFlowError,
     image?.is_local_direct_file, isRemote
   ])
 
@@ -2364,7 +2358,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               autoPlay={!svpPathEnabled && !svpResumeRef.current}
               playsInline
               loop={false}
-              className={`lightbox-media video-display-${playback.videoDisplayMode} ${vrActive ? 'vr-video-source' : ''} ${streaming.svpStreamUrl ? 'svp-streaming' : streaming.opticalFlowStreamUrl ? 'interpolated-streaming' : streaming.transcodeStreamUrl ? 'transcode-streaming' : ''}`}
+              className={`lightbox-media video-display-${playback.videoDisplayMode} ${vrActive ? 'vr-video-source' : ''} ${streaming.svpStreamUrl ? 'svp-streaming' : streaming.transcodeStreamUrl ? 'transcode-streaming' : ''}`}
               style={zoomPan.getZoomTransform()}
               onClick={curationMode || vrActive ? undefined : handleVideoClick}
               onLoadStart={(event) => reportDirectFileStage('loadstart', event.currentTarget)}
@@ -2758,25 +2752,6 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             {playback.playbackSpeed !== 1.0 && (
               <div className="playback-speed-badge">
                 {playback.playbackSpeed.toFixed(2).replace(/\.?0+$/, '')}x
-              </div>
-            )}
-            {/* Optical flow loading indicator */}
-            {streaming.opticalFlowLoading && (
-              <div className="interpolate-loading">
-                <div className="interpolate-loading-spinner" />
-                <span>Buffering {streaming.opticalFlowConfig?.target_fps || 60} FPS...</span>
-              </div>
-            )}
-            {/* Optical flow streaming indicator */}
-            {streaming.opticalFlowStreamUrl && !streaming.opticalFlowLoading && (
-              <div className="interpolate-badge">
-                {streaming.opticalFlowConfig?.target_fps || 60} FPS
-              </div>
-            )}
-            {/* Optical flow error toast */}
-            {streaming.opticalFlowError && (
-              <div className="interpolate-error-toast">
-                {streaming.opticalFlowError}
               </div>
             )}
             {/* SVP loading indicator */}

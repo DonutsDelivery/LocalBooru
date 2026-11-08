@@ -5,7 +5,9 @@
 //!
 //! PNG chunks are parsed natively: 4-byte length (big-endian), 4-byte type,
 //! `length` bytes of data, 4-byte CRC. tEXt chunks use keyword\0value format.
-//! iTXt chunks use keyword\0compression_flag\0compression_method\0language\0translated_keyword\0text.
+//! zTXt chunks use keyword\0compression_method then zlib-compressed text.
+//! iTXt chunks use keyword\0compression_flag\0compression_method\0language\0translated_keyword\0text
+//! (the text is zlib-compressed when the flag is 1).
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -182,7 +184,7 @@ impl ExtractionResult {
 /// PNG file signature (8 bytes).
 const PNG_SIGNATURE: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
-/// Extract all tEXt and iTXt chunks from a PNG file.
+/// Extract all tEXt, zTXt and iTXt chunks from a PNG file.
 ///
 /// Returns a map of keyword -> text value.
 /// Non-PNG files return an empty map.
@@ -216,6 +218,9 @@ pub fn extract_png_text_chunks(file_path: &str) -> Result<HashMap<String, String
 
     let mut chunks = HashMap::new();
     let mut text_bytes = 0u64;
+    // Total inflated bytes allowed across all compressed text chunks, so a
+    // small crafted file cannot expand into unbounded memory.
+    let mut inflate_budget = MAX_SIDECAR_BYTES;
 
     // Read chunks until IEND or EOF
     loop {
@@ -241,7 +246,7 @@ pub fn extract_png_text_chunks(file_path: &str) -> Result<HashMap<String, String
             break;
         }
 
-        if chunk_type == "tEXt" || chunk_type == "iTXt" {
+        if chunk_type == "tEXt" || chunk_type == "zTXt" || chunk_type == "iTXt" {
             text_bytes += chunk_len as u64;
             if text_bytes > MAX_SIDECAR_BYTES {
                 return Err("PNG generation metadata exceeds the size limit".into());
@@ -256,10 +261,10 @@ pub fn extract_png_text_chunks(file_path: &str) -> Result<HashMap<String, String
             let mut crc_buf = [0u8; 4];
             let _ = reader.read_exact(&mut crc_buf);
 
-            if chunk_type == "tEXt" {
-                parse_text_chunk(&data, &mut chunks);
-            } else {
-                parse_itxt_chunk(&data, &mut chunks);
+            match chunk_type {
+                "tEXt" => parse_text_chunk(&data, &mut chunks),
+                "zTXt" => parse_ztxt_chunk(&data, &mut chunks, &mut inflate_budget)?,
+                _ => parse_itxt_chunk(&data, &mut chunks, &mut inflate_budget)?,
             }
         } else {
             // Skip chunk data + CRC
@@ -283,46 +288,86 @@ fn parse_text_chunk(data: &[u8], chunks: &mut HashMap<String, String>) {
     }
 }
 
+/// Inflate a zlib stream, charging the output against `budget`.
+///
+/// Returns `Ok(None)` for a corrupt or truncated stream (the chunk is skipped)
+/// and `Err` when the inflated size would exceed the remaining budget.
+fn inflate_text(data: &[u8], budget: &mut u64) -> Result<Option<Vec<u8>>, String> {
+    let mut out = Vec::new();
+    let read = flate2::read::ZlibDecoder::new(data)
+        .take(*budget + 1)
+        .read_to_end(&mut out);
+    if out.len() as u64 > *budget {
+        return Err("PNG generation metadata exceeds the size limit".into());
+    }
+    *budget -= out.len() as u64;
+    Ok(read.ok().map(|_| out))
+}
+
+/// Parse a zTXt chunk: keyword\0compression_method then zlib-compressed text.
+fn parse_ztxt_chunk(
+    data: &[u8],
+    chunks: &mut HashMap<String, String>,
+    budget: &mut u64,
+) -> Result<(), String> {
+    let Some(keyword_end) = data.iter().position(|&b| b == 0) else {
+        return Ok(());
+    };
+    let keyword = String::from_utf8_lossy(&data[..keyword_end]).to_string();
+    // Only compression method 0 (zlib) is defined by the PNG specification.
+    if keyword.is_empty() || data.get(keyword_end + 1) != Some(&0) {
+        return Ok(());
+    }
+    if let Some(text) = inflate_text(&data[keyword_end + 2..], budget)? {
+        chunks.insert(keyword, String::from_utf8_lossy(&text).to_string());
+    }
+    Ok(())
+}
+
 /// Parse an iTXt chunk: keyword\0compression_flag\0compression_method\0language\0translated_keyword\0text
-fn parse_itxt_chunk(data: &[u8], chunks: &mut HashMap<String, String>) {
+fn parse_itxt_chunk(
+    data: &[u8],
+    chunks: &mut HashMap<String, String>,
+    budget: &mut u64,
+) -> Result<(), String> {
     // Find keyword (null-terminated)
     let keyword_end = match data.iter().position(|&b| b == 0) {
         Some(pos) => pos,
-        None => return,
+        None => return Ok(()),
     };
     let keyword = String::from_utf8_lossy(&data[..keyword_end]).to_string();
     if keyword.is_empty() {
-        return;
+        return Ok(());
     }
 
     let mut offset = keyword_end + 1;
 
     // compression_flag (1 byte)
     if offset >= data.len() {
-        return;
+        return Ok(());
     }
     let compression_flag = data[offset];
     offset += 1;
 
-    // compression_method (1 byte)
+    // compression_method (1 byte; 0 = zlib, the only method PNG defines)
     if offset >= data.len() {
-        return;
+        return Ok(());
     }
-    // let _compression_method = data[offset];
+    let compression_method = data[offset];
     offset += 1;
 
     // language tag (null-terminated)
     if let Some(null_pos) = data[offset..].iter().position(|&b| b == 0) {
         offset += null_pos + 1;
     } else {
-        return;
+        return Ok(());
     }
 
     // translated keyword (null-terminated)
     if let Some(null_pos) = data[offset..].iter().position(|&b| b == 0) {
         offset += null_pos + 1;
     } else {
-        return;
+        return Ok(());
     }
 
     // Remaining data is the text
@@ -331,10 +376,31 @@ fn parse_itxt_chunk(data: &[u8], chunks: &mut HashMap<String, String>) {
             // Uncompressed
             let text = String::from_utf8_lossy(&data[offset..]).to_string();
             chunks.insert(keyword, text);
+        } else if compression_method == 0 {
+            if let Some(text) = inflate_text(&data[offset..], budget)? {
+                chunks.insert(keyword, String::from_utf8_lossy(&text).to_string());
+            }
         }
-        // compressed iTXt (compression_flag == 1) uses zlib; rare for SD metadata.
-        // We skip compressed chunks since AI generators typically use uncompressed tEXt.
     }
+    Ok(())
+}
+
+/// Whether `path` could carry generation metadata that [`extract_metadata`]
+/// reads: a PNG (text chunks) or a file with a generation sidecar beside it.
+pub fn may_have_generation_metadata(path: &Path) -> bool {
+    let is_png = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("png"));
+    if is_png {
+        return true;
+    }
+    let (Some(parent), Some(filename)) = (path.parent(), path.file_name()) else {
+        return false;
+    };
+    let mut name = filename.to_os_string();
+    name.push(".json");
+    parent.join(".donut-create").join(name).is_file()
 }
 
 // ─── Format detection ────────────────────────────────────────────────────────
@@ -888,6 +954,133 @@ mod tests {
         let mut chunks = HashMap::new();
         chunks.insert("prompt".to_string(), "not json".to_string());
         assert!(!has_comfyui_metadata(&chunks));
+    }
+
+    fn zlib(bytes: &[u8]) -> Vec<u8> {
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(bytes).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    fn ztxt_data(keyword: &str, text: &str) -> Vec<u8> {
+        let mut data = keyword.as_bytes().to_vec();
+        data.extend_from_slice(&[0, 0]);
+        data.extend(zlib(text.as_bytes()));
+        data
+    }
+
+    fn itxt_data(keyword: &str, compressed: bool, text: &str) -> Vec<u8> {
+        let mut data = keyword.as_bytes().to_vec();
+        data.extend_from_slice(&[0, compressed as u8, 0]);
+        data.extend_from_slice(b"en\0translated\0");
+        if compressed {
+            data.extend(zlib(text.as_bytes()));
+        } else {
+            data.extend_from_slice(text.as_bytes());
+        }
+        data
+    }
+
+    #[test]
+    fn test_parse_ztxt_chunk_inflates_text() {
+        let mut chunks = HashMap::new();
+        let mut budget = MAX_SIDECAR_BYTES;
+        let text = "a cat\nNegative prompt: dog\nSteps: 20, Seed: 7";
+        parse_ztxt_chunk(&ztxt_data("parameters", text), &mut chunks, &mut budget).unwrap();
+        assert_eq!(chunks.get("parameters").map(String::as_str), Some(text));
+        assert!(budget < MAX_SIDECAR_BYTES);
+    }
+
+    #[test]
+    fn test_parse_ztxt_chunk_skips_corrupt_or_unknown_method() {
+        let mut chunks = HashMap::new();
+        let mut budget = MAX_SIDECAR_BYTES;
+        let mut corrupt = b"parameters\0\0".to_vec();
+        corrupt.extend_from_slice(b"not zlib data");
+        parse_ztxt_chunk(&corrupt, &mut chunks, &mut budget).unwrap();
+        let mut unknown_method = ztxt_data("parameters", "x");
+        let method_at = "parameters".len() + 1;
+        unknown_method[method_at] = 1;
+        parse_ztxt_chunk(&unknown_method, &mut chunks, &mut budget).unwrap();
+        parse_ztxt_chunk(b"no terminator", &mut chunks, &mut budget).unwrap();
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn test_parse_itxt_chunk_compressed_and_plain() {
+        let mut chunks = HashMap::new();
+        let mut budget = MAX_SIDECAR_BYTES;
+        parse_itxt_chunk(
+            &itxt_data("prompt", true, "{\"3\": {}}"),
+            &mut chunks,
+            &mut budget,
+        )
+        .unwrap();
+        parse_itxt_chunk(
+            &itxt_data("parameters", false, "plain"),
+            &mut chunks,
+            &mut budget,
+        )
+        .unwrap();
+        assert_eq!(
+            chunks.get("prompt").map(String::as_str),
+            Some("{\"3\": {}}")
+        );
+        assert_eq!(chunks.get("parameters").map(String::as_str), Some("plain"));
+    }
+
+    #[test]
+    fn test_inflated_text_is_bounded_by_budget() {
+        let mut chunks = HashMap::new();
+        let mut budget = 16;
+        let data = ztxt_data("parameters", &"a".repeat(1024));
+        let error = parse_ztxt_chunk(&data, &mut chunks, &mut budget).unwrap_err();
+        assert!(error.contains("size limit"));
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn test_extract_png_text_chunks_reads_compressed_chunks_from_file() {
+        fn chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+            let mut out = (data.len() as u32).to_be_bytes().to_vec();
+            out.extend_from_slice(kind);
+            out.extend_from_slice(data);
+            out.extend_from_slice(&[0, 0, 0, 0]); // CRC is not verified
+            out
+        }
+        let mut png = PNG_SIGNATURE.to_vec();
+        png.extend(chunk(b"tEXt", b"Software\0tool"));
+        png.extend(chunk(b"zTXt", &ztxt_data("parameters", "z prompt")));
+        png.extend(chunk(b"iTXt", &itxt_data("Comment", true, "i prompt")));
+        png.extend(chunk(b"IEND", &[]));
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("compressed.png");
+        std::fs::write(&path, png).unwrap();
+
+        let chunks = extract_png_text_chunks(&path.to_string_lossy()).unwrap();
+        assert_eq!(chunks.get("Software").map(String::as_str), Some("tool"));
+        assert_eq!(
+            chunks.get("parameters").map(String::as_str),
+            Some("z prompt")
+        );
+        assert_eq!(chunks.get("Comment").map(String::as_str), Some("i prompt"));
+        assert!(has_a1111_metadata(&chunks));
+    }
+
+    #[test]
+    fn test_may_have_generation_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(may_have_generation_metadata(&dir.path().join("a.PNG")));
+        assert!(!may_have_generation_metadata(&dir.path().join("a.jpg")));
+        assert!(!may_have_generation_metadata(&dir.path().join("a.mp4")));
+
+        let sidecars = dir.path().join(".donut-create");
+        std::fs::create_dir(&sidecars).unwrap();
+        std::fs::write(sidecars.join("b.webp.json"), "{}").unwrap();
+        assert!(may_have_generation_metadata(&dir.path().join("b.webp")));
+        assert!(!may_have_generation_metadata(&dir.path().join("c.webp")));
     }
 
     #[test]

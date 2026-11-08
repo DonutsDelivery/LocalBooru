@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use dashmap::DashMap;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 use tokio::sync::{Notify, Semaphore};
 use tokio_util::sync::CancellationToken;
@@ -216,6 +216,22 @@ impl BackgroundTaskQueue {
                 }
 
                 log::info!("[TaskQueue] Tag guardian stopped");
+            });
+        }
+
+        // One-time repairs of data that 2.0.0-2.1.0 never wrote.
+        {
+            let state = state.clone();
+
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                let result =
+                    tokio::task::spawn_blocking(move || run_library_repairs(&state)).await;
+                match result {
+                    Ok(Err(e)) => log::error!("[Repair] Library repair error: {}", e),
+                    Err(e) => log::error!("[Repair] Library repair panicked: {}", e),
+                    Ok(Ok(())) => {}
+                }
             });
         }
 
@@ -699,16 +715,19 @@ async fn execute_task(
                 }
             }
 
-            // Extract AI generation metadata (A1111 / ComfyUI)
+            // Extract AI generation metadata (A1111 / ComfyUI) and tag prompt words
             if let Some(img_id) = image_id {
                 if !image_path.is_empty() && std::path::Path::new(&image_path).exists() {
-                    let lib = lib.clone();
-                    let dir_id = directory_id;
-
-                    tokio::task::spawn_blocking(move || {
-                        run_metadata_extraction(&lib, img_id, dir_id, &image_path)
-                    })
-                    .await??;
+                    let extract_tags = payload["extract_tags"].as_bool().unwrap_or(true);
+                    extract_image_metadata(
+                        state,
+                        &lib,
+                        img_id,
+                        directory_id,
+                        image_path,
+                        extract_tags,
+                    )
+                    .await?;
                 }
             }
         }
@@ -1063,11 +1082,14 @@ fn complete_directory_imports(
     Ok(())
 }
 
-fn enqueue_missing_age_detection(
+pub(crate) fn enqueue_missing_age_detection(
     state: &AppState,
     lib: &LibraryContext,
     directory_id: i64,
 ) -> Result<u32, AppError> {
+    if !crate::routes::settings::is_age_detection_enabled(state.data_dir()) {
+        return Ok(0);
+    }
     let auto_age_detect: bool = lib.main_pool.get()?.query_row(
         "SELECT auto_age_detect FROM watch_directories WHERE id = ?1",
         params![directory_id],
@@ -1280,6 +1302,7 @@ fn persist_predicted_tags(
     directory_id: i64,
     image_id: i64,
     tags: &[PredictedTag],
+    rating: Option<&str>,
 ) -> Result<(), AppError> {
     let _persist_guard = TAG_PERSIST_LOCK
         .lock()
@@ -1297,7 +1320,7 @@ fn persist_predicted_tags(
         )));
     }
 
-    let (resolved_tags, created_tag_ids): (Vec<(i64, f64)>, Vec<i64>) = {
+    let (resolved_tags, created_tag_ids, age_tag_ids): (Vec<(i64, f64)>, Vec<i64>, Vec<i64>) = {
         let mut main_conn = lib.main_pool.get()?;
         let tx = main_conn.transaction()?;
         let mut resolved = Vec::with_capacity(tags.len());
@@ -1317,21 +1340,32 @@ fn persist_predicted_tags(
             }
             resolved.push((tag_id, tag.confidence));
         }
+        let age_ids = age_derived_tag_ids(&tx)?;
         tx.commit()?;
-        (resolved, created)
+        (resolved, created, age_ids)
+    };
+
+    // Tags written by age detection are not auto-tagger output; re-tagging must
+    // not wipe them (they are replaced only by the next age detection).
+    let keep_age_tags = if age_tag_ids.is_empty() {
+        String::new()
+    } else {
+        format!(" AND tag_id NOT IN ({})", id_list_sql(&age_tag_ids))
     };
 
     let mut affected_tag_ids: HashSet<i64> = resolved_tags.iter().map(|(id, _)| *id).collect();
     let association_result = (|| -> Result<(), AppError> {
         let tx = conn.transaction()?;
         let previous_auto_ids: Vec<i64> = tx
-            .prepare("SELECT tag_id FROM image_tags WHERE image_id = ?1 AND is_manual = 0")?
+            .prepare(&format!(
+                "SELECT tag_id FROM image_tags WHERE image_id = ?1 AND is_manual = 0{keep_age_tags}"
+            ))?
             .query_map(params![image_id], |row| row.get(0))?
             .collect::<Result<_, _>>()?;
         affected_tag_ids.extend(previous_auto_ids);
 
         tx.execute(
-            "DELETE FROM image_tags WHERE image_id = ?1 AND is_manual = 0",
+            &format!("DELETE FROM image_tags WHERE image_id = ?1 AND is_manual = 0{keep_age_tags}"),
             params![image_id],
         )?;
         for (tag_id, confidence) in &resolved_tags {
@@ -1339,6 +1373,12 @@ fn persist_predicted_tags(
                 "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
                  VALUES (?1, ?2, ?3, 0)",
                 params![image_id, tag_id, confidence],
+            )?;
+        }
+        if let Some(rating) = rating {
+            tx.execute(
+                "UPDATE images SET rating = ?1 WHERE id = ?2",
+                params![rating, image_id],
             )?;
         }
         tx.commit()?;
@@ -1487,12 +1527,55 @@ async fn execute_tag_task(
             ))
         })?;
     let predicted = normalize_predicted_tags(tags)?;
+    // The tagger's content rating; ignored if missing or not one we store.
+    let rating = result
+        .get("rating")
+        .and_then(Value::as_str)
+        .filter(|rating| ["pg", "pg13", "r", "x", "xxx"].contains(rating))
+        .map(str::to_owned);
 
-    let lib = lib.clone();
-    tokio::task::spawn_blocking(move || {
-        persist_predicted_tags(&lib, directory_id, image_id, &predicted)
+    let persist_lib = lib.clone();
+    let prompt = tokio::task::spawn_blocking(move || -> Result<Option<String>, AppError> {
+        persist_predicted_tags(
+            &persist_lib,
+            directory_id,
+            image_id,
+            &predicted,
+            rating.as_deref(),
+        )?;
+        let pool = persist_lib.directory_db.get_pool(directory_id)?;
+        let prompt = pool
+            .get()?
+            .query_row(
+                "SELECT prompt FROM images WHERE id = ?1",
+                params![image_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(prompt)
     })
     .await??;
+
+    // Re-tagging replaces every automatic tag, including the ones taken from
+    // the image's generation prompt, so add those back.
+    if let Some(prompt) = prompt.filter(|prompt| !prompt.trim().is_empty()) {
+        let valid_tags =
+            crate::services::danbooru_tags::get_tags(state.http_client(), state.data_dir()).await;
+        let names = crate::services::danbooru_tags::match_prompt_tags(&prompt, &valid_tags);
+        let prompt_lib = lib.clone();
+        let restored = tokio::task::spawn_blocking(move || {
+            add_prompt_tags(&prompt_lib, directory_id, image_id, &names)
+        })
+        .await?;
+        if let Err(error) = restored {
+            log::warn!(
+                "[TaskQueue] Could not restore prompt tags on image #{}: {}",
+                image_id,
+                error
+            );
+        }
+    }
 
     log::info!(
         "[TaskQueue] Tagged directory #{} image #{} with {} automatic tags",
@@ -1520,6 +1603,15 @@ async fn execute_age_detect_task(
         .as_i64()
         .ok_or_else(|| AppError::Internal("Missing image_id in age_detect task".into()))?;
     let directory_id = payload["directory_id"].as_i64();
+
+    // The global toggle may have been switched off after this task was queued.
+    if !crate::routes::settings::is_age_detection_enabled(state.data_dir()) {
+        log::info!(
+            "[TaskQueue] Skipping age detect for image #{} (age detection is disabled)",
+            image_id
+        );
+        return Ok(());
+    }
 
     // Resolve image path
     let mut image_path = payload["image_path"].as_str().unwrap_or("").to_string();
@@ -1625,25 +1717,33 @@ async fn execute_age_detect_task(
     let max_age = result["max_age"].as_i64();
     let detected_ages = result["detected_ages"].as_str().unwrap_or("").to_string();
     let detection_data = serde_json::to_string(&result).unwrap_or_default();
+    let age_tags = derive_age_tags(&result);
 
     // Write results to directory DB
     if let Some(dir_id) = directory_id {
         let lib = lib.clone();
         tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-            let pool = lib.directory_db.get_pool(dir_id)?;
-            let conn = pool.get()?;
-            conn.execute(
-                "UPDATE images SET num_faces = ?1, min_detected_age = ?2, max_detected_age = ?3,
-                 detected_ages = ?4, age_detection_data = ?5 WHERE id = ?6",
-                params![
-                    num_faces,
-                    min_age,
-                    max_age,
-                    &detected_ages,
-                    &detection_data,
-                    image_id
-                ],
-            )?;
+            let updated = {
+                let pool = lib.directory_db.get_pool(dir_id)?;
+                let conn = pool.get()?;
+                conn.execute(
+                    "UPDATE images SET num_faces = ?1, min_detected_age = ?2, max_detected_age = ?3,
+                     detected_ages = ?4, age_detection_data = ?5 WHERE id = ?6",
+                    params![
+                        num_faces,
+                        min_age,
+                        max_age,
+                        &detected_ages,
+                        &detection_data,
+                        image_id
+                    ],
+                )?
+            };
+            if updated == 0 {
+                return Ok(());
+            }
+            // Replace previous age-derived tags (also clears them when no face is found).
+            persist_age_tags(&lib, dir_id, image_id, &age_tags)?;
             log::info!(
                 "[TaskQueue] Age detection for image #{}: {} faces, ages {}",
                 image_id,
@@ -1655,6 +1755,199 @@ async fn execute_age_detect_task(
         .await??;
     }
 
+    Ok(())
+}
+
+// ─── Age-derived tags ────────────────────────────────────────────────────────
+
+/// Age brackets in ascending order; mirrors the age-detector addon and v0.3.33.
+const AGE_BRACKETS: [&str; 8] = [
+    "child", "teen", "20s", "30s", "40s", "50s", "60s", "elderly",
+];
+/// Confidence stored on age-derived tag associations (matches v0.3.33).
+const AGE_TAG_CONFIDENCE: f64 = 0.95;
+
+fn age_bracket_index(age: i64) -> usize {
+    match age {
+        i64::MIN..=12 => 0,
+        13..=17 => 1,
+        18..=29 => 2,
+        30..=39 => 3,
+        40..=49 => 4,
+        50..=59 => 5,
+        60..=69 => 6,
+        _ => 7,
+    }
+}
+
+/// Derive the tags age detection writes from a detector response:
+/// a person-count tag, one `age:<bracket>` tag per distinct bracket, and
+/// `male` / `female` when a face of that gender was found.
+fn derive_age_tags(result: &Value) -> Vec<String> {
+    let faces: &[Value] = result
+        .get("faces")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    let face_count = if result.get("faces").map_or(false, Value::is_array) {
+        faces.len()
+    } else {
+        result["num_faces"].as_u64().unwrap_or(0) as usize
+    };
+
+    let mut tags = Vec::new();
+    match face_count {
+        0 => return tags,
+        1 => tags.push("1_person".to_string()),
+        2 => tags.push("2_people".to_string()),
+        _ => tags.push("multiple_people".to_string()),
+    }
+
+    let mut brackets = [false; AGE_BRACKETS.len()];
+    let (mut male, mut female) = (false, false);
+    for face in faces {
+        let age = face.get("age").and_then(|age| {
+            age.as_i64()
+                .or_else(|| age.as_f64().map(|a| a.round() as i64))
+        });
+        if let Some(age) = age {
+            brackets[age_bracket_index(age)] = true;
+        }
+        match face
+            .get("gender")
+            .and_then(Value::as_str)
+            .map(|gender| gender.trim().to_ascii_uppercase())
+            .as_deref()
+        {
+            Some("M") | Some("MALE") => male = true,
+            Some("F") | Some("FEMALE") => female = true,
+            _ => {}
+        }
+    }
+    for (index, present) in brackets.iter().enumerate() {
+        if *present {
+            tags.push(format!("age:{}", AGE_BRACKETS[index]));
+        }
+    }
+    if male {
+        tags.push("male".to_string());
+    }
+    if female {
+        tags.push("female".to_string());
+    }
+    tags
+}
+
+/// Ids of every tag in the main DB whose name is one age detection can write.
+fn age_derived_tag_ids(main: &rusqlite::Connection) -> Result<Vec<i64>, rusqlite::Error> {
+    main.prepare(
+        "SELECT id FROM tags
+         WHERE name IN ('1_person', '2_people', 'multiple_people', 'male', 'female')
+            OR name LIKE 'age:%'",
+    )?
+    .query_map([], |row| row.get(0))?
+    .collect()
+}
+
+/// Comma-separated integer ids for an SQL `IN (...)` list (ids are i64, so injection-safe).
+fn id_list_sql(ids: &[i64]) -> String {
+    ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",")
+}
+
+/// Replace an image's age-derived tags with `tags`.
+///
+/// Only non-manual associations to age-derived tag names are removed, so manual
+/// tags and auto-tagger tags are never touched. Passing an empty slice clears
+/// previous age tags (e.g. a re-detection that now finds no faces).
+fn persist_age_tags(
+    lib: &LibraryContext,
+    directory_id: i64,
+    image_id: i64,
+    tags: &[String],
+) -> Result<(), AppError> {
+    let _persist_guard = TAG_PERSIST_LOCK
+        .lock()
+        .map_err(|_| AppError::Internal("Tag persistence lock was poisoned".into()))?;
+    let pool = lib.directory_db.get_pool(directory_id)?;
+    let mut conn = pool.get()?;
+
+    let (new_tag_ids, created_tag_ids, age_tag_ids): (Vec<i64>, Vec<i64>, Vec<i64>) = {
+        let mut main_conn = lib.main_pool.get()?;
+        let tx = main_conn.transaction()?;
+        let mut resolved = Vec::with_capacity(tags.len());
+        let mut created = Vec::new();
+        for name in tags {
+            let inserted = tx.execute(
+                "INSERT OR IGNORE INTO tags (name, category) VALUES (?1, 'meta')",
+                params![name],
+            )?;
+            let tag_id = tx.query_row(
+                "SELECT id FROM tags WHERE name = ?1",
+                params![name],
+                |row| row.get::<_, i64>(0),
+            )?;
+            if inserted == 1 {
+                created.push(tag_id);
+            }
+            resolved.push(tag_id);
+        }
+        let age_ids = age_derived_tag_ids(&tx)?;
+        tx.commit()?;
+        (resolved, created, age_ids)
+    };
+
+    let mut affected_tag_ids: HashSet<i64> = new_tag_ids.iter().copied().collect();
+    let association_result = (|| -> Result<(), AppError> {
+        let tx = conn.transaction()?;
+        if !age_tag_ids.is_empty() {
+            let id_list = id_list_sql(&age_tag_ids);
+            let previous: Vec<i64> = tx
+                .prepare(&format!(
+                    "SELECT tag_id FROM image_tags
+                     WHERE image_id = ?1 AND is_manual = 0 AND tag_id IN ({id_list})"
+                ))?
+                .query_map(params![image_id], |row| row.get(0))?
+                .collect::<Result<_, _>>()?;
+            affected_tag_ids.extend(previous);
+            tx.execute(
+                &format!(
+                    "DELETE FROM image_tags
+                     WHERE image_id = ?1 AND is_manual = 0 AND tag_id IN ({id_list})"
+                ),
+                params![image_id],
+            )?;
+        }
+        for tag_id in &new_tag_ids {
+            tx.execute(
+                "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
+                 VALUES (?1, ?2, ?3, 0)",
+                params![image_id, tag_id, AGE_TAG_CONFIDENCE],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    })();
+    drop(conn);
+    drop(pool);
+
+    if let Err(error) = association_result {
+        if let Err(cleanup_error) = remove_unassociated_tags(lib, &created_tag_ids) {
+            log::error!(
+                "[TaskQueue] Failed to clean up tags after age tag rollback: {}",
+                cleanup_error
+            );
+        }
+        return Err(error);
+    }
+
+    if let Err(error) = refresh_tag_post_counts(lib, &affected_tag_ids) {
+        log::error!(
+            "[TaskQueue] Failed to refresh tag post counts after age-tagging directory #{} image #{}: {}",
+            directory_id,
+            image_id,
+            error
+        );
+    }
     Ok(())
 }
 
@@ -1777,6 +2070,150 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
     Ok(())
 }
 
+// ─── One-time library repairs ────────────────────────────────────────────────
+
+/// Images handled per batch by [`run_library_repairs`].
+const REPAIR_BATCH: i64 = 200;
+
+/// Repair data that versions 2.0.0-2.1.0 never wrote, once per directory.
+///
+/// Directory migration v7 records each repair in `pending_repairs` with a
+/// cursor, so progress survives restarts and a finished repair never reruns:
+/// - `age_tags`: rebuild age tags from the stored `age_detection_data`,
+///   without running the detector again.
+/// - `metadata`: queue AI-metadata extraction for images with no saved prompt.
+///
+/// Ratings cannot be rebuilt from stored data; re-tagging is left to the user.
+fn run_library_repairs(state: &AppState) -> Result<(), AppError> {
+    for lib in state.library_manager().all_mounted() {
+        let directory_ids: Vec<i64> = {
+            let conn = lib.main_pool.get()?;
+            let mut stmt = conn.prepare("SELECT id FROM watch_directories")?;
+            let ids = stmt
+                .query_map([], |row| row.get(0))?
+                .filter_map(|row| row.ok())
+                .collect();
+            ids
+        };
+        for directory_id in directory_ids {
+            if let Err(e) = repair_directory(state, &lib, directory_id) {
+                log::warn!(
+                    "[Repair] Directory #{} repair stopped early: {}",
+                    directory_id,
+                    e
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn repair_directory(
+    state: &AppState,
+    lib: &LibraryContext,
+    directory_id: i64,
+) -> Result<(), AppError> {
+    let pool = lib.directory_db.get_pool(directory_id)?;
+    let repairs: Vec<(String, i64)> = {
+        let conn = pool.get()?;
+        let mut stmt = conn.prepare("SELECT name, last_image_id FROM pending_repairs")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|row| row.ok())
+            .collect();
+        rows
+    };
+
+    for (name, mut cursor) in repairs {
+        let query = match name.as_str() {
+            "age_tags" => {
+                if !crate::routes::settings::is_age_detection_enabled(state.data_dir()) {
+                    continue; // Stays pending until age detection is turned on.
+                }
+                let age_ids = age_derived_tag_ids(&*lib.main_pool.get()?)?;
+                let skip_tagged = if age_ids.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "AND NOT EXISTS (SELECT 1 FROM image_tags it
+                         WHERE it.image_id = images.id AND it.tag_id IN ({}))",
+                        id_list_sql(&age_ids)
+                    )
+                };
+                format!(
+                    "SELECT id, age_detection_data FROM images
+                     WHERE id > ?1 AND age_detection_data IS NOT NULL {skip_tagged}
+                     ORDER BY id LIMIT ?2"
+                )
+            }
+            "metadata" => "SELECT i.id, (SELECT f.original_path FROM image_files f
+                                         WHERE f.image_id = i.id AND f.file_exists = 1
+                                         LIMIT 1)
+                           FROM images i
+                           WHERE i.id > ?1 AND i.prompt IS NULL
+                           ORDER BY i.id LIMIT ?2"
+                .to_string(),
+            _ => {
+                pool.get()?
+                    .execute("DELETE FROM pending_repairs WHERE name = ?1", params![name])?;
+                continue;
+            }
+        };
+
+        loop {
+            let batch: Vec<(i64, Option<String>)> = {
+                let conn = pool.get()?;
+                let mut stmt = conn.prepare(&query)?;
+                let rows = stmt
+                    .query_map(params![cursor, REPAIR_BATCH], |row| {
+                        Ok((row.get(0)?, row.get(1)?))
+                    })?
+                    .filter_map(|row| row.ok())
+                    .collect();
+                rows
+            };
+
+            for (image_id, value) in &batch {
+                let Some(value) = value else { continue };
+                if name == "metadata" {
+                    enqueue_import_metadata(state, lib, directory_id, *image_id, value);
+                    continue;
+                }
+                let Ok(result) = serde_json::from_str::<Value>(value) else {
+                    continue;
+                };
+                let tags = derive_age_tags(&result);
+                if tags.is_empty() {
+                    continue;
+                }
+                if let Err(e) = persist_age_tags(lib, directory_id, *image_id, &tags) {
+                    log::warn!(
+                        "[Repair] Failed to restore age tags for directory #{} image #{}: {}",
+                        directory_id,
+                        image_id,
+                        e
+                    );
+                }
+            }
+
+            let conn = pool.get()?;
+            if (batch.len() as i64) < REPAIR_BATCH {
+                conn.execute("DELETE FROM pending_repairs WHERE name = ?1", params![name])?;
+                log::info!("[Repair] Directory #{} finished {} repair", directory_id, name);
+                break;
+            }
+            cursor = batch.last().map_or(cursor, |(id, _)| *id);
+            conn.execute(
+                "UPDATE pending_repairs SET last_image_id = ?1 WHERE name = ?2",
+                params![cursor, name],
+            )?;
+            drop(conn);
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    }
+    Ok(())
+}
+
 async fn run_age_guardian(state: &AppState) -> Result<(), AppError> {
     if state.addon_manager().get_addon_status("age-detector") != AddonStatus::Running {
         return Ok(());
@@ -1868,13 +2305,14 @@ fn complete_fast_import(
 /// Run metadata extraction for a single image.
 ///
 /// Looks up the directory's metadata_format and ComfyUI node ID configuration,
-/// then calls the metadata service to extract and save to DB.
+/// then calls the metadata service to extract and save to DB. Returns the
+/// extracted positive prompt, if any, so the caller can tag its words.
 fn run_metadata_extraction(
     lib: &LibraryContext,
     image_id: i64,
     directory_id: Option<i64>,
     image_path: &str,
-) -> Result<(), AppError> {
+) -> Result<Option<String>, AppError> {
     use crate::services::metadata;
 
     // Get directory-level configuration for metadata extraction
@@ -1914,6 +2352,10 @@ fn run_metadata_extraction(
         &format_hint,
     ) {
         Ok(result) => {
+            let prompt = match result.status.as_str() {
+                "success" => result.metadata.as_ref().and_then(|m| m.prompt.clone()),
+                _ => None,
+            };
             match result.status.as_str() {
                 "success" => {
                     log::info!(
@@ -1938,7 +2380,7 @@ fn run_metadata_extraction(
                 }
                 _ => {}
             }
-            Ok(())
+            Ok(prompt)
         }
         Err(e) => {
             log::warn!(
@@ -1947,9 +2389,163 @@ fn run_metadata_extraction(
                 e
             );
             // Non-fatal: don't fail the whole task for metadata issues
-            Ok(())
+            Ok(None)
         }
     }
+}
+
+/// Extract generation metadata for one image and, when `extract_tags` is set,
+/// add the Danbooru tags found among its prompt words (v0.3.33 behaviour).
+///
+/// Tagging is best effort: a missing tag list or a database error is logged and
+/// never fails the caller.
+pub async fn extract_image_metadata(
+    state: &AppState,
+    lib: &Arc<LibraryContext>,
+    image_id: i64,
+    directory_id: Option<i64>,
+    image_path: String,
+    extract_tags: bool,
+) -> Result<(), AppError> {
+    let blocking_lib = lib.clone();
+    let prompt = tokio::task::spawn_blocking(move || {
+        run_metadata_extraction(&blocking_lib, image_id, directory_id, &image_path)
+    })
+    .await??;
+
+    let (true, Some(prompt), Some(directory_id)) = (extract_tags, prompt, directory_id) else {
+        return Ok(());
+    };
+    if prompt.trim().is_empty() {
+        return Ok(());
+    }
+
+    let valid_tags =
+        crate::services::danbooru_tags::get_tags(state.http_client(), state.data_dir()).await;
+    let names = crate::services::danbooru_tags::match_prompt_tags(&prompt, &valid_tags);
+    if names.is_empty() {
+        return Ok(());
+    }
+
+    let lib = lib.clone();
+    let added =
+        tokio::task::spawn_blocking(move || add_prompt_tags(&lib, directory_id, image_id, &names))
+            .await?;
+    match added {
+        Ok(0) => {}
+        Ok(count) => log::info!(
+            "[TaskQueue] Added {} prompt tags to image #{}",
+            count,
+            image_id
+        ),
+        Err(error) => log::warn!(
+            "[TaskQueue] Could not add prompt tags to image #{}: {}",
+            image_id,
+            error
+        ),
+    }
+    Ok(())
+}
+
+/// Confidence recorded for tags matched from prompt words (as in v0.3.33).
+const PROMPT_TAG_CONFIDENCE: f64 = 0.8;
+
+/// Add prompt-derived tags to an image without touching its existing tags.
+///
+/// New associations are stored as automatic (`is_manual = 0`) with
+/// [`PROMPT_TAG_CONFIDENCE`]. Tags the image already has, manual or from the
+/// auto-tagger, are left exactly as they are. Returns the number added.
+fn add_prompt_tags(
+    lib: &LibraryContext,
+    directory_id: i64,
+    image_id: i64,
+    names: &[String],
+) -> Result<usize, AppError> {
+    if names.is_empty() {
+        return Ok(0);
+    }
+    let _persist_guard = TAG_PERSIST_LOCK
+        .lock()
+        .map_err(|_| AppError::Internal("Tag persistence lock was poisoned".into()))?;
+    let pool = lib.directory_db.get_pool(directory_id)?;
+    let mut conn = pool.get()?;
+    let image_exists = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM images WHERE id = ?1)",
+        params![image_id],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !image_exists {
+        return Err(AppError::NotFound(format!(
+            "Image {image_id} was not found in directory {directory_id}"
+        )));
+    }
+
+    let (tag_ids, created_tag_ids): (Vec<i64>, Vec<i64>) = {
+        let mut main_conn = lib.main_pool.get()?;
+        let tx = main_conn.transaction()?;
+        let mut resolved = Vec::with_capacity(names.len());
+        let mut created = Vec::new();
+        for name in names {
+            let inserted = tx.execute(
+                "INSERT OR IGNORE INTO tags (name, category) VALUES (?1, 'general')",
+                params![name],
+            )?;
+            let tag_id = tx.query_row(
+                "SELECT id FROM tags WHERE name = ?1",
+                params![name],
+                |row| row.get::<_, i64>(0),
+            )?;
+            if inserted == 1 {
+                created.push(tag_id);
+            }
+            resolved.push(tag_id);
+        }
+        tx.commit()?;
+        (resolved, created)
+    };
+
+    let association_result = (|| -> Result<Vec<i64>, AppError> {
+        let tx = conn.transaction()?;
+        let mut added = Vec::new();
+        for tag_id in &tag_ids {
+            let inserted = tx.execute(
+                "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
+                 VALUES (?1, ?2, ?3, 0)",
+                params![image_id, tag_id, PROMPT_TAG_CONFIDENCE],
+            )?;
+            if inserted == 1 {
+                added.push(*tag_id);
+            }
+        }
+        tx.commit()?;
+        Ok(added)
+    })();
+    drop(conn);
+    drop(pool);
+
+    let added = match association_result {
+        Ok(added) => added,
+        Err(error) => {
+            if let Err(cleanup_error) = remove_unassociated_tags(lib, &created_tag_ids) {
+                log::error!(
+                    "[TaskQueue] Failed to clean up tags after prompt tagging rollback: {}",
+                    cleanup_error
+                );
+            }
+            return Err(error);
+        }
+    };
+
+    let affected: HashSet<i64> = added.iter().copied().collect();
+    if let Err(error) = refresh_tag_post_counts(lib, &affected) {
+        log::error!(
+            "[TaskQueue] Failed to refresh tag post counts after prompt tagging directory #{} image #{}: {}",
+            directory_id,
+            image_id,
+            error
+        );
+    }
+    Ok(added.len())
 }
 
 /// Read the directory's metadata configuration (format hint, ComfyUI node IDs).
@@ -2121,6 +2717,44 @@ pub fn enqueue_task(
     Ok(Some(task_id))
 }
 
+/// Queue AI-metadata extraction for an image that was just imported.
+///
+/// Mirrors the v0.3.33 importer, which queued `extract_metadata` for every new
+/// image. Only files the extractor can read (PNG text chunks or a generation
+/// sidecar) are queued. No duplicate check is made: this runs once, for the
+/// freshly inserted row, and scanning a large directory must not pay a
+/// pending-task scan per file. Failures are logged; the import still succeeds.
+pub fn enqueue_import_metadata(
+    state: &AppState,
+    lib: &LibraryContext,
+    directory_id: i64,
+    image_id: i64,
+    image_path: &str,
+) {
+    if !crate::services::metadata::may_have_generation_metadata(std::path::Path::new(image_path)) {
+        return;
+    }
+    let payload = serde_json::json!({
+        "image_id": image_id,
+        "directory_id": directory_id,
+        "image_path": image_path,
+        "library_id": lib.uuid,
+    });
+    if let Err(error) = enqueue_task(
+        state,
+        TASK_EXTRACT_METADATA,
+        &payload,
+        PRIORITY_METADATA,
+        None,
+    ) {
+        log::warn!(
+            "[TaskQueue] Failed to queue metadata extraction for image #{}: {}",
+            image_id,
+            error
+        );
+    }
+}
+
 /// Clear duplicate pending tasks, keeping the oldest for each image_id.
 pub fn clear_duplicate_tasks(state: &AppState) -> Result<i64, AppError> {
     let conn = state.main_db().get()?;
@@ -2167,6 +2801,11 @@ mod tests {
         let media_dir = data_dir.join("media");
         let media_path = media_dir.join("image.jpg");
         std::fs::create_dir_all(&media_dir).unwrap();
+        std::fs::write(
+            data_dir.join("settings.json"),
+            r#"{"age_detection": {"enabled": true}}"#,
+        )
+        .unwrap();
         std::fs::write(&media_path, b"image").unwrap();
 
         let state = AppState::new(&data_dir, 0).unwrap();
@@ -2313,6 +2952,211 @@ mod tests {
             .collect()
     }
 
+    fn insert_tag_association(
+        lib: &LibraryContext,
+        directory_id: i64,
+        image_id: i64,
+        name: &str,
+        confidence: f64,
+        manual: bool,
+    ) {
+        let tag_id = {
+            let main = lib.main_pool.get().unwrap();
+            main.execute(
+                "INSERT OR IGNORE INTO tags (name) VALUES (?1)",
+                params![name],
+            )
+            .unwrap();
+            main.query_row(
+                "SELECT id FROM tags WHERE name = ?1",
+                params![name],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+        };
+        let pool = lib.directory_db.get_pool(directory_id).unwrap();
+        pool.get()
+            .unwrap()
+            .execute(
+                "INSERT INTO image_tags (image_id, tag_id, confidence, is_manual)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![image_id, tag_id, confidence, manual],
+            )
+            .unwrap();
+        refresh_tag_post_counts(lib, &HashSet::from([tag_id])).unwrap();
+    }
+
+    fn tag_post_count(lib: &LibraryContext, name: &str) -> i64 {
+        lib.main_pool
+            .get()
+            .unwrap()
+            .query_row(
+                "SELECT post_count FROM tags WHERE name = ?1",
+                params![name],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn prompt_tags_are_added_without_touching_existing_tags() {
+        let data_dir = temp_test_dir("prompt-tags");
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let (lib, directory_id, image_id) = create_tag_directory(&state, "prompt");
+        insert_tag_association(&lib, directory_id, image_id, "cat", 1.0, true);
+        insert_tag_association(&lib, directory_id, image_id, "solo", 0.9, false);
+
+        let names: Vec<String> = ["cat", "solo", "dog"].map(String::from).to_vec();
+        let added = add_prompt_tags(&lib, directory_id, image_id, &names).unwrap();
+        assert_eq!(added, 1);
+
+        let mut tags = image_tag_names(&lib, directory_id, image_id);
+        tags.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(tags.len(), 3);
+        assert_eq!(tags[0], ("cat".to_string(), true, 1.0));
+        assert_eq!(tags[1], ("dog".to_string(), false, PROMPT_TAG_CONFIDENCE));
+        assert_eq!(tags[2], ("solo".to_string(), false, 0.9));
+        assert_eq!(tag_post_count(&lib, "dog"), 1);
+        assert_eq!(tag_post_count(&lib, "cat"), 1);
+
+        // Running again is a no-op.
+        assert_eq!(
+            add_prompt_tags(&lib, directory_id, image_id, &names).unwrap(),
+            0
+        );
+        assert_eq!(tag_post_count(&lib, "dog"), 1);
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn metadata_task_saves_prompt_and_tags_only_when_requested() {
+        let data_dir = temp_test_dir("metadata-tags");
+        let state = AppState::new(&data_dir, 0).unwrap();
+        // A fresh cache file means the tag list is read without any network.
+        std::fs::write(
+            data_dir.join("danbooru_tags.txt"),
+            "1girl\nsolo\nblue_eyes\n",
+        )
+        .unwrap();
+
+        let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        for (kind, data) in [
+            (
+                &b"tEXt"[..],
+                &b"parameters\0(1girl:1.2), solo, blue eyes, masterpiece\nSteps: 20, Seed: 5"[..],
+            ),
+            (&b"IEND"[..], &b""[..]),
+        ] {
+            png.extend((data.len() as u32).to_be_bytes());
+            png.extend_from_slice(kind);
+            png.extend_from_slice(data);
+            png.extend_from_slice(&[0, 0, 0, 0]);
+        }
+
+        for (name, extract_tags) in [("tagged", true), ("untagged", false)] {
+            let (lib, directory_id, image_id) = create_tag_directory(&state, name);
+            let path = data_dir.join(format!("{name}.png"));
+            std::fs::write(&path, &png).unwrap();
+
+            extract_image_metadata(
+                &state,
+                &lib,
+                image_id,
+                Some(directory_id),
+                path.to_string_lossy().to_string(),
+                extract_tags,
+            )
+            .await
+            .unwrap();
+
+            let prompt: Option<String> = lib
+                .directory_db
+                .get_pool(directory_id)
+                .unwrap()
+                .get()
+                .unwrap()
+                .query_row(
+                    "SELECT prompt FROM images WHERE id = ?1",
+                    params![image_id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(prompt.unwrap().contains("blue eyes"));
+
+            let mut names: Vec<String> = image_tag_names(&lib, directory_id, image_id)
+                .into_iter()
+                .map(|(name, manual, confidence)| {
+                    assert!(!manual);
+                    assert_eq!(confidence, PROMPT_TAG_CONFIDENCE);
+                    name
+                })
+                .collect();
+            names.sort();
+            if extract_tags {
+                assert_eq!(names, vec!["1girl", "blue_eyes", "solo"]);
+            } else {
+                assert!(names.is_empty());
+            }
+        }
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn import_metadata_enqueue_skips_files_the_extractor_cannot_read() {
+        let data_dir = temp_test_dir("import-enqueue");
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let lib = state.library_manager().primary().clone();
+
+        enqueue_import_metadata(&state, &lib, 4, 9, "/media/a.png");
+        enqueue_import_metadata(&state, &lib, 4, 10, "/media/b.jpg");
+
+        let payloads: Vec<String> = state
+            .main_db()
+            .get()
+            .unwrap()
+            .prepare("SELECT payload FROM task_queue WHERE task_type = ?1")
+            .unwrap()
+            .query_map([TASK_EXTRACT_METADATA], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(payloads.len(), 1);
+        let payload: Value = serde_json::from_str(&payloads[0]).unwrap();
+        assert_eq!(payload["image_id"], 9);
+        assert_eq!(payload["directory_id"], 4);
+        assert_eq!(payload["image_path"], "/media/a.png");
+        assert_eq!(payload["library_id"].as_str(), Some(lib.uuid.as_str()));
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn prediction_saves_the_tagger_rating() {
+        let data_dir = temp_test_dir("tag-rating");
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let (lib, directory_id, image_id) = create_tag_directory(&state, "rating");
+        let predicted = normalize_predicted_tags(&[
+            serde_json::json!({"name": "1girl", "confidence": 0.92, "category": "general"}),
+        ])
+        .unwrap();
+
+        persist_predicted_tags(&lib, directory_id, image_id, &predicted, Some("x")).unwrap();
+
+        let pool = lib.directory_db.get_pool(directory_id).unwrap();
+        let rating: String = pool
+            .get()
+            .unwrap()
+            .query_row(
+                "SELECT rating FROM images WHERE id = ?1",
+                params![image_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(rating, "x");
+    }
+
     #[test]
     // AC: @authoritative-auto-tag-persistence ac-complete-prediction
     fn complete_prediction_persists_all_distinct_tags_and_highest_confidence() {
@@ -2327,7 +3171,7 @@ mod tests {
         ])
         .unwrap();
 
-        persist_predicted_tags(&lib, directory_id, image_id, &predicted).unwrap();
+        persist_predicted_tags(&lib, directory_id, image_id, &predicted, None).unwrap();
 
         let tags = image_tag_names(&lib, directory_id, image_id);
         assert_eq!(tags.len(), 3);
@@ -2392,7 +3236,7 @@ mod tests {
             serde_json::json!({"name": "complete_b", "confidence": 0.8, "category": "general"}),
         ])
         .unwrap();
-        persist_predicted_tags(&lib, directory_id, image_id, &predicted).unwrap();
+        persist_predicted_tags(&lib, directory_id, image_id, &predicted, None).unwrap();
 
         let tags = image_tag_names(&lib, directory_id, image_id);
         assert!(tags
@@ -2454,7 +3298,7 @@ mod tests {
             .unwrap();
         }
 
-        assert!(persist_predicted_tags(&lib, directory_id, image_id, &predicted).is_err());
+        assert!(persist_predicted_tags(&lib, directory_id, image_id, &predicted, None).is_err());
         let tags = image_tag_names(&lib, directory_id, image_id);
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].0, "old_complete");
@@ -2577,6 +3421,343 @@ mod tests {
         assert_eq!(attempts, MAX_RETRIES);
         assert!(error_len <= 4096);
         assert!(completed);
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn age_tags_are_derived_from_person_count_brackets_and_gender() {
+        let one = serde_json::json!({
+            "num_faces": 1,
+            "faces": [{"age": 25, "gender": "F", "age_bracket": "20s"}]
+        });
+        assert_eq!(derive_age_tags(&one), ["1_person", "age:20s", "female"]);
+
+        let two = serde_json::json!({
+            "num_faces": 2,
+            "faces": [
+                {"age": 45, "gender": "F"},
+                {"age": 10, "gender": "M"},
+            ]
+        });
+        assert_eq!(
+            derive_age_tags(&two),
+            ["2_people", "age:child", "age:40s", "male", "female"]
+        );
+
+        let many = serde_json::json!({
+            "num_faces": 3,
+            "faces": [
+                {"age": 31, "gender": "M"},
+                {"age": 38, "gender": "M"},
+                {"age": 75, "gender": "M"},
+            ]
+        });
+        assert_eq!(
+            derive_age_tags(&many),
+            ["multiple_people", "age:30s", "age:elderly", "male"]
+        );
+
+        let none = serde_json::json!({
+            "num_faces": 0, "faces": [], "min_age": null, "max_age": null, "detected_ages": ""
+        });
+        assert!(derive_age_tags(&none).is_empty());
+
+        // Without a faces array the reported count still yields a person tag.
+        assert_eq!(
+            derive_age_tags(&serde_json::json!({"num_faces": 2})),
+            ["2_people"]
+        );
+        assert!(derive_age_tags(&serde_json::json!({})).is_empty());
+    }
+
+    #[test]
+    fn age_bracket_boundaries_match_the_python_detector() {
+        let cases = [
+            (0, "child"),
+            (12, "child"),
+            (13, "teen"),
+            (17, "teen"),
+            (18, "20s"),
+            (29, "20s"),
+            (30, "30s"),
+            (39, "30s"),
+            (40, "40s"),
+            (49, "40s"),
+            (50, "50s"),
+            (59, "50s"),
+            (60, "60s"),
+            (69, "60s"),
+            (70, "elderly"),
+            (99, "elderly"),
+        ];
+        for (age, bracket) in cases {
+            assert_eq!(AGE_BRACKETS[age_bracket_index(age)], bracket, "age {age}");
+        }
+    }
+
+    fn age_test_tags(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn age_tags_replace_previous_age_tags_and_preserve_manual_and_auto_tags() {
+        let data_dir = temp_test_dir("age-tags");
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let (lib, directory_id, image_id) = create_tag_directory(&state, "age-tags");
+
+        // A manual tag that shares an age-tag name, plus an auto-tagger tag.
+        {
+            let main = lib.main_pool.get().unwrap();
+            main.execute(
+                "INSERT INTO tags (name, category) VALUES ('male', 'general')",
+                [],
+            )
+            .unwrap();
+            let male_id = main.last_insert_rowid();
+            let pool = lib.directory_db.get_pool(directory_id).unwrap();
+            pool.get()
+                .unwrap()
+                .execute(
+                    "INSERT INTO image_tags (image_id, tag_id, confidence, is_manual)
+                     VALUES (?1, ?2, NULL, 1)",
+                    params![image_id, male_id],
+                )
+                .unwrap();
+        }
+        let predicted = normalize_predicted_tags(&[
+            serde_json::json!({"name": "1girl", "confidence": 0.9, "category": "general"}),
+        ])
+        .unwrap();
+        persist_predicted_tags(&lib, directory_id, image_id, &predicted, None).unwrap();
+
+        persist_age_tags(
+            &lib,
+            directory_id,
+            image_id,
+            &age_test_tags(&["1_person", "age:20s", "female", "male"]),
+        )
+        .unwrap();
+        let tags = image_tag_names(&lib, directory_id, image_id);
+        let has = |name: &str, manual: bool| tags.iter().any(|(n, m, _)| n == name && *m == manual);
+        assert!(has("1_person", false));
+        assert!(has("age:20s", false));
+        assert!(has("female", false));
+        assert!(has("male", true), "manual association must stay manual");
+        assert!(has("1girl", false));
+        assert_eq!(tag_post_count(&lib, "age:20s"), 1);
+        let category: String = lib
+            .main_pool
+            .get()
+            .unwrap()
+            .query_row(
+                "SELECT category FROM tags WHERE name = 'age:20s'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(category, "meta");
+
+        // Re-detection replaces only the previous age-derived tags.
+        persist_age_tags(
+            &lib,
+            directory_id,
+            image_id,
+            &age_test_tags(&["2_people", "age:30s", "male"]),
+        )
+        .unwrap();
+        let tags = image_tag_names(&lib, directory_id, image_id);
+        let has = |name: &str, manual: bool| tags.iter().any(|(n, m, _)| n == name && *m == manual);
+        assert!(has("2_people", false));
+        assert!(has("age:30s", false));
+        assert!(!tags.iter().any(|(n, _, _)| n == "1_person"));
+        assert!(!tags.iter().any(|(n, _, _)| n == "age:20s"));
+        assert!(!tags.iter().any(|(n, _, _)| n == "female"));
+        assert!(has("male", true));
+        assert!(has("1girl", false));
+        assert_eq!(tag_post_count(&lib, "age:20s"), 0);
+        assert_eq!(tag_post_count(&lib, "age:30s"), 1);
+
+        // Re-running the auto-tagger must not wipe age-derived tags.
+        persist_predicted_tags(&lib, directory_id, image_id, &predicted, None).unwrap();
+        let tags = image_tag_names(&lib, directory_id, image_id);
+        assert!(tags.iter().any(|(n, _, _)| n == "2_people"));
+        assert!(tags.iter().any(|(n, _, _)| n == "age:30s"));
+        assert!(tags.iter().any(|(n, _, _)| n == "1girl"));
+
+        // A re-detection that finds no faces clears age tags, nothing else.
+        persist_age_tags(&lib, directory_id, image_id, &[]).unwrap();
+        let tags = image_tag_names(&lib, directory_id, image_id);
+        let mut names: Vec<&str> = tags.iter().map(|(n, _, _)| n.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["1girl", "male"]);
+        assert_eq!(tag_post_count(&lib, "age:30s"), 0);
+
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn library_repairs_restore_age_tags_and_queue_metadata_once() {
+        let data_dir = temp_test_dir("library-repairs");
+        let media_dir = data_dir.join("media");
+        std::fs::create_dir_all(&media_dir).unwrap();
+        std::fs::write(
+            data_dir.join("settings.json"),
+            r#"{"age_detection": {"enabled": true}}"#,
+        )
+        .unwrap();
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let lib = state.library_manager().primary().clone();
+        let directory_id = {
+            let conn = lib.main_pool.get().unwrap();
+            conn.execute(
+                "INSERT INTO watch_directories (path, name) VALUES (?1, 'media')",
+                params![media_dir.to_string_lossy()],
+            )
+            .unwrap();
+            conn.last_insert_rowid()
+        };
+        let pool = lib.directory_db.get_pool(directory_id).unwrap();
+        let image_id = {
+            let conn = pool.get().unwrap();
+            init_directory_db(&conn).unwrap();
+            let path = media_dir.join("gen.png");
+            std::fs::write(&path, b"png").unwrap();
+            conn.execute(
+                "INSERT INTO images (filename, file_hash, age_detection_data)
+                 VALUES ('gen.png', 'h1', ?1)",
+                params![r#"{"faces": [{"age": 25, "gender": "F"}]}"#],
+            )
+            .unwrap();
+            let image_id = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO image_files (image_id, original_path, file_exists, file_status)
+                 VALUES (?1, ?2, 1, 'available')",
+                params![image_id, path.to_string_lossy()],
+            )
+            .unwrap();
+            image_id
+        };
+
+        let metadata_tasks = || -> i64 {
+            state
+                .main_db()
+                .get()
+                .unwrap()
+                .query_row(
+                    "SELECT COUNT(*) FROM task_queue WHERE task_type = ?1",
+                    [TASK_EXTRACT_METADATA],
+                    |row| row.get(0),
+                )
+                .unwrap()
+        };
+
+        run_library_repairs(&state).unwrap();
+
+        let names: Vec<String> = image_tag_names(&lib, directory_id, image_id)
+            .into_iter()
+            .map(|(name, _, _)| name)
+            .collect();
+        assert!(names.contains(&"1_person".to_string()), "{names:?}");
+        assert!(names.contains(&"female".to_string()), "{names:?}");
+        assert_eq!(metadata_tasks(), 1);
+        let remaining: i64 = pool
+            .get()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM pending_repairs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(remaining, 0, "finished repairs are removed");
+
+        // A second launch does nothing.
+        run_library_repairs(&state).unwrap();
+        assert_eq!(metadata_tasks(), 1);
+
+        drop(pool);
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn auto_age_detection_queueing_requires_global_toggle_and_directory_opt_in() {
+        let data_dir = temp_test_dir("age-opt-in");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let lib = state.library_manager().primary().clone();
+
+        let mut directories = Vec::new();
+        for (name, opted_in) in [("opted-in", 1), ("opted-out", 0)] {
+            let media_dir = data_dir.join(name);
+            std::fs::create_dir_all(&media_dir).unwrap();
+            let directory_id = {
+                let conn = lib.main_pool.get().unwrap();
+                conn.execute(
+                    "INSERT INTO watch_directories (path, name, auto_age_detect)
+                     VALUES (?1, ?2, ?3)",
+                    params![media_dir.to_string_lossy(), name, opted_in],
+                )
+                .unwrap();
+                conn.last_insert_rowid()
+            };
+            let pool = lib.directory_db.get_pool(directory_id).unwrap();
+            let conn = pool.get().unwrap();
+            init_directory_db(&conn).unwrap();
+            // One image without age data, one that already has results.
+            for (file, data) in [("new.jpg", None), ("done.jpg", Some("{}"))] {
+                let path = media_dir.join(file);
+                std::fs::write(&path, b"image").unwrap();
+                conn.execute(
+                    "INSERT INTO images (filename, file_hash, age_detection_data)
+                     VALUES (?1, ?2, ?3)",
+                    params![file, format!("{name}-{file}"), data],
+                )
+                .unwrap();
+                let image_id = conn.last_insert_rowid();
+                conn.execute(
+                    "INSERT INTO image_files (image_id, original_path, file_exists, file_status)
+                     VALUES (?1, ?2, 1, 'available')",
+                    params![image_id, path.to_string_lossy()],
+                )
+                .unwrap();
+            }
+            directories.push(directory_id);
+        }
+        let (opted_in_dir, opted_out_dir) = (directories[0], directories[1]);
+
+        // Global toggle off (nothing saved): nothing is queued anywhere.
+        assert_eq!(
+            enqueue_missing_age_detection(&state, &lib, opted_in_dir).unwrap(),
+            0
+        );
+
+        // Legacy v0.3.x top-level key enables detection after an upgrade.
+        std::fs::write(
+            data_dir.join("settings.json"),
+            r#"{"age_detection_enabled": "true"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            enqueue_missing_age_detection(&state, &lib, opted_out_dir).unwrap(),
+            0,
+            "directories without auto_age_detect are never queued"
+        );
+        assert_eq!(
+            enqueue_missing_age_detection(&state, &lib, opted_in_dir).unwrap(),
+            1,
+            "only images without existing age data are queued"
+        );
+
+        // Explicitly disabling via the new key overrides the legacy value.
+        std::fs::write(
+            data_dir.join("settings.json"),
+            r#"{"age_detection_enabled": "true", "age_detection": {"enabled": false}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            enqueue_missing_age_detection(&state, &lib, opted_in_dir).unwrap(),
+            0
+        );
+
         drop(state);
         let _ = std::fs::remove_dir_all(data_dir);
     }

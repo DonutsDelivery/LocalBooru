@@ -19,7 +19,6 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     transcodeBufferedDuration,
     svpTotalDuration,
     transcodeTotalDuration,
-    opticalFlowStreamUrl,
     streamTransitioningRef,
     getCurrentAbsoluteTime,
     restartSVPFromPosition,
@@ -306,7 +305,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     // Store source resolution for quality selector
     // ONLY set this when playing the ORIGINAL video (not a stream)
     // Stream dimensions would be the transcoded resolution (e.g., 480p), not the source
-    const isStreaming = svpStreamUrl || opticalFlowStreamUrl || transcodeStreamUrl
+    const isStreaming = svpStreamUrl || transcodeStreamUrl
     if (width > 0 && height > 0 && !isStreaming) {
       console.log('[Lightbox] Setting source resolution (original video):', width, 'x', height)
       setSourceResolution({
@@ -316,7 +315,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     } else {
       console.log('[Lightbox] Video dimensions not available yet, will retry on play')
     }
-  }, [mediaRef, svpTotalDuration, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, transcodeTotalDuration])
+  }, [mediaRef, svpTotalDuration, svpStreamUrl, transcodeStreamUrl, transcodeTotalDuration])
 
   const handleSeekStart = useCallback((e) => {
     if (!mediaRef.current || !duration || !timelineRef.current) return
