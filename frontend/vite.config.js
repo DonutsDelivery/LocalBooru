@@ -10,6 +10,11 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 5210, // LocalBooru dev port (avoid OpenDAW on 5173-5199)
     strictPort: true,
+    fs: {
+      // LicenseNotices imports the repo-root LICENSE via ?raw; Vite checks the id with
+      // its ?raw suffix, so a file entry would not match and the repo root is allowed instead.
+      allow: ['..'],
+    },
     proxy: {
       '/health': {
         target: command === 'serve' ? getDevProxyTarget(process.env.VITE_LOCALBOORU_PORT) : undefined,
