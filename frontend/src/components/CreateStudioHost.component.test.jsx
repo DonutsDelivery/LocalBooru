@@ -800,9 +800,20 @@ describe('Donut Create studio', () => {
     expect(start.disabled).toBe(true)
     expect(screen.getByRole('button', { name: 'Stop ComfyUI' }).disabled).toBe(true)
     expect(screen.getByRole('button', { name: 'Restart ComfyUI' }).disabled).toBe(true)
-    expect(screen.getByText(/select Manage existing local installation/)).toBeTruthy()
+    expect(screen.getByText(/Detect this running installation to enable Start, Stop and Restart/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Manage this ComfyUI' })).toBeTruthy()
     fireEvent.click(start)
     expect(api.apiClient.post).not.toHaveBeenCalled()
+  })
+
+  test('explains remote URL-only connections cannot be controlled from DMC', async () => {
+    status = { ...status, mode: 'existing', backend_url: 'http://comfy.example.test:8188', backend: { ...status.backend, owned: false } }
+    render(<CreateSettings backendOnly />)
+    const summary = await screen.findByText('ComfyUI', { selector: 'summary' })
+    summary.closest('details').open = true
+    expect((await screen.findByRole('button', { name: 'Start ComfyUI' })).disabled).toBe(true)
+    expect(screen.getByText(/register its local installation on the computer hosting the DMC add-on/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Manage this ComfyUI' })).toBeNull()
   })
 
   test.each(['before', 'during'])('discards status polls begun %s a backend stop across all views', async when => {
@@ -1500,7 +1511,7 @@ describe('Donut Create setup', () => {
     fireEvent.click(screen.getByLabelText('Connect existing ComfyUI'))
     fireEvent.change(screen.getByLabelText('Backend URL'), { target: { value: 'http://127.0.0.1:8288' } })
     fireEvent.click(screen.getByRole('button', { name: 'Connect backend' }))
-    await waitFor(() => expect(api.apiClient.post).toHaveBeenCalledWith(`${CREATE_API}/config`, { mode: 'existing', backend_url: 'http://127.0.0.1:8288' }, expect.objectContaining({ signal: expect.any(AbortSignal) })))
+    await waitFor(() => expect(api.apiClient.post).toHaveBeenCalledWith(`${CREATE_API}/config`, { mode: 'existing', backend_url: 'http://127.0.0.1:8288', manage_local: true }, expect.objectContaining({ signal: expect.any(AbortSignal) })))
     expect(api.apiClient.post.mock.calls.some(([url]) => url.endsWith('/setup'))).toBe(false)
     expect(screen.queryByRole('button', { name: 'Install selected runtime and models' })).toBeNull()
   })
