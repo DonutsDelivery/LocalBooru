@@ -108,6 +108,7 @@ const mediaEvent = (generation, sequence = 0) => ({
 
 const makeClient = () => {
   const calls = []
+  const openCalls = []
   const batches = new Map([
     [1, [metadataEvent(1), initEvent(1), mediaEvent(1)]],
     [2, [metadataEvent(2), initEvent(2), mediaEvent(2)]]
@@ -115,7 +116,11 @@ const makeClient = () => {
   let generation = 1
   return {
     calls,
-    open: async () => ({ session_id: 'session-1', generation: 1, state: 'running' }),
+    openCalls,
+    open: async (...args) => {
+      openCalls.push(args)
+      return { session_id: 'session-1', generation: 1, state: 'running' }
+    },
     events: async () => {
       const events = batches.get(generation) || []
       batches.delete(generation)
@@ -187,6 +192,20 @@ test('attaches one MediaSource and appends only current-generation media', async
 
   await controller.close()
   assert.equal(video.src, '')
+})
+
+test('passes the open options through to the client', async () => {
+  const client = makeClient()
+  const controller = new MSESessionController(makeVideo(), client, {
+    mediaSourceFactory: () => new FakeMediaSource(),
+    createObjectURL: () => 'blob:test',
+    revokeObjectURL: () => {},
+    pollDelay: 1
+  })
+
+  await controller.open('/media/video.mp4', 10, 1, { targetResolution: '720p' })
+  assert.deepEqual(client.openCalls, [['/media/video.mp4', 10, 1, { targetResolution: '720p' }]])
+  await controller.close()
 })
 
 test('advances the event cursor past stale generations', async () => {

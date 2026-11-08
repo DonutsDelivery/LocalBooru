@@ -33,6 +33,8 @@ class OpenSessionRequest(ProtocolModel):
     generation: int = Field(ge=1)
     file_path: str = Field(min_length=1)
     start_position: float = Field(default=0.0, ge=0.0)
+    # Quality preset name (e.g. "720p"); absent or unknown keeps the source size.
+    target_resolution: Optional[str] = Field(default=None, min_length=1, max_length=32)
     graph: SessionGraph
     max_buffer_bytes: int = Field(default=128 * 1024 * 1024, gt=0)
     max_buffer_duration: float = Field(default=30.0, gt=0.0)

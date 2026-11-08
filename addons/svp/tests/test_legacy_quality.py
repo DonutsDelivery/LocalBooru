@@ -78,5 +78,66 @@ class LegacyQualityTests(unittest.TestCase):
             asyncio.run(run())
 
 
+class LegacyDownscaleBeforeSvpTests(unittest.TestCase):
+    def info(self, width, height, fps=30):
+        return {
+            'success': True, 'width': width, 'height': height, 'src_fps': fps,
+            'duration': 5, 'src_fps_num': fps, 'src_fps_den': 1,
+            'num_frames': fps * 5, 'has_audio': False,
+        }
+
+    def prepare(self, width, height, target_resolution):
+        with tempfile.TemporaryDirectory(prefix='dmc-synthetic-svp-downscale-') as root, \
+                patch.object(svp_app, 'check_nvenc', return_value=False), \
+                patch.object(svp_app, 'get_video_info', return_value=self.info(width, height)), \
+                patch.object(svp_app.tempfile, 'mkdtemp', return_value=root):
+            stream = svp_app.SVPStream(
+                '/synthetic/video.mp4', target_fps=60, target_resolution=target_resolution)
+            try:
+                script = stream._prepare()
+                self.assertIsNotNone(script)
+                return stream, script.read_text(), stream._decode_command()
+            finally:
+                stream.stop()
+
+    def test_4k_source_is_scaled_before_the_raw_pipe_so_svp_sees_reduced_frames(self):
+        stream, script, decode = self.prepare(3840, 2160, (1280, 720))
+        self.assertIn('WIDTH = 1280', script)
+        self.assertIn('HEIGHT = 720', script)
+        self.assertNotIn('WIDTH = 3840', script)
+        # Motion analysis runs on the reduced frame size, not the 4K source.
+        self.assertIn('core.svp2.SmoothFps_NVOF(', script)
+        self.assertIn('src_width=1280', script)
+        self.assertEqual(decode[decode.index('-vf') + 1], 'scale=1280:720:flags=lanczos')
+        # The scaler is an output option of the decode stage, ahead of the rawvideo pipe.
+        self.assertLess(decode.index('-i'), decode.index('-vf'))
+        self.assertLess(decode.index('-vf'), decode.index('rawvideo'))
+
+    def test_downscale_keeps_aspect_ratio_inside_the_requested_box(self):
+        stream, script, decode = self.prepare(2880, 2160, (854, 480))
+        self.assertIn('WIDTH = 640', script)
+        self.assertIn('HEIGHT = 480', script)
+        self.assertIn('scale=640:480', ' '.join(decode))
+
+    def test_source_inside_the_requested_box_is_never_upscaled(self):
+        stream, script, decode = self.prepare(1280, 720, (1920, 1080))
+        self.assertIn('WIDTH = 1280', script)
+        self.assertIn('HEIGHT = 720', script)
+        self.assertNotIn('-vf', decode)
+
+    def test_original_quality_keeps_source_resolution_without_a_scaler(self):
+        stream, script, decode = self.prepare(3840, 2160, None)
+        self.assertIn('WIDTH = 3840', script)
+        self.assertIn('HEIGHT = 2160', script)
+        self.assertNotIn('-vf', decode)
+
+    def test_fit_resolution_returns_even_dimensions_within_bounds(self):
+        self.assertEqual(svp_app.fit_resolution(3840, 2160, (1280, 720)), (1280, 720))
+        self.assertEqual(svp_app.fit_resolution(1280, 720, (854, 480)), (854, 480))
+        self.assertEqual(svp_app.fit_resolution(2160, 3840, (1280, 720)), (404, 720))
+        self.assertEqual(svp_app.fit_resolution(640, 360, (3840, 2160)), (640, 360))
+        self.assertEqual(svp_app.fit_resolution(1281, 721, (3840, 2160)), (1280, 720))
+
+
 if __name__ == '__main__':
     unittest.main()

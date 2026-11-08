@@ -310,6 +310,47 @@ SVP_PRESETS = {
 
 # ─── VapourSynth script generation ───────────────────────────────────────────
 
+# Requested quality -> bounding box (width, height) for the SVP stream.
+RESOLUTION_PRESETS = {
+    "480p": (854, 480), "720p": (1280, 720), "1080p": (1920, 1080),
+    "1080p_enhanced": (1920, 1080), "1440p": (2560, 1440),
+    "4k": (3840, 2160), "2160p": (3840, 2160),
+}
+
+
+def fit_resolution(src_width: int, src_height: int, bounds: tuple) -> tuple:
+    """Fit the source inside bounds, keeping aspect with even dimensions.
+    Never upscales: a source already inside the bounds keeps its size."""
+    scale = min(bounds[0] / src_width, bounds[1] / src_height, 1.0)
+    width = max(2, round(src_width * scale / 2) * 2)
+    height = max(2, round(src_height * scale / 2) * 2)
+    return min(width, src_width - src_width % 2), min(height, src_height - src_height % 2)
+
+
+# SVPflow's NVOF engine rejects a vector source under 40x32 blocks of 4px, and
+# one that is not 1/1, 1/2, 1/4, 1/6 or 1/8 of the frame in both dimensions.
+NVOF_MIN_VECTOR_SIZE = (160, 128)
+NVOF_VECTOR_DIVISORS = (8, 4, 2, 1)
+
+
+def nvof_vector_size(width: int, height: int, block: int) -> Tuple[int, int]:
+    """Size of the downscaled clip NVOF estimates motion on.
+
+    The preset's block size picks the divisor (block 16 -> 1/4), but reduced
+    streams (480p, or a portrait phone video fitted into a landscape box) end
+    up under NVOF's minimum. That fails the stream and drops it to the much
+    slower CPU engine, so use the next finer allowed divisor instead.
+    """
+    if width < block or height < block:
+        return width, height
+    crop_width, crop_height = width // block * block, height // block * block
+    for divisor in (d for d in NVOF_VECTOR_DIVISORS if d <= block // 4):
+        vector = (crop_width // divisor, crop_height // divisor)
+        if vector[0] >= NVOF_MIN_VECTOR_SIZE[0] and vector[1] >= NVOF_MIN_VECTOR_SIZE[1]:
+            break
+    return crop_width // divisor, crop_height // divisor
+
+
 def generate_vspipe_stdin_script(
     width: int,
     height: int,
@@ -383,8 +424,7 @@ smooth = core.svp2.SmoothFps(
         block = int(re.search(r"block:\{w:(\d+)", preset_config["analyse"]).group(1))
         # NVOF's native grid is 4px. Resize only the vector source to retain
         # the selected preset's motion grid; render at the full source size.
-        vector_width = width // block * 4 if width >= block else width
-        vector_height = height // block * 4 if height >= block else height
+        vector_width, vector_height = nvof_vector_size(width, height, block)
         processing = f'''# Requested NVOF processing (preset: {preset})
 smooth_params = {smooth_params!r}
 if not hasattr(core.svp2, "SmoothFps_NVOF"):
@@ -664,6 +704,7 @@ class SVPStream:
 
         self._width = 0
         self._height = 0
+        self._stream_size = (0, 0)
         self._src_fps = 0
         self._duration = 0
 
@@ -709,7 +750,11 @@ class SVPStream:
             return None
 
         self._temp_dir = Path(tempfile.mkdtemp(prefix="svp_stream_"))
-        stream_width, stream_height = self.target_resolution or (self._width, self._height)
+        stream_width, stream_height = self._width, self._height
+        if self.target_resolution:
+            stream_width, stream_height = fit_resolution(
+                self._width, self._height, self.target_resolution)
+        self._stream_size = (stream_width, stream_height)
         script = generate_vspipe_stdin_script(
             stream_width, stream_height, info["src_fps_num"], info["src_fps_den"],
             info["num_frames"],
@@ -745,17 +790,23 @@ class SVPStream:
         self._task = asyncio.create_task(self._run_pipeline(script_path))
         return True
 
+    def _decode_command(self) -> list:
+        decode_cmd = [self.ffmpeg_executable, "-hwaccel", "auto", "-threads", "0"]
+        if self.start_position > 0:
+            decode_cmd.extend(["-ss", str(self.start_position)])
+        decode_cmd.extend(["-i", self.video_path])
+        # Scale while decoding, so SVP analyses and interpolates the reduced
+        # frames and the raw pipe never carries source-resolution video.
+        if self._stream_size != (self._width, self._height):
+            w, h = self._stream_size
+            decode_cmd.extend(["-vf", f"scale={w}:{h}:flags=lanczos"])
+        decode_cmd.extend(["-an", "-sn", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"])
+        return decode_cmd
+
     async def _run_pipeline(self, script_path: Path):
         try:
             # Stage 1: FFmpeg decode to raw yuv420p frames
-            decode_cmd = [self.ffmpeg_executable, "-hwaccel", "auto", "-threads", "0"]
-            if self.start_position > 0:
-                decode_cmd.extend(["-ss", str(self.start_position)])
-            decode_cmd.extend(["-i", self.video_path])
-            if self.target_resolution:
-                w, h = self.target_resolution
-                decode_cmd.extend(["-vf", f"scale={w}:{h}:flags=lanczos"])
-            decode_cmd.extend(["-an", "-sn", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"])
+            decode_cmd = self._decode_command()
 
             # Stage 2: vspipe with SVP
             vspipe_cmd = [self.vspipe_executable, "--requests", "1", "-c", "y4m", str(script_path), "-"]
@@ -1040,6 +1091,14 @@ def _probe_manager_graph(graph, info: dict, vspipe: str) -> Tuple[int, int, floa
     return _parse_vspipe_info(result.stdout)
 
 
+def _session_decode_size(target_resolution: Optional[str], info: dict) -> Tuple[int, int]:
+    """Frame size the Manager graph runs at for the requested quality."""
+    bounds = RESOLUTION_PRESETS.get(target_resolution) if target_resolution else None
+    if not bounds:
+        return info["width"], info["height"]
+    return fit_resolution(info["width"], info["height"], bounds)
+
+
 def processing_session_metadata(request: OpenSessionRequest) -> SessionMetadata:
     try:
         root = trusted_snapshot_root()
@@ -1048,7 +1107,9 @@ def processing_session_metadata(request: OpenSessionRequest) -> SessionMetadata:
         vspipe = get_vspipe_path()
         if not vspipe or not get_ffmpeg_path() or not get_ffprobe_path():
             raise ProcessorUnavailable("FFmpeg, ffprobe, and vspipe are required")
-        width, height, output_fps = _probe_manager_graph(graph, info, vspipe)
+        decode_width, decode_height = _session_decode_size(request.target_resolution, info)
+        probe_info = {**info, "width": decode_width, "height": decode_height}
+        width, height, output_fps = _probe_manager_graph(graph, probe_info, vspipe)
         codecs = "avc1.640034, mp4a.40.2" if info.get("has_audio") else "avc1.640034"
         return SessionMetadata(
             source_duration=info["duration"],
@@ -1075,11 +1136,14 @@ def start_processing_session(session):
         if not ffmpeg or not vspipe:
             raise ProcessorUnavailable("FFmpeg and vspipe are required")
 
+        decode_width, decode_height = _session_decode_size(session.target_resolution, info)
+        reduced = (decode_width, decode_height) != (info["width"], info["height"])
+
         def build_manager_script(_width, _height, fps_num, fps_den, num_frames, _target_fps):
             return generate_manager_snapshot_stdin_script(
                 graph,
-                info["width"],
-                info["height"],
+                decode_width,
+                decode_height,
                 fps_num,
                 fps_den,
                 num_frames,
@@ -1091,6 +1155,7 @@ def start_processing_session(session):
             get_clean_env,
             ffmpeg_executable=ffmpeg,
             vspipe_executable=vspipe,
+            decode_size=(decode_width, decode_height) if reduced else None,
         )
     except ManagerGraphUnavailable as error:
         raise ProcessorUnavailable(str(error)) from error
@@ -1190,10 +1255,7 @@ async def play(request: Request):
 
     res = None
     if req.target_resolution:
-        presets = {"480p": (854, 480), "720p": (1280, 720), "1080p": (1920, 1080),
-                   "1080p_enhanced": (1920, 1080), "1440p": (2560, 1440),
-                   "4k": (3840, 2160), "2160p": (3840, 2160)}
-        res = presets.get(req.target_resolution)
+        res = RESOLUTION_PRESETS.get(req.target_resolution)
 
     def make_stream(use_nvof: bool) -> SVPStream:
         return SVPStream(

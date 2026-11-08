@@ -12,3 +12,10 @@ export function svpPlaybackError(error, fallback = 'Failed to start SVP playback
     ? detail
     : error?.message || fallback
 }
+
+// The server cannot host an MSE processing session (e.g. no trusted SVP Manager graph).
+export function isSvpSessionUnavailable(error) {
+  if (error?.response?.status === 503) return true
+  const detail = error?.response?.data?.detail ?? error?.message
+  return typeof detail === 'string' && /No trusted SVP Manager graph/i.test(detail)
+}

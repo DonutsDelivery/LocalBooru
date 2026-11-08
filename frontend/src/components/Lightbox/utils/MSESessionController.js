@@ -55,7 +55,7 @@ export class MSESessionController {
     this.playbackCommandVersion = 0
   }
 
-  async open(filePath, startPosition = 0, generation = 1) {
+  async open(filePath, startPosition = 0, generation = 1, options = {}) {
     await this.close()
     this.closed = false
     this.generation = generation
@@ -66,7 +66,7 @@ export class MSESessionController {
     this.objectURL = this.createObjectURL(this.mediaSource)
     this.video.src = this.objectURL
     const sourceOpen = waitForEvent(this.mediaSource, 'sourceopen', this.abortController.signal)
-    const opened = await this.client.open(filePath, startPosition, generation)
+    const opened = await this.client.open(filePath, startPosition, generation, options)
     if (this.closed || generation !== this.generation) {
       await this.client.stop(opened.session_id, generation).catch(() => {})
       throw new Error('SVP session was superseded')

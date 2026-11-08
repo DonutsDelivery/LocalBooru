@@ -28,7 +28,7 @@ import { useAudioNormalization } from './useAudioNormalization'
 import { shouldRestartStalledSVP } from './svpStallGuard'
 import { getCodecFallbackStartPosition } from './codecFallback'
 import { shouldStartSVPPlayback } from './svpBuffering'
-import { svpPlaybackError } from '../../../utils/svpPlayback'
+import { svpPlaybackError, isSvpSessionUnavailable } from '../../../utils/svpPlayback'
 import { localRawResizeAvailable } from '../../../utils/localVideoResolution'
 import {
   capturePlaybackIntent as captureTransitionIntent,
@@ -49,6 +49,9 @@ const svpMSEClient = {
   stop: stopSVPProcessingSession
 }
 
+// The SVP session downscales to the selected quality; 'original' keeps the source size.
+const svpSessionResolution = quality => (quality && quality !== 'original' ? quality : null)
+
 /**
  * Hook for managing HLS/SVP/OpticalFlow video streaming
  * @param {object} addonStatus - { svpInstalled } from useAddonStatus
@@ -57,7 +60,14 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   const { svpInstalled = false, enabled = true } = addonStatus
   const nativeSvpPlayback = enabled && !image?._remote && localRawResizeAvailable(isLinuxDesktopApp(), isUsingLocalServer())
   const previousNativePlaybackRef = useRef(nativeSvpPlayback)
-  const mseSvpPlayback = isWindowsOrMacDesktopApp() && typeof MediaSource !== 'undefined'
+  // MSE sessions need the SVP Manager graph of the machine serving the library, so
+  // only the local server (or a server that proved capable) can use them. Clients
+  // talking to a remote server use the HTTP /svp/play path, like phones.
+  const mseUnavailableRef = useRef(false)
+  const mseSvpPlayback = isWindowsOrMacDesktopApp()
+    && typeof MediaSource !== 'undefined'
+    && isUsingLocalServer()
+    && !image?._remote
   const svpMseControllerRef = useRef(null)
   const imageRef = useRef(image)
   imageRef.current = image
@@ -593,11 +603,12 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       setSvpError(null)
 
       console.log('[startSVPStream] Calling API with path:', image.file_path, 'position:', playbackPosition, 'quality:', qualityOverride ?? currentQuality)
-      if (mseSvpPlayback && mediaRef.current) {
+      if (mseSvpPlayback && !mseUnavailableRef.current && mediaRef.current) {
         const video = mediaRef.current
         let playbackEstablished = false
         const ownsMseSession = () => (
-          svpMseControllerRef.current === mseController
+          mseController !== null
+          && svpMseControllerRef.current === mseController
           && mediaRef.current === video
           && (imageRef.current?.url ?? imageRef.current?.file_path ?? imageRef.current?.id) === transition.intent.imageKey
         )
@@ -609,7 +620,11 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
           onMetadata: metadata => {
             if (!ownsMseSession()) return
             setSvpTotalDuration(metadata.source_duration)
-            setSourceResolution({ width: metadata.width, height: metadata.height })
+            // A reduced session reports the reduced size; keep the source size so the
+            // quality selector still offers the higher options.
+            if (!svpSessionResolution(qualityOverride ?? currentQuality)) {
+              setSourceResolution(previous => previous ?? { width: metadata.width, height: metadata.height })
+            }
           },
           onError: error => {
             if (!ownsMseSession()) return
@@ -619,22 +634,39 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
           }
         })
         svpMseControllerRef.current = mseController
-        await mseController.open(image.file_path, playbackPosition, 1)
-        if (!isPlaybackTransitionCurrent(transition)) {
-          await mseController.close().catch(() => {})
+        try {
+          await mseController.open(image.file_path, playbackPosition, 1, {
+            targetResolution: svpSessionResolution(qualityOverride ?? currentQuality),
+          })
+        } catch (openError) {
+          if (!isSvpSessionUnavailable(openError)) throw openError
+          // The server cannot host MSE sessions (no trusted SVP Manager graph):
+          // release this controller and use the HTTP /svp/play path instead.
+          console.warn('[SVP MSE] Session unavailable on this server; using HTTP SVP playback')
+          mseUnavailableRef.current = true
+          const unavailableController = mseController
+          mseController = null
+          if (svpMseControllerRef.current === unavailableController) svpMseControllerRef.current = null
+          await unavailableController.close().catch(() => {})
+          if (!isPlaybackTransitionCurrent(transition)) return
+        }
+        if (mseController) {
+          if (!isPlaybackTransitionCurrent(transition)) {
+            await mseController.close().catch(() => {})
+            return
+          }
+          activeStreamOwnerRef.current = transition
+          resetGain()
+          setSvpStartOffset(0)
+          setSvpSourceRevision(revision => nextPlaybackSourceRevision(revision))
+          setSvpStreamUrl('mse://svp-session')
+          video.currentTime = playbackPosition
+          if (mseShouldResume) await video.play().catch(() => {})
+          playbackEstablished = true
+          setSvpLoading(false)
+          finishPlaybackTransition(transition)
           return
         }
-        activeStreamOwnerRef.current = transition
-        resetGain()
-        setSvpStartOffset(0)
-        setSvpSourceRevision(revision => nextPlaybackSourceRevision(revision))
-        setSvpStreamUrl('mse://svp-session')
-        video.currentTime = playbackPosition
-        if (mseShouldResume) await video.play().catch(() => {})
-        playbackEstablished = true
-        setSvpLoading(false)
-        finishPlaybackTransition(transition)
-        return
       }
       const result = await playVideoSVP(
         image.file_path,
@@ -1672,8 +1704,34 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
       if (svpInstalled && svpConfig?.enabled) {
         if (svpStreamUrl === 'mse://svp-session') {
-          await restartSVPFromPosition(absoluteTime)
-          if (isPlaybackTransitionCurrent(transition)) finishPlaybackTransition(transition)
+          // The session decodes at the selected quality, so a quality change needs a
+          // fresh session at the current position rather than a seek.
+          const controller = svpMseControllerRef.current
+          const video = mediaRef.current
+          if (!controller) return
+          const ownsReopen = () => (
+            isPlaybackTransitionCurrent(transition) && controller === svpMseControllerRef.current
+          )
+          mseSeekTokenRef.current += 1
+          setSvpPendingSeek(absoluteTime)
+          setSvpLoading(true)
+          try {
+            await mseSeekQueueRef.current.catch(() => {})
+            if (!ownsReopen()) return
+            video.pause()
+            await controller.open(image.file_path, absoluteTime, 1, {
+              targetResolution: svpSessionResolution(qualityId),
+            })
+            if (!ownsReopen()) return
+            video.currentTime = absoluteTime
+            setSvpPendingSeek(null)
+            setSvpLoading(false)
+            finishPlaybackTransition(transition)
+            if (transition.intent.shouldPlay) await video.play().catch(() => {})
+          } catch (error) {
+            if (!ownsReopen()) return
+            await failOpenMSE(controller, error, absoluteTime, transition.intent.shouldPlay)
+          }
           return
         }
         if (!svpStreamUrl) {
@@ -1757,7 +1815,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         finishPlaybackTransition(transition)
       }
     }
-  }, [image, mediaRef, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, svpInstalled, svpConfig, opticalFlowConfig, applyNormalization, restartSVPFromPosition, stopSVP, startSVPStream, resetGain, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition, nativeSvpPlayback, codecFallbackActive])
+  }, [image, mediaRef, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, svpInstalled, svpConfig, opticalFlowConfig, applyNormalization, restartSVPFromPosition, stopSVP, startSVPStream, failOpenMSE, resetGain, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition, nativeSvpPlayback, codecFallbackActive])
   handleQualityChangeRef.current = handleQualityChange
 
   // Check if browser can't decode the video codec (e.g. HEVC on Linux WebKitGTK/Chromium)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { svpClientTransition, svpPlaybackError } from './svpPlayback.js'
+import { isSvpSessionUnavailable, svpClientTransition, svpPlaybackError } from './svpPlayback.js'
 
 test('SVP starts and cleanup share a client identity and preserve their order', () => {
   // AC: @svp-single-player ac-final-transition-owner
@@ -25,4 +25,13 @@ test('SVP errors expose upstream failure details and safely handle structured va
   assert.equal(svpPlaybackError({ message: 'Request failed with status code 422',
     response: { data: { detail: [{ msg: 'Invalid path' }] } } }), 'Request failed with status code 422')
   assert.equal(svpPlaybackError({ message: 'Network Error' }), 'Network Error')
+})
+
+test('SVP MSE session unavailability is recognised from the status or the missing-graph message', () => {
+  assert.equal(isSvpSessionUnavailable({ response: { status: 503 } }), true)
+  assert.equal(isSvpSessionUnavailable({ response: { status: 503, data: { detail: 'x' } } }), true)
+  assert.equal(isSvpSessionUnavailable({ message: 'No trusted SVP Manager graph is available' }), true)
+  assert.equal(isSvpSessionUnavailable({ response: { status: 500, data: { detail: 'No trusted SVP Manager graph is available' } } }), true)
+  assert.equal(isSvpSessionUnavailable({ response: { status: 500 }, message: 'boom' }), false)
+  assert.equal(isSvpSessionUnavailable(null), false)
 })
