@@ -8,6 +8,7 @@ import { getVideoPlaybackConfig } from '../../../api'
 export function useAutoAdvance(mediaRef, {
   onNav,
   currentIndex,
+  mediaKey = currentIndex,
   totalImages,
   isVideoFile,
   streamTransitioningRef,
@@ -237,7 +238,7 @@ export function useAutoAdvance(mediaRef, {
   // Clear countdown on navigation or unmount
   useEffect(() => {
     return clearCountdown
-  }, [currentIndex, clearCountdown])
+  }, [mediaKey, clearCountdown])
 
   return {
     countdown,
