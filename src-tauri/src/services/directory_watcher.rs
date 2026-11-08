@@ -36,6 +36,11 @@ pub struct DirectoryWatcher {
 
 type WatchMap = Mutex<HashMap<i64, WatchHandle>>;
 type EventSink = Arc<dyn Fn(Result<Event, notify::Error>) + Send + Sync>;
+/// (resolved path, watched path) pairs used to report events under the path
+/// the library knows. FSEvents (macOS) reports resolved paths, so events in a
+/// symlinked subdirectory, or under a root reached through a symlink such as
+/// /var -> /private/var, would otherwise fall outside the directory.
+type PathAliases = Arc<Mutex<Vec<(PathBuf, PathBuf)>>>;
 
 struct WatchHandle {
     watcher: Box<dyn Watcher + Send>,
@@ -47,6 +52,7 @@ struct WatchHandle {
     polling: bool,
     /// Symlinked subdirectories that already have an explicit watch.
     linked_dirs: HashSet<PathBuf>,
+    aliases: PathAliases,
     _path: PathBuf,
     recursive: bool,
 }
@@ -79,6 +85,7 @@ impl WatchHandle {
                 .map_err(|e| format!("Failed to watch {}: {}", link.display(), e))?;
         }
         self.linked_dirs.insert(link.to_path_buf());
+        add_alias(&self.aliases, link);
         Ok(true)
     }
 }
@@ -527,6 +534,18 @@ fn start_watch(
     polling: bool,
     sink: EventSink,
 ) -> Result<WatchHandle, String> {
+    // The root always comes first, even when it is already resolved.
+    let resolved_root = std::fs::canonicalize(&dir_path).unwrap_or_else(|_| dir_path.clone());
+    let aliases: PathAliases = Arc::new(Mutex::new(vec![(resolved_root, dir_path.clone())]));
+    let sink: EventSink = {
+        let aliases = aliases.clone();
+        Arc::new(move |event: Result<Event, notify::Error>| {
+            sink(event.map(|mut ev| {
+                unalias_paths(&aliases, &mut ev.paths);
+                ev
+            }))
+        })
+    };
     let mut watcher = new_watcher(polling, &sink)?;
 
     let mode = if recursive {
@@ -545,6 +564,7 @@ fn start_watch(
         sink,
         polling,
         linked_dirs: HashSet::new(),
+        aliases,
         _path: dir_path.clone(),
         recursive,
     };
@@ -560,6 +580,36 @@ fn start_watch(
     }
 
     Ok(handle)
+}
+
+/// Remember how a symlinked subdirectory resolves, unless it resolves inside
+/// the root, whose own events must keep their real paths.
+fn add_alias(aliases: &PathAliases, watched: &Path) {
+    let Ok(resolved) = std::fs::canonicalize(watched) else { return };
+    if resolved == watched {
+        return;
+    }
+    let Ok(mut list) = aliases.lock() else { return };
+    if list.first().is_some_and(|(root, _)| resolved.starts_with(root)) {
+        return;
+    }
+    list.push((resolved, watched.to_path_buf()));
+}
+
+/// Rewrite resolved event paths to the watched path, longest match first.
+fn unalias_paths(aliases: &PathAliases, paths: &mut [PathBuf]) {
+    let Ok(list) = aliases.lock() else { return };
+    for path in paths.iter_mut() {
+        let best = list
+            .iter()
+            .filter(|(resolved, _)| path.starts_with(resolved))
+            .max_by_key(|(resolved, _)| resolved.components().count());
+        if let Some((resolved, watched)) = best {
+            if let Ok(rest) = path.strip_prefix(resolved) {
+                *path = watched.join(rest);
+            }
+        }
+    }
 }
 
 /// inotify on local filesystems, polling where inotify cannot see changes.
@@ -1470,6 +1520,43 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(outside);
+    }
+
+    #[test]
+    fn resolved_event_paths_map_back_to_watched_paths() {
+        let aliases: PathAliases = Arc::new(Mutex::new(vec![
+            (PathBuf::from("/private/var/lib"), PathBuf::from("/var/lib")),
+            (PathBuf::from("/mnt/target"), PathBuf::from("/var/lib/link")),
+        ]));
+        let mut paths = vec![
+            PathBuf::from("/private/var/lib/a.jpg"),
+            PathBuf::from("/mnt/target/sub/b.jpg"),
+            PathBuf::from("/elsewhere/c.jpg"),
+        ];
+        unalias_paths(&aliases, &mut paths);
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/var/lib/a.jpg"),
+                PathBuf::from("/var/lib/link/sub/b.jpg"),
+                PathBuf::from("/elsewhere/c.jpg"),
+            ]
+        );
+    }
+
+    #[test]
+    fn symlink_into_the_root_keeps_real_event_paths() {
+        let root = temp_test_dir("inner-link");
+        std::fs::create_dir_all(root.join("real")).unwrap();
+        std::os::unix::fs::symlink(root.join("real"), root.join("link")).unwrap();
+        let resolved_root = std::fs::canonicalize(&root).unwrap();
+        let aliases: PathAliases = Arc::new(Mutex::new(vec![(resolved_root.clone(), root.clone())]));
+        add_alias(&aliases, &root.join("link"));
+        assert_eq!(aliases.lock().unwrap().len(), 1);
+        let mut paths = vec![resolved_root.join("real").join("a.jpg")];
+        unalias_paths(&aliases, &mut paths);
+        assert_eq!(paths, vec![root.join("real").join("a.jpg")]);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
