@@ -4,51 +4,8 @@ import FolderItem from './FolderItem'
 import { getColumnCount } from '../utils/gridLayout'
 import { imageIdentityKey } from '../utils/imageAdjustments.js'
 import { nextLoadRetryDelay } from '../utils/galleryState'
+import { distributeToColumns } from '../utils/masonryLayout.js'
 import './MasonryGrid.css'
-
-// Distribute images into columns based on aspect ratio to balance heights
-// Returns both items and normalized heights for each column
-function distributeToColumns(images, columnCount) {
-  const columns = Array.from({ length: columnCount }, () => ({ items: [], height: 0 }))
-
-  // Debug: count how many images have dimensions
-  let withDimensions = 0
-  let withoutDimensions = 0
-
-  for (const image of images) {
-    // Find the shortest column
-    let shortestIdx = 0
-    let shortestHeight = columns[0].height
-
-    for (let i = 1; i < columns.length; i++) {
-      if (columns[i].height < shortestHeight) {
-        shortestHeight = columns[i].height
-        shortestIdx = i
-      }
-    }
-
-    // Calculate estimated height based on aspect ratio
-    // Use a default aspect ratio of 4:3 (landscape) if dimensions unavailable
-    const hasDimensions = image.width && image.height && image.width > 0 && image.height > 0
-    if (hasDimensions) {
-      withDimensions++
-    } else {
-      withoutDimensions++
-    }
-
-    const aspectRatio = hasDimensions
-      ? image.width / image.height
-      : 4/3  // Default to landscape if unknown
-
-    // Normalized height (assuming column width of 1)
-    const itemHeight = 1 / aspectRatio
-
-    columns[shortestIdx].items.push(image)
-    columns[shortestIdx].height += itemHeight
-  }
-
-  return columns
-}
 
 // Calculate how many skeleton placeholders each column needs to match the tallest
 function getSkeletonCounts(columns) {
@@ -119,10 +76,14 @@ function MasonryGrid({
   }, [tileSize])
 
   // Distribute images across columns based on aspect ratios
-  const columnData = useMemo(
-    () => distributeToColumns(images, columnCount),
-    [images, columnCount]
-  )
+  // Tiles keep their column when new media is prepended, so live imports do not
+  // remount the grid or shift the user's view.
+  const layoutRef = useRef(null)
+  const columnData = useMemo(() => {
+    const { columns, layout } = distributeToColumns(images, columnCount, layoutRef.current)
+    layoutRef.current = layout
+    return columns
+  }, [images, columnCount])
 
   // Calculate skeleton counts to fill shorter columns when loading
   const skeletonCounts = useMemo(

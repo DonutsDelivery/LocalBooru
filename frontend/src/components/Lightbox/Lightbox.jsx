@@ -678,6 +678,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const autoAdvance = useAutoAdvance(mediaRef, {
     onNav,
     currentIndex,
+    mediaKey: currentImageKey,
     totalImages: images.length,
     isVideoFile: isVideo(image?.original_filename),
     streamTransitioningRef: streaming.streamTransitioningRef,
@@ -706,7 +707,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   useEffect(() => {
     cancelRevealTap()
-  }, [currentIndex, cancelRevealTap])
+  }, [currentImageKey, cancelRevealTap])
 
   // Preload next 3 images (skip videos) for smoother navigation
   useEffect(() => {

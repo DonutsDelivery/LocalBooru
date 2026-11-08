@@ -3,7 +3,7 @@ import GalleryTileSizeControl from './components/GalleryTileSizeControl'
  * DonutMediaCenter - Local media library
  * Simplified single-user version
  */
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { getIsolatedInstanceId } from './utils/isolatedBackend.js'
 
@@ -28,6 +28,7 @@ import CreateStudioHost from './components/CreateStudioHost'
 import TaskManager from './components/TaskManager'
 import QRConnect from './components/QRConnect'
 import ContinueWatching from './components/ContinueWatching'
+import { captureScrollAnchor, findGalleryScroller, restoreScrollAnchor } from './utils/galleryScroll.js'
 import { fetchImage, fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories, healthCheck } from './api'
 import DirectoriesPage from './pages/DirectoriesPage'
 import CollectionsPage from './pages/CollectionsPage'
@@ -604,6 +605,8 @@ function Gallery({ mediaType = 'image' }) {
   const authoritativeRefreshGenerationRef = useRef(0)
   const completedAuthoritativeRefreshRef = useRef(0)
   const refreshNewImagesRef = useRef(null)
+  const pendingScrollAnchorRef = useRef(null)
+  const mergeRefreshRetryRef = useRef(0)
   const authoritativeRefreshRetryDelayRef = useRef(750)
   const lightboxPaginationGenerationRef = useRef(0)
   if (!galleryRequestOwnerRef.current) {
@@ -621,6 +624,15 @@ function Gallery({ mediaType = 'image' }) {
 
   useEffect(() => {
     imagesRef.current = images
+  }, [images])
+
+  // Live updates prepend tiles above the viewport; restore the tile the user
+  // was looking at before the browser paints so the view never jumps.
+  useLayoutEffect(() => {
+    const anchor = pendingScrollAnchorRef.current
+    if (!anchor) return
+    pendingScrollAnchorRef.current = null
+    restoreScrollAnchor(findGalleryScroller(), anchor)
   }, [images])
 
   // Handle browser back button for lightbox (works on mobile and desktop)
@@ -1119,18 +1131,9 @@ function Gallery({ mediaType = 'image' }) {
     }
     if (galleryForegroundBusyRef.current || loadingMoreRef.current) return false
     const replaceView = publishedGalleryViewRef.current !== galleryViewKey
-    if (!authoritative && !replaceView && pageRef.current !== 1) return false
 
     const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
     if (!galleryRequestOwnerRef.current.owns(request)) return false
-
-    const preserveAnchor = window.scrollY >= 200 || lightboxIndexRef.current !== null
-    const anchor = preserveAnchor
-      ? Array.from(document.querySelectorAll('[data-image-id]'))
-          .map(element => ({ element, rect: element.getBoundingClientRect() }))
-          .filter(({ rect }) => rect.bottom > 0)
-          .sort((a, b) => a.rect.top - b.rect.top)[0]
-      : null
 
     try {
       const query = {
@@ -1198,6 +1201,13 @@ function Gallery({ mediaType = 'image' }) {
         }
       }
 
+      // Capture the visible tile only now, right before the state change, so
+      // scrolling during the fetch is respected. The layout effect below puts
+      // it back where it was once the new tiles are in the DOM.
+      pendingScrollAnchorRef.current = replaceView || authoritative || currentSort !== 'random'
+        ? captureScrollAnchor(findGalleryScroller(), { force: lightboxIndexRef.current !== null })
+        : null
+
       if (replaceView || authoritative) {
         const reconciled = reconcileAuthoritativeGallery(
           result.images,
@@ -1223,14 +1233,6 @@ function Gallery({ mediaType = 'image' }) {
         setImages(previous => mergeFirstPage(previous, result.images))
       }
       setTotal(result.total)
-
-      if (anchor) {
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          if (!anchor.element.isConnected) return
-          const nextTop = anchor.element.getBoundingClientRect().top
-          window.scrollBy(0, nextTop - anchor.rect.top)
-        }))
-      }
       return true
     } catch (error) {
       if (galleryRequestOwnerRef.current.owns(request)) {
@@ -1272,6 +1274,13 @@ function Gallery({ mediaType = 'image' }) {
       }
       if (completion.pending) {
         triggerDebouncedRefresh(authoritativeRefreshRetryDelayRef.current)
+      } else if (!authoritative && !refreshed && mergeRefreshRetryRef.current < 5) {
+        // The refresh was skipped (a page load was in flight) or failed; the
+        // events that asked for it are spent, so try again shortly.
+        mergeRefreshRetryRef.current += 1
+        triggerDebouncedRefresh(1500)
+      } else if (refreshed) {
+        mergeRefreshRetryRef.current = 0
       }
     }, delay)
   }, [])
