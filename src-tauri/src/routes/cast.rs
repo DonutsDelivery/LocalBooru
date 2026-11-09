@@ -5,6 +5,7 @@
 //! casting are handled by the Python sidecar; this module manages the Rust
 //! side of the state and proxies HTTP requests.
 
+use crate::platform_paths::HideConsoleWindow;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::path::{Path, PathBuf};
@@ -264,6 +265,7 @@ fn cast_direct_play_reject(path: &Path, reason: &str) -> bool {
 
 async fn is_chromecast_direct_play_safe(path: &Path) -> bool {
     let output = match Command::new(crate::platform_paths::helper("ffprobe"))
+        .hide_console_window()
         .args([
             "-v",
             "error",
@@ -369,6 +371,7 @@ async fn is_chromecast_direct_play_safe(path: &Path) -> bool {
     }
 
     let audio_output = match Command::new(crate::platform_paths::helper("ffprobe"))
+        .hide_console_window()
         .args([
             "-v",
             "error",

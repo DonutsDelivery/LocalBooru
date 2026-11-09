@@ -65,6 +65,27 @@ pub fn helper(name: &str) -> PathBuf {
     .unwrap_or_else(|| PathBuf::from(name))
 }
 
+/// Background helpers must not flash a console window on Windows.
+pub trait HideConsoleWindow {
+    fn hide_console_window(&mut self) -> &mut Self;
+}
+
+impl HideConsoleWindow for std::process::Command {
+    fn hide_console_window(&mut self) -> &mut Self {
+        #[cfg(target_os = "windows")]
+        std::os::windows::process::CommandExt::creation_flags(self, 0x08000000); // CREATE_NO_WINDOW
+        self
+    }
+}
+
+impl HideConsoleWindow for tokio::process::Command {
+    fn hide_console_window(&mut self) -> &mut Self {
+        #[cfg(target_os = "windows")]
+        self.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

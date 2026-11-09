@@ -1,3 +1,5 @@
+#[cfg(target_os = "windows")]
+use crate::platform_paths::HideConsoleWindow;
 use std::path::PathBuf;
 use tauri::{Emitter, Manager};
 
@@ -748,6 +750,7 @@ pub fn run() {
                             let _ = std::process::Command::new("open").arg(&url).spawn();
                             #[cfg(target_os = "windows")]
                             let _ = std::process::Command::new("cmd")
+                                .hide_console_window()
                                 .args(["/c", "start", &url])
                                 .spawn();
                         }

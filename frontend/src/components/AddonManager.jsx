@@ -200,6 +200,11 @@ export default function AddonManager() {
                 </span>
               </div>
               <p className="addon-description">{addon.description}</p>
+              {addon.id === 'lada' && (
+                <div className="addon-meta">
+                  <span>Work in progress: this installs the LADA runtime, but restored playback is not available yet.</span>
+                </div>
+              )}
               {showReadiness && (
                 <div className="addon-meta lada-readiness">
                   {showReadiness.activeBackend ? (

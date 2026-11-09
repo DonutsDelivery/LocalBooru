@@ -1,5 +1,6 @@
 //! App-private Python fallback for desktop installations without a usable Python.
 //! Assets and hashes are pinned; an interrupted install never becomes a runtime.
+use crate::platform_paths::HideConsoleWindow;
 use flate2::read::GzDecoder;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -44,6 +45,7 @@ fn binary(root: &Path) -> PathBuf {
 
 fn probe(python: &Path) -> Result<(), String> {
     let result = std::process::Command::new(python)
+        .hide_console_window()
         .args([
             "-I",
             "-c",

@@ -1,6 +1,7 @@
 //! SVP Web Video routes — yt-dlp integration for downloading and streaming
 //! web videos through the SVP frame-interpolation pipeline.
 
+use crate::platform_paths::HideConsoleWindow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -67,6 +68,7 @@ pub fn router() -> Router<AppState> {
 /// Check whether yt-dlp is available in PATH.
 fn ytdlp_available() -> bool {
     std::process::Command::new("yt-dlp")
+        .hide_console_window()
         .arg("--version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -183,6 +185,7 @@ async fn run_ytdlp_download(
 
     // Spawn yt-dlp with progress output
     let child = Command::new("yt-dlp")
+        .hide_console_window()
         .args([
             "--no-playlist",
             "--newline",
@@ -412,6 +415,7 @@ async fn svp_web_drm_check(Query(q): Query<DrmCheckQuery>) -> Result<Json<Value>
     let url = q.url.clone();
 
     let result = tokio::process::Command::new("yt-dlp")
+        .hide_console_window()
         .args(["--dump-json", "--no-playlist", &url])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

@@ -74,7 +74,8 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             installation: AddonInstallation::PythonVenv,
             port: Some(18003),
             // faster-whisper pinned (M1). numpy left to faster-whisper's resolver.
-            python_deps: &["faster-whisper==1.2.1", "numpy"],
+            // PyAV 19 dropped the metadata_errors argument faster-whisper 1.2.1 passes.
+            python_deps: &["faster-whisper==1.2.1", "av<19", "numpy"],
         },
         AddonManifest {
             id: "cast",

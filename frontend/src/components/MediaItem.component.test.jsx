@@ -85,4 +85,12 @@ describe('MediaItem masonry source transitions', () => {
     expect(container.querySelector('.media-item').classList.contains('loaded')).toBe(true)
     expect(container.querySelector('.loading-placeholder')).toBeNull()
   })
+
+  it('keeps a tile sized when its thumbnail fails', async () => {
+    const video = { ...still, id: 8, filename: 'clip.mp4', original_filename: 'clip.mp4' }
+    await act(async () => root.render(<MediaItem image={video} />))
+    await act(async () => container.querySelector('img').dispatchEvent(new Event('error')))
+    expect(container.querySelector('.media-item').classList.contains('thumbnail-failed')).toBe(true)
+    expect(container.querySelector('.thumbnail-generating')).not.toBeNull()
+  })
 })

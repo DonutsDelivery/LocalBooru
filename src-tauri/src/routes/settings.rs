@@ -1,3 +1,4 @@
+use crate::platform_paths::HideConsoleWindow;
 use axum::body::{Body, Bytes};
 use axum::extract::{ConnectInfo, OriginalUri, Path as AxumPath, Query, State};
 use axum::http::{header, Method, StatusCode};
@@ -1293,6 +1294,7 @@ async fn get_video_info_endpoint(
 
         // Run ffprobe to get codec, dimensions, duration, pixel format, and frame rates
         let output = match std::process::Command::new(crate::platform_paths::helper("ffprobe"))
+            .hide_console_window()
             .args([
                 "-v",
                 "error",
@@ -1494,6 +1496,7 @@ pub(crate) struct VideoInfo {
 /// Run ffprobe to extract width, height, and FPS from a video file.
 pub(crate) fn get_video_info(path: &Path) -> Result<VideoInfo, String> {
     let output = std::process::Command::new(crate::platform_paths::helper("ffprobe"))
+        .hide_console_window()
         .args([
             "-v",
             "error",

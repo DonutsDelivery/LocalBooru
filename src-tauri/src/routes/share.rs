@@ -4,6 +4,7 @@
 //! with synchronized playback. Sessions are stored in-memory (DashMap) and
 //! provide SSE-based real-time sync of playback state.
 
+use crate::platform_paths::HideConsoleWindow;
 use std::convert::Infallible;
 
 use axum::extract::{Path as AxumPath, Query, Request, State};
@@ -312,6 +313,7 @@ async fn network_info(State(state): State<AppState>) -> Result<Json<Value>, AppE
     let result = tokio::task::spawn_blocking(move || {
         let local_ip = get_local_ip();
         let hostname = std::process::Command::new("hostname")
+            .hide_console_window()
             .output()
             .ok()
             .and_then(|o| String::from_utf8(o.stdout).ok())

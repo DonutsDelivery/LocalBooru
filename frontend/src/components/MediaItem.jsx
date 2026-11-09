@@ -320,7 +320,7 @@ function MediaItem({ image, useFullImage = false, onClick, isSelectable = false,
 
   return (
     <div
-      className={`media-item ${loaded ? 'loaded' : 'loading'} ${fileStatus !== 'available' ? 'unavailable' : ''} ${isSelectable ? 'selectable' : ''} ${isSelected ? 'selected' : ''}`}
+      className={`media-item ${loaded ? 'loaded' : 'loading'} ${error ? 'thumbnail-failed' : ''} ${fileStatus !== 'available' ? 'unavailable' : ''} ${isSelectable ? 'selectable' : ''} ${isSelected ? 'selected' : ''}`}
       data-image-id={image.id}
       data-image-key={imageIdentityKey(image)}
       title={isVideoFile ? videoFilename : undefined}

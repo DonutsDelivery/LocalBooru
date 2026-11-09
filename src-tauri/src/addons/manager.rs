@@ -24,8 +24,15 @@ const ONNXRUNTIME_GPU: &str = "onnxruntime-gpu[cuda,cudnn]==1.23.2";
 const ONNXRUNTIME_VERSION: &str = "1.23.2";
 const NVIDIA_CUDNN: &str = "nvidia-cudnn-cu12==9.24.0.43";
 const NVIDIA_CUDNN_VERSION: &str = "9.24.0.43";
+// Current onnxruntime and torch wheels need a newer MSVC runtime than many
+// Windows installs have; each venv carries its own (see sidecar::install_deps).
+const MSVC_RUNTIME: &str = "msvc-runtime==14.51.36231";
 const AUTO_TAGGER_SOURCE_REVISION: &str = "2026-07-21-cudnn-9.24.0.43";
 const AUTO_TAGGER_DEPLOYMENT_FILE: &str = "dependency-deployment.json";
+// A first start after install can spend over a minute compiling bytecode and
+// passing antivirus scans on slow Windows machines. Stays below the frontend's
+// 120s request timeout.
+const SIDECAR_START_TIMEOUT: Duration = Duration::from_secs(100);
 
 fn configured_lada_backend(data_dir: &Path) -> LadaBackendPreference {
     match get_config_section(data_dir, "lada")
@@ -65,6 +72,9 @@ fn dependency_list_for_platform(
         } else {
             deps.push(ONNXRUNTIME_CPU);
         }
+    }
+    if target_os == "windows" {
+        deps.push(MSVC_RUNTIME);
     }
 
     deps
@@ -1342,8 +1352,24 @@ impl AddonManager {
         }
         drop(lifecycle);
 
-        // Wait for the addon to become healthy
-        let healthy = sidecar::wait_for_healthy(port, Duration::from_secs(30)).await;
+        // Wait for the addon to become healthy, stopping early if it exits.
+        let started = std::time::Instant::now();
+        let mut healthy = false;
+        while started.elapsed() < SIDECAR_START_TIMEOUT {
+            if sidecar::check_health(port).await {
+                log::info!(
+                    "[Addon] Port {} healthy after {:?}",
+                    port,
+                    started.elapsed()
+                );
+                healthy = true;
+                break;
+            }
+            if matches!(process.lock().await.try_wait(), Ok(Some(_))) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
         let child_exited = {
             let mut child = process.lock().await;
             match child.try_wait() {
@@ -1400,7 +1426,11 @@ impl AddonManager {
                 let _ = child.start_kill();
             }
             let msg = child_exited.unwrap_or_else(|| {
-                format!("Addon '{}' failed to become healthy within 30s", id)
+                format!(
+                    "Addon '{}' failed to become healthy within {}s",
+                    id,
+                    SIDECAR_START_TIMEOUT.as_secs()
+                )
             });
             let accepted = if let Some(mut state) = self.addons.get_mut(id) {
                 let owns_process = state
@@ -2352,8 +2382,17 @@ printf '%s\n' '{"addon_version":"0.1.0","protocol_version":1,"upstream_revision"
 
     #[test]
     fn other_addon_dependencies_are_unchanged() {
-        let deps = dependency_list_for_platform("age-detector", &["torch"], "windows");
+        let deps = dependency_list_for_platform("age-detector", &["torch"], "linux");
         assert_eq!(deps, vec!["uvicorn[standard]", "fastapi", "torch"]);
+    }
+
+    #[test]
+    fn windows_venvs_carry_their_own_msvc_runtime() {
+        let deps = dependency_list_for_platform("age-detector", &["torch"], "windows");
+        assert_eq!(
+            deps,
+            vec!["uvicorn[standard]", "fastapi", "torch", MSVC_RUNTIME]
+        );
     }
 
     // AC: @curation-game ac-1

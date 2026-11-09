@@ -5,6 +5,7 @@
 //! to software encoding (libx264).
 //! Audio peak safety attenuates overly loud sources via pre-scan volumedetect.
 
+use crate::platform_paths::HideConsoleWindow;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -148,6 +149,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
 
     // Get video stream info
     if let Ok(output) = Command::new(crate::platform_paths::helper("ffprobe"))
+        .hide_console_window()
         .args([
             "-v",
             "error",
@@ -188,6 +190,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
     // If stream-level duration is missing (MKV etc.), query format-level
     if info.duration <= 0.0 {
         if let Ok(output) = Command::new(crate::platform_paths::helper("ffprobe"))
+            .hide_console_window()
             .args([
                 "-v",
                 "error",
@@ -212,6 +215,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
 
     // Check for audio stream
     if let Ok(output) = Command::new(crate::platform_paths::helper("ffprobe"))
+        .hide_console_window()
         .args([
             "-v",
             "error",
@@ -251,6 +255,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
 /// Returns a non-positive dB value. Quiet sources are never amplified.
 pub async fn detect_audio_gain(path: &str) -> Option<f64> {
     let output = Command::new(crate::platform_paths::helper("ffmpeg"))
+        .hide_console_window()
         .args([
             "-i",
             path,

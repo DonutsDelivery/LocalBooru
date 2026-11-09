@@ -3,6 +3,7 @@
 //! Low-level utilities for Python virtual environment creation,
 //! dependency installation, process spawning, and health checking.
 
+use crate::platform_paths::HideConsoleWindow;
 #[cfg(any(target_os = "windows", test))]
 use std::collections::HashSet;
 #[cfg(target_os = "windows")]
@@ -65,6 +66,7 @@ pub fn find_python_version(minimum: u8, maximum: u8) -> Option<PathBuf> {
             continue;
         }
         let check = Command::new(&name)
+            .hide_console_window()
             .args(["--version"])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -104,6 +106,7 @@ fn parse_python_minor(version_output: &str) -> Option<u8> {
 
 pub fn validate_python_minor(python: &Path, minimum: u8, maximum: u8) -> Result<(), String> {
     let output = Command::new(python)
+        .hide_console_window()
         .arg("--version")
         .output()
         .map_err(|error| format!("Failed to inspect Python version: {}", error))?;
@@ -136,6 +139,7 @@ fn resolve_executable(name: &str) -> Option<PathBuf> {
     };
 
     Command::new(cmd)
+        .hide_console_window()
         .arg(name)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -167,6 +171,7 @@ pub fn create_venv(python: &Path, venv_dir: &Path) -> Result<(), String> {
     );
 
     let output = Command::new(python)
+        .hide_console_window()
         .args(["-m", "venv", &venv_dir.to_string_lossy()])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -206,6 +211,7 @@ pub fn install_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
     args.extend(deps.iter().copied());
 
     let output = Command::new(&python)
+        .hide_console_window()
         .args(&args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -217,9 +223,27 @@ pub fn install_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
         return Err(format!("pip install failed: {}", stderr.trim()));
     }
 
+    #[cfg(target_os = "windows")]
+    std::fs::write(
+        venv_dir.join("Lib/site-packages/dmc-msvc-runtime.pth"),
+        MSVC_RUNTIME_PRELOAD,
+    )
+    .map_err(|e| format!("Failed to write MSVC runtime preload: {}", e))?;
+
     log::info!("[Addon] Dependencies installed successfully");
     Ok(())
 }
+
+/// Loads the msvc-runtime DLLs from the venv root when Python starts, so
+/// extension modules bind to them instead of an older or incomplete system copy.
+#[cfg(target_os = "windows")]
+const MSVC_RUNTIME_PRELOAD: &str = concat!(
+    "import os, sys; os.name == \"nt\" and [__import__(\"ctypes\").WinDLL(p) for p in ",
+    "(os.path.join(sys.prefix, n) for n in (\"vcruntime140_threads.dll\", \"msvcp140.dll\", ",
+    "\"msvcp140_1.dll\", \"msvcp140_2.dll\", \"msvcp140_atomic_wait.dll\", ",
+    "\"msvcp140_codecvt_ids.dll\", \"concrt140.dll\", \"vcomp140.dll\")) ",
+    "if os.path.exists(p)]\n"
+);
 
 /// Remove Python distributions from a virtual environment if present.
 pub fn uninstall_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
@@ -231,6 +255,7 @@ pub fn uninstall_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
     let mut args = vec!["-m", "pip", "uninstall", "-y"];
     args.extend(deps.iter().copied());
     let output = Command::new(&python)
+        .hide_console_window()
         .args(&args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -273,6 +298,7 @@ if hasattr(ort, 'preload_dlls'):
         preload['error'] = str(error)
 print(json.dumps({'onnxruntime': ort.__version__, 'available_providers': ort.get_available_providers(), 'packages': packages, 'preload': preload}))"#;
     let output = Command::new(&python)
+        .hide_console_window()
         .args(["-c", script])
         .output()
         .map_err(|error| format!("Failed to probe ONNX Runtime: {}", error))?;
@@ -845,30 +871,6 @@ pub async fn check_health(port: u16) -> bool {
     }
 }
 
-/// Poll an addon's health endpoint until it responds or the timeout expires.
-///
-/// Checks every 250ms. Returns `true` if the addon became healthy within
-/// the given `timeout`, `false` if it timed out.
-pub async fn wait_for_healthy(port: u16, timeout: Duration) -> bool {
-    let start = std::time::Instant::now();
-    let poll_interval = Duration::from_millis(250);
-
-    while start.elapsed() < timeout {
-        if check_health(port).await {
-            log::info!("[Addon] Port {} healthy after {:?}", port, start.elapsed());
-            return true;
-        }
-        tokio::time::sleep(poll_interval).await;
-    }
-
-    log::warn!(
-        "[Addon] Port {} did not become healthy within {:?}",
-        port,
-        timeout
-    );
-    false
-}
-
 /// Kill a sidecar process and its process group.
 pub fn kill_process(pid: u32) {
     #[cfg(unix)]
@@ -883,6 +885,7 @@ pub fn kill_process(pid: u32) {
     #[cfg(target_os = "windows")]
     {
         let _ = Command::new("taskkill")
+            .hide_console_window()
             .args(["/pid", &pid.to_string(), "/T", "/F"])
             .output();
     }
