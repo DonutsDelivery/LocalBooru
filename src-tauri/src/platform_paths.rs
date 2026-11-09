@@ -65,6 +65,18 @@ pub fn helper(name: &str) -> PathBuf {
     .unwrap_or_else(|| PathBuf::from(name))
 }
 
+/// Directory of a helper found outside PATH, so child processes that look it up
+/// on PATH (such as addon sidecars) find the bundled copy too.
+#[cfg(target_os = "windows")]
+pub fn helper_dir(name: &str) -> Option<PathBuf> {
+    let path = helper(name);
+    if path.is_absolute() {
+        path.parent().map(Path::to_path_buf)
+    } else {
+        None
+    }
+}
+
 /// Background helpers must not flash a console window on Windows.
 pub trait HideConsoleWindow {
     fn hide_console_window(&mut self) -> &mut Self;

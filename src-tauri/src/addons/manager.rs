@@ -80,6 +80,28 @@ fn dependency_list_for_platform(
     deps
 }
 
+// Records the dependency list a venv was installed with, so a changed list is
+// reinstalled on the next start instead of only on a fresh install.
+const INSTALLED_DEPENDENCIES_FILE: &str = "dmc-dependencies.txt";
+
+fn installed_dependencies_match(venv_dir: &Path, dependencies: &[&str]) -> bool {
+    std::fs::read_to_string(venv_dir.join(INSTALLED_DEPENDENCIES_FILE))
+        .is_ok_and(|installed| installed == dependencies.join("\n"))
+}
+
+fn install_recorded_dependencies(
+    id: &str,
+    dependencies: &[&str],
+    venv_dir: &Path,
+) -> Result<(), String> {
+    install_dependency_list(id, dependencies, venv_dir)?;
+    std::fs::write(
+        venv_dir.join(INSTALLED_DEPENDENCIES_FILE),
+        dependencies.join("\n"),
+    )
+    .map_err(|e| format!("Failed to record installed dependencies: {}", e))
+}
+
 fn auto_tagger_dependency_revision(dependencies: &[&str], target_os: &str) -> String {
     format!(
         "{}:{}:{}",
@@ -511,7 +533,7 @@ impl AddonManager {
         manifest: &super::manifest::AddonManifest,
         venv_dir: &Path,
     ) -> Result<(), String> {
-        install_dependency_list(id, &self.dependency_list(id, manifest), venv_dir)
+        install_recorded_dependencies(id, &self.dependency_list(id, manifest), venv_dir)
     }
 
     fn sidecar_env(&self, id: &str) -> Vec<(String, String)> {
@@ -1306,6 +1328,22 @@ impl AddonManager {
                     "Auto Tagger dependency reconciliation failed: {}",
                     error
                 ));
+            }
+        } else {
+            let dependencies = self.dependency_list(id, manifest);
+            if !installed_dependencies_match(&venv_dir, &dependencies) {
+                log::info!("[AddonManager] Updating dependencies for '{}'", id);
+                let install_id = id.to_string();
+                let install_venv_dir = venv_dir.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    install_recorded_dependencies(&install_id, &dependencies, &install_venv_dir)
+                })
+                .await
+                .map_err(|error| format!("Dependency update task failed: {}", error))?;
+                if let Err(error) = result {
+                    self.set_status(id, AddonStatus::Error(error.clone()));
+                    return Err(format!("Dependency update failed: {}", error));
+                }
             }
         }
 
@@ -2393,6 +2431,21 @@ printf '%s\n' '{"addon_version":"0.1.0","protocol_version":1,"upstream_revision"
             deps,
             vec!["uvicorn[standard]", "fastapi", "torch", MSVC_RUNTIME]
         );
+    }
+
+    #[test]
+    fn changed_dependency_lists_are_reinstalled_on_start() {
+        let venv = tempfile::tempdir().unwrap();
+        let deps = ["faster-whisper==1.2.1", "av<19", "numpy"];
+        assert!(!installed_dependencies_match(venv.path(), &deps));
+        std::fs::write(
+            venv.path().join(INSTALLED_DEPENDENCIES_FILE),
+            ["faster-whisper==1.2.1", "numpy"].join("\n"),
+        )
+        .unwrap();
+        assert!(!installed_dependencies_match(venv.path(), &deps));
+        std::fs::write(venv.path().join(INSTALLED_DEPENDENCIES_FILE), deps.join("\n")).unwrap();
+        assert!(installed_dependencies_match(venv.path(), &deps));
     }
 
     // AC: @curation-game ac-1

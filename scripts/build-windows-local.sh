@@ -110,6 +110,19 @@ printf '==> Windows persistent build cache before build: %s (limit: %sG)\n' \
 localbooru_build_resource_limits
 localbooru_build_check_disk / "$BUILD_ROOT" "$DIST_PATH"
 
+# Windows has no system ffmpeg, so the app ships its own. A GPL build is
+# needed for libx264 transcoding; the release tag is permanent.
+FFMPEG_ARCHIVE_NAME="ffmpeg-8.1-full_build-shared.zip"
+FFMPEG_ARCHIVE_URL="https://github.com/GyanD/codexffmpeg/releases/download/8.1/$FFMPEG_ARCHIVE_NAME"
+FFMPEG_ARCHIVE_SHA256="e184e012ca9a3527ed45d61f8e250c50b07b8661d90849820ea754239049efb4"
+FFMPEG_ARCHIVE="$BUILD_ROOT/downloads/$FFMPEG_ARCHIVE_NAME"
+if [[ ! -f "$FFMPEG_ARCHIVE" ]]; then
+  mkdir -p "$BUILD_ROOT/downloads"
+  curl -sSfL -o "$FFMPEG_ARCHIVE.part" "$FFMPEG_ARCHIVE_URL"
+  mv "$FFMPEG_ARCHIVE.part" "$FFMPEG_ARCHIVE"
+fi
+echo "$FFMPEG_ARCHIVE_SHA256  $FFMPEG_ARCHIVE" | sha256sum -c -
+
 if [[ "$REBUILD" == 1 ]] || ! "$DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "==> Building Windows MSVC/Wine image $IMAGE"
   localbooru_build_started "$SOURCE_COMMIT" container-image
@@ -127,6 +140,8 @@ container_result=0
   -e LOCALBOORU_BUILD_JOBS="$JOBS" \
   -e LOCALBOORU_SOURCE_REVISION="$SOURCE_COMMIT" \
   -e SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
+  -e LOCALBOORU_FFMPEG_ARCHIVE="/build/downloads/$FFMPEG_ARCHIVE_NAME" \
+  -e LOCALBOORU_FFMPEG_SHA256="$FFMPEG_ARCHIVE_SHA256" \
   -e npm_config_cache=/build/npm-cache \
   -e GIT_DIR=/git \
   -e GIT_WORK_TREE=/source \

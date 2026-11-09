@@ -149,6 +149,7 @@ class WhisperSubtitleStream:
         self.cached_vtt_path: Optional[Path] = None
         self.error: Optional[str] = None
         self.completed = False
+        self.model_ready = False
         self._duration = 0.0
         self._process = None
 
@@ -253,6 +254,7 @@ class WhisperSubtitleStream:
                 None, _load_model, self.model_size, self.device, self.compute_type
             )
 
+            self.model_ready = True
             self._broadcast_event("started", {
                 "stream_id": self.stream_id,
                 "duration": self._duration,
@@ -579,6 +581,14 @@ async def events(stream_id: str):
         raise HTTPException(status_code=404, detail="Stream not found")
 
     queue = stream.subscribe()
+    # Events sent before this client connected are lost, so start it with the
+    # stream's current state. A first run can spend minutes downloading the model.
+    if stream.error:
+        queue.put_nowait({"type": "error", "stream_id": stream_id, "error": stream.error})
+    elif stream.completed:
+        queue.put_nowait({"type": "completed", "stream_id": stream_id})
+    elif not stream.model_ready:
+        queue.put_nowait({"type": "loading_model", "stream_id": stream_id})
 
     async def event_generator():
         import json

@@ -585,13 +585,15 @@ pub async fn spawn_sidecar(
             .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
             .map(|(_, value)| OsString::from(value))
             .or_else(|| std::env::var_os("PATH"));
-        let managed = match managed_nvidia_bin_dirs(_venv_dir) {
+        let mut managed = match managed_nvidia_bin_dirs(_venv_dir) {
             Ok(directories) => directories,
             Err(error) => {
                 log::warn!("[Addon:{}] {}", addon_id, error);
                 Vec::new()
             }
         };
+        // Sidecars run ffmpeg and ffprobe from PATH; use the copies bundled with the app.
+        managed.extend(crate::platform_paths::helper_dir("ffmpeg"));
         if !managed.is_empty() || inherited_path.is_some() {
             match compose_windows_search_path(&managed, inherited_path.as_deref()) {
                 Ok(path) => {

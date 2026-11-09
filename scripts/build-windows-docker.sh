@@ -60,6 +60,31 @@ git -c safe.directory="$SOURCE_DIR" -C "$SOURCE_DIR" \
 
 cd "$WORKTREE"
 python3 scripts/check-release-version.py
+
+# Bundle ffmpeg and ffprobe as bin\ next to the executable, where
+# platform_paths::helper looks first.
+FFMPEG_ARCHIVE="${LOCALBOORU_FFMPEG_ARCHIVE:?LOCALBOORU_FFMPEG_ARCHIVE is required}"
+echo "${LOCALBOORU_FFMPEG_SHA256:?LOCALBOORU_FFMPEG_SHA256 is required}  $FFMPEG_ARCHIVE" | sha256sum -c -
+FFMPEG_EXTRACT="$BUILD_ROOT/ffmpeg-extract"
+rm -rf "$FFMPEG_EXTRACT"
+unzip -q "$FFMPEG_ARCHIVE" -d "$FFMPEG_EXTRACT"
+FFMPEG_ROOT="$(find "$FFMPEG_EXTRACT" -mindepth 1 -maxdepth 1 -type d)"
+mkdir -p src-tauri/ffmpeg-bin LICENSES/ffmpeg
+cp "$FFMPEG_ROOT"/bin/ffmpeg.exe "$FFMPEG_ROOT"/bin/ffprobe.exe "$FFMPEG_ROOT"/bin/*.dll src-tauri/ffmpeg-bin/
+cp "$FFMPEG_ROOT/LICENSE" LICENSES/ffmpeg/LICENSE
+cp "$FFMPEG_ROOT/README.txt" LICENSES/ffmpeg/README.txt
+cat > LICENSES/ffmpeg/SOURCE.txt <<'SOURCE'
+bin\ contains FFmpeg 8.1 (GPLv3 build) from
+https://github.com/GyanD/codexffmpeg/releases/tag/8.1
+FFmpeg source: https://ffmpeg.org/releases/ffmpeg-8.1.tar.xz
+The build configuration and the sources of its bundled libraries are listed in README.txt.
+SOURCE
+python3 - src-tauri/tauri.windows.conf.json "$BUILD_ROOT/tauri.windows.bundle.conf.json" <<'PY'
+import json, sys
+config = json.load(open(sys.argv[1]))
+config.setdefault('bundle', {}).setdefault('resources', {})['ffmpeg-bin/'] = 'bin/'
+json.dump(config, open(sys.argv[2], 'w'), indent=2)
+PY
 rm -rf "$DIST_DIR"/*
 LOCK_HASH_BEFORE="$(sha256sum Cargo.lock | cut -d' ' -f1)"
 
@@ -87,7 +112,7 @@ rm -rf "$RELEASE_DIR/bundle/nsis"
 cargo tauri build \
   --ci \
   --target "$TARGET" \
-  --config src-tauri/tauri.windows.conf.json
+  --config "$BUILD_ROOT/tauri.windows.bundle.conf.json"
 [[ "$(sha256sum Cargo.lock | cut -d' ' -f1)" == "$LOCK_HASH_BEFORE" ]]
 
 BINARY="$RELEASE_DIR/donutmediacenter.exe"
@@ -109,10 +134,11 @@ mkdir -p "$STAGE" "$INSTALLER_PAYLOAD"
 cp "$BINARY" "$STAGE/DonutMediaCenter.exe"
 cp LICENSE NOTICE TRADEMARKS.md "$STAGE/"
 cp -a LICENSES "$STAGE/"
+cp -a src-tauri/ffmpeg-bin "$STAGE/bin"
 
 (
   cd "$STAGE"
-  zip -9 -q -r "$DIST_DIR/DonutMediaCenter-Windows.zip" DonutMediaCenter.exe LICENSE NOTICE TRADEMARKS.md LICENSES
+  zip -9 -q -r "$DIST_DIR/DonutMediaCenter-Windows.zip" DonutMediaCenter.exe LICENSE NOTICE TRADEMARKS.md LICENSES bin
 )
 cp "$INSTALLER" "$DIST_DIR/DonutMediaCenter-Windows-Setup.exe"
 
@@ -154,6 +180,13 @@ for path in payload.rglob('*.exe'):
 assert installed, 'NSIS payload is missing x64 DonutMediaCenter executable'
 print('Standalone and NSIS payload contain x64 PE32+ DonutMediaCenter executables')
 PY
+for helper in ffmpeg.exe ffprobe.exe; do
+  unzip -l "$DIST_DIR/DonutMediaCenter-Windows.zip" "bin/$helper" >/dev/null
+  find "$INSTALLER_PAYLOAD" -ipath "*/bin/$helper" | grep -q . || {
+    echo "ERROR: NSIS payload is missing bin/$helper" >&2
+    exit 1
+  }
+done
 
 (
   cd "$DIST_DIR"

@@ -2823,7 +2823,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             {subtitles.generating && (
               <div className="subtitle-progress-badge">
                 <div className="subtitle-progress-spinner" />
-                <span>Subtitles: {Math.round(subtitles.progress)}%</span>
+                <span>
+                  {subtitles.loadingModel
+                    ? 'Loading speech model (the first run downloads it)'
+                    : `Subtitles: ${Math.round(subtitles.progress)}%`}
+                </span>
               </div>
             )}
             {/* Subtitle error toast */}

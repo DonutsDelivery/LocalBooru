@@ -20,6 +20,7 @@ export function useWhisperSubtitles(mediaRef, image) {
   const [generating, setGenerating] = useState(false)
   const [installing, setInstalling] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [loadingModel, setLoadingModel] = useState(false)
   const [error, setError] = useState(null)
   const [streamId, setStreamId] = useState(null)
   const [vttUrl, setVttUrl] = useState(null)
@@ -212,6 +213,7 @@ export function useWhisperSubtitles(mediaRef, image) {
     const task = taskOverride !== undefined ? taskOverride : subtitleTask
 
     setGenerating(true)
+    setLoadingModel(false)
     setError(null)
     setProgress(0)
     setCompleted(false)
@@ -221,8 +223,9 @@ export function useWhisperSubtitles(mediaRef, image) {
       const currentTime = mediaRef.current?.currentTime || 0
       const result = await generateSubtitles(image.file_path, lang, task, currentTime)
 
-      if (!result.success) {
-        setError(result.error || 'Failed to generate subtitles')
+      // Failures arrive as HTTP errors; a started stream always has an id.
+      if (!result?.stream_id) {
+        setError(result?.error || 'Failed to generate subtitles')
         setGenerating(false)
         return
       }
@@ -245,10 +248,12 @@ export function useWhisperSubtitles(mediaRef, image) {
       trackRef.current = track
 
       const unsubscribe = subscribeToSubtitleEvents(result.stream_id, (event) => {
+        // The whisper sidecar sends flat events: {type, ...fields}
+        setLoadingModel(event.type === 'loading_model')
         switch (event.type) {
-          case 'subtitle_cue': {
+          case 'cue': {
             // Add cue dynamically
-            const { start, end, text } = event.data
+            const { start, end, text } = event
             if (track && text) {
               try {
                 const cue = new VTTCue(start, end, text)
@@ -259,17 +264,21 @@ export function useWhisperSubtitles(mediaRef, image) {
             }
             break
           }
-          case 'subtitle_progress': {
-            setProgress(event.data.progress || 0)
+          case 'progress': {
+            setProgress(event.progress || 0)
             break
           }
-          case 'subtitle_completed': {
+          case 'completed': {
             setCompleted(true)
             setGenerating(false)
             break
           }
-          case 'subtitle_error': {
-            setError(event.data.error || 'Subtitle generation failed')
+          case 'error': {
+            setError(event.error || 'Subtitle generation failed')
+            setGenerating(false)
+            break
+          }
+          case 'stopped': {
             setGenerating(false)
             break
           }
@@ -387,6 +396,7 @@ export function useWhisperSubtitles(mediaRef, image) {
 
     setSubtitlesEnabled(false)
     setGenerating(false)
+    setLoadingModel(false)
     setStreamId(null)
     setVttUrl(null)
     setProgress(0)
@@ -433,6 +443,7 @@ export function useWhisperSubtitles(mediaRef, image) {
     generating,
     installing,
     progress,
+    loadingModel,
     error,
     completed,
     subtitleLanguage,
