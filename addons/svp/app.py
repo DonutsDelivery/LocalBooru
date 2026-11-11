@@ -176,7 +176,10 @@ def get_clean_env() -> dict:
             "LANG": os.environ.get("LANG", "en_US.UTF-8"),
             "DISPLAY": os.environ.get("DISPLAY", ":0"),
         }
-        for v in ("LD_LIBRARY_PATH", "LD_PRELOAD", "PKG_CONFIG_PATH"):
+        # Keep sandbox-provided storage roots when cleaning the helper environment.
+        # HOME can point outside the container even when XDG directories do not.
+        for v in ("LD_LIBRARY_PATH", "LD_PRELOAD", "PKG_CONFIG_PATH",
+                  "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
             if v in os.environ:
                 env[v] = os.environ[v]
         xdg = os.environ.get("XDG_RUNTIME_DIR")

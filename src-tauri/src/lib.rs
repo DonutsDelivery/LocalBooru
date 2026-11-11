@@ -94,6 +94,7 @@ pub(crate) fn get_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
                 std::env::consts::OS,
                 base,
                 app.path().app_data_dir().map_err(|error| error.to_string()),
+                cfg!(target_os = "linux") && std::path::Path::new("/.flatpak-info").is_file(),
             )?
         }
     };

@@ -9,7 +9,13 @@ pub fn desktop_data_dir(
     os: &str,
     base: Option<PathBuf>,
     app_data: Result<PathBuf, String>,
+    flatpak: bool,
 ) -> Result<PathBuf, String> {
+    // Flatpak retains the host HOME while redirecting XDG data to its container.
+    // A home-relative legacy path may be inaccessible and must never win here.
+    if os == "linux" && flatpak {
+        return app_data;
+    }
     let legacy = base
         .ok_or("User storage directory is unavailable")?
         .join(".localbooru");
@@ -110,16 +116,16 @@ mod tests {
         let home = temporary.path().join("Home æ");
         let app_data = home.join("Library/Application Support/com.localbooru.app");
         assert_eq!(
-            desktop_data_dir("macos", Some(home.clone()), Ok(app_data.clone())).unwrap(),
+            desktop_data_dir("macos", Some(home.clone()), Ok(app_data.clone()), false).unwrap(),
             app_data
         );
         let legacy = home.join(".localbooru");
         std::fs::create_dir_all(&legacy).unwrap();
         assert_eq!(
-            desktop_data_dir("macos", Some(home.clone()), Ok(app_data)).unwrap(),
+            desktop_data_dir("macos", Some(home.clone()), Ok(app_data), false).unwrap(),
             legacy
         );
-        assert!(desktop_data_dir("macos", None, Ok(home)).is_err());
+        assert!(desktop_data_dir("macos", None, Ok(home), false).is_err());
     }
     #[test]
     fn other_desktop_libraries_keep_their_existing_layout() {
@@ -128,12 +134,48 @@ mod tests {
                 desktop_data_dir(
                     os,
                     Some(PathBuf::from("User æ space")),
-                    Err("unavailable".into())
+                    Err("unavailable".into()),
+                    false
                 )
                 .unwrap(),
                 PathBuf::from("User æ space/.localbooru")
             );
         }
+    }
+    #[test]
+    fn flatpak_uses_container_app_data_even_with_legacy_host_home() {
+        let temporary = tempfile::tempdir().unwrap();
+        let host = temporary.path().join("host-home");
+        let legacy = host.join(".localbooru");
+        let app_data = temporary.path().join("sandbox/data/com.localbooru.app");
+        std::fs::create_dir_all(&legacy).unwrap();
+        let selected =
+            desktop_data_dir("linux", Some(host.clone()), Ok(app_data.clone()), true).unwrap();
+        assert_eq!(selected, app_data);
+        std::fs::create_dir_all(&selected).unwrap();
+        std::fs::write(
+            selected.join("settings.json"),
+            br#"{"onboarding_complete":true}"#,
+        )
+        .unwrap();
+        // Resolve again as a subsequent process would, with host and XDG separated.
+        let reopened =
+            desktop_data_dir("linux", Some(host.clone()), Ok(app_data.clone()), true).unwrap();
+        assert_eq!(
+            std::fs::read(reopened.join("settings.json"))
+                .unwrap()
+                .as_slice(),
+            br#"{"onboarding_complete":true}"#
+        );
+        assert!(!legacy.join("settings.json").exists());
+        assert_eq!(
+            desktop_data_dir("linux", Some(host), Err("no XDG data".into()), true).unwrap_err(),
+            "no XDG data"
+        );
+        assert_eq!(
+            desktop_data_dir("linux", None, Ok(app_data.clone()), true).unwrap(),
+            app_data
+        );
     }
     #[test]
     fn finder_and_windows_helpers_use_native_resource_paths() {
