@@ -344,7 +344,7 @@ package_appimage() {
   # these dependencies. Bundle their SONAMEs for contained runtimes as well.
   mkdir -p "$stage/usr/lib"
   local tray_lib
-  for tray_lib in libayatana-appindicator3.so.1 libdbusmenu-gtk3.so.4 libdbusmenu-glib.so.4; do
+  for tray_lib in libayatana-appindicator3.so.1 libayatana-indicator3.so.7 libayatana-ido3-0.4.so.0 libdbusmenu-gtk3.so.4 libdbusmenu-glib.so.4; do
     install -m 0644 "/usr/lib/x86_64-linux-gnu/$tray_lib" "$stage/usr/lib/$tray_lib"
   done
   # AppImage tools also consume a desktop entry and icon at the AppDir root.
