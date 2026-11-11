@@ -23,7 +23,8 @@ Flathub manifest and submission are maintained by Emil.
 
 The candidate requests full host filesystem access because existing DMC libraries
 can reside outside the home directory, along with network, display, audio and GPU
-access. This broad permission allows access to the user's files; review and narrow
+access. It also permits DMC to own its existing `com.localbooru.app` D-Bus
+name. This broad filesystem permission allows access to the user's files; review and narrow
 it only with verified portal or other persistent folder access. The build does not
 establish sandbox compatibility, helper availability, GPU playback, SVP operation,
 portal persistence, or media survival after cache eviction. Use the repository's

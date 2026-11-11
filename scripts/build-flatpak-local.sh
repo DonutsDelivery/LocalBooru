@@ -39,7 +39,7 @@ install -m 644 "$root/assets/icon.png" "$out/build/files/share/icons/hicolor/512
 # The app manages arbitrary user-selected libraries, LAN sharing and GPU playback.
 flatpak build-finish --command=donutmediacenter --share=network --share=ipc \
   --socket=wayland --socket=fallback-x11 --socket=pulseaudio \
-  --device=dri --filesystem=host "$out/build"
+  --device=dri --filesystem=host --own-name=com.localbooru.app "$out/build"
 flatpak build-export "$out/repo" "$out/build" stable
 flatpak build-bundle "$out/repo" "$out/DonutMediaCenter-local.flatpak" "$id" stable
 printf '%s  %s\n' "$actual" "$(basename "$image")" > "$out/source-sha256.txt"
