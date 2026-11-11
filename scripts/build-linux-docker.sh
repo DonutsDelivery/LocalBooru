@@ -345,7 +345,7 @@ package_appimage() {
   mkdir -p "$stage/usr/lib"
   local tray_lib
   for tray_lib in libayatana-appindicator3.so.1 libdbusmenu-gtk3.so.4 libdbusmenu-glib.so.4; do
-    install -m 0644 -L "/usr/lib/x86_64-linux-gnu/$tray_lib" "$stage/usr/lib/$tray_lib"
+    install -m 0644 "/usr/lib/x86_64-linux-gnu/$tray_lib" "$stage/usr/lib/$tray_lib"
   done
   # AppImage tools also consume a desktop entry and icon at the AppDir root.
   rm -f "$stage/DonutMediaCenter.desktop" "$stage/donutmediacenter.desktop" "$stage/localbooru.desktop"
