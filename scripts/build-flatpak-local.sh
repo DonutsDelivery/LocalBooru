@@ -25,11 +25,26 @@ unsquashfs -no-progress -offset "$offset" -d "$work/appdir" "$image" >/dev/null
 flatpak build-init --arch=x86_64 "$out/build" "$id" org.freedesktop.Sdk org.freedesktop.Platform 25.08
 mkdir -p "$out/build/files/lib/donutmediacenter" "$out/build/files/bin" "$out/build/files/share/applications" "$out/build/files/share/icons/hicolor/512x512/apps"
 cp -a "$work/appdir/." "$out/build/files/lib/donutmediacenter/"
+# The Freedesktop runtime does not provide a cursor theme. Install the
+# verified AppImage's Adwaita cursor fallback under Flatpak's standard prefix.
+cursor="$work/appdir/usr/share/icons/Adwaita"
+[[ -d "$cursor/cursors" && -f "$cursor/index.theme" ]] || { echo 'AppImage lacks its Adwaita cursor fallback; rebuild from the current source.' >&2; exit 1; }
+mkdir -p "$out/build/files/share/icons/Adwaita" "$out/build/files/share/doc/adwaita-icon-theme"
+cp -a "$cursor/cursors" "$out/build/files/share/icons/Adwaita/"
+cp "$cursor/index.theme" "$out/build/files/share/icons/Adwaita/"
+cp "$work/appdir/usr/share/doc/adwaita-icon-theme/copyright" "$out/build/files/share/doc/adwaita-icon-theme/"
 # linuxdeploy AppRun.wrapped treats quotes in Exec as literal characters.
 sed -i 's/^Exec="donutmediacenter"/Exec=donutmediacenter/' "$out/build/files/lib/donutmediacenter/com.localbooru.app.desktop"
 cat > "$out/build/files/bin/donutmediacenter" <<'LAUNCHER'
 #!/bin/sh
 export APPDIR=/app/lib/donutmediacenter
+# Preserve an available user-selected cursor theme; use the bundled fallback
+# when the selected theme is absent from the sandbox.
+case "${XCURSOR_THEME:-}" in
+  ''|*[!A-Za-z0-9_.-]*|.|..) export XCURSOR_THEME=Adwaita ;;
+  *) if [ ! -d "/app/share/icons/$XCURSOR_THEME/cursors" ] && [ ! -d "/usr/share/icons/$XCURSOR_THEME/cursors" ]; then export XCURSOR_THEME=Adwaita; fi ;;
+esac
+export XCURSOR_PATH="/app/share/icons:/usr/share/icons${XCURSOR_PATH:+:$XCURSOR_PATH}"
 export PATH="$APPDIR/usr/bin:$PATH"
 exec "$APPDIR/AppRun" "$@"
 LAUNCHER

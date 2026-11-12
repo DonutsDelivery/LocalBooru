@@ -21,7 +21,10 @@ cat > "$tmp/bin/unsquashfs" <<'TOOL'
 #!/bin/bash
 set -eu
 while (($#)); do if [[ "$1" == -d ]]; then dest=$2; shift 2; else shift; fi; done
-mkdir -p "$dest/usr/lib/localbooru/native-svp"
+mkdir -p "$dest/usr/lib/localbooru/native-svp" "$dest/usr/share/icons/Adwaita/cursors" "$dest/usr/share/doc/adwaita-icon-theme"
+printf "[Icon Theme]\nName=Adwaita\n" > "$dest/usr/share/icons/Adwaita/index.theme"
+printf "synthetic cursor\n" > "$dest/usr/share/icons/Adwaita/cursors/left_ptr"
+printf "synthetic license\n" > "$dest/usr/share/doc/adwaita-icon-theme/copyright"
 printf '#!/bin/sh\n' > "$dest/AppRun"
 chmod +x "$dest/AppRun"
 touch "$dest/AppRun.tauri"
@@ -42,5 +45,7 @@ PATH="$tmp/bin:$PATH" "$root/scripts/build-flatpak-local.sh" "$tmp/fake.AppImage
 launcher="$tmp/built/build/files/bin/donutmediacenter"
 desktop="$tmp/built/build/files/lib/donutmediacenter/com.localbooru.app.desktop"
 rg -q '^export APPDIR=/app/lib/donutmediacenter$' "$launcher"
+test -f "$tmp/built/build/files/share/icons/Adwaita/cursors/left_ptr"
+test -f "$tmp/built/build/files/share/doc/adwaita-icon-theme/copyright"
 rg -q '^Exec=donutmediacenter %U$' "$desktop"
 echo 'Flatpak input and launcher checks passed' 
