@@ -30,6 +30,12 @@ import { isVideoMediaElement, releaseVideoMedia } from '../../utils/lightboxMedi
 import { diagnoseImageLoad } from '../../utils/imageLoadDiagnostics.js'
 import { adjustmentControlState, adjustmentLocator, appendCacheBuster, commitAdjustmentSourceTransition, createAdjustmentOperationOwner, createImageSourceOwner, imageFileHash } from '../../utils/imageAdjustments.js'
 
+// Tauri commands reject with a string; ordinary browser errors use Error.
+function nativeErrorDetail(error) {
+  if (typeof error === 'string' && error.trim()) return error
+  return error?.message || 'Unknown error'
+}
+
 // Video diagnostics overlay — press I to toggle, B for bare mode (video only)
 function FPSMonitor({ videoRef, visible, onToggleBare }) {
   const statsRef = useRef(null)
@@ -271,7 +277,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       if (ready) setLocalResolutionReady(localResolutionReadyKey)
     }).catch(async error => {
       if (cancelled) return
-      toast.error(`Failed to set video resolution: ${error.message}`)
+      toast.error(`Failed to set video resolution: ${nativeErrorDetail(error)}`)
       if (currentQuality === 'original') return
       try {
         const ready = await prepareLocalResolution(
@@ -285,7 +291,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           setLocalResolutionReady(localResolutionReadyKey)
         }
       } catch (fallbackError) {
-        if (!cancelled) toast.error(`Failed to restore Original resolution: ${fallbackError.message}`)
+        if (!cancelled) toast.error(`Failed to restore Original resolution: ${nativeErrorDetail(fallbackError)}`)
       }
     })
     return () => { cancelled = true }
@@ -1080,7 +1086,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             && currentImageKey === activeImageKeyRef.current && mediaRef.current === video) {
           if (svpResumeRef.current === pending) svpResumeRef.current = null
           if (!pending.paused) video.play().catch(() => {})
-          toast.error(`Failed to change video resolution: ${error.message}`)
+          toast.error(`Failed to change video resolution: ${nativeErrorDetail(error)}`)
         }
         return
       }
@@ -1792,9 +1798,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       if (ready) setLocalResolutionVerified(localResolutionReadyKey)
     }).catch(error => {
       if (!isCurrent()) return
-      toast.error(`Decoded frame resize is unavailable: ${error.message}. Restoring Original.`)
+      toast.error(`Decoded frame resize is unavailable: ${nativeErrorDetail(error)}. Restoring Original.`)
       handleQualityChange('original').catch(fallbackError => {
-        if (isCurrent()) toast.error(`Failed to restore Original resolution: ${fallbackError.message}`)
+        if (isCurrent()) toast.error(`Failed to restore Original resolution: ${nativeErrorDetail(fallbackError)}`)
       })
     })
   }, [localRawPlayback, currentQuality, localResolutionReady, localResolutionReadyKey, resolutionOwner, handleQualityChange])

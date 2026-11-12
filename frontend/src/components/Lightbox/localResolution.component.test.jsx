@@ -271,6 +271,18 @@ test.each(['stock WebKit', 'endpoint-only WebKit'])('SVP Off with %s visibly res
   expect(mocks.handleEncodedQuality).not.toHaveBeenCalled()
 })
 
+test('native string errors display their reason when resize falls back to Original', async () => {
+  localStorage.setItem('video_quality_preference', '720p')
+  mocks.bridge.verifyLocalVideoResolution.mockRejectedValue('Native video geometry is not ready; matching scaler runtime is required')
+  const { container } = mount()
+  const first = await videoReady(container)
+  fireEvent.loadedMetadata(first)
+  await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith(
+    'Decoded frame resize is unavailable: Native video geometry is not ready; matching scaler runtime is required. Restoring Original.'
+  ), { timeout: 3000 })
+  expect(localStorage.getItem('video_quality_preference')).toBe('original')
+})
+
 test('a successful old verifier acknowledgement is ignored while a later choice is withdrawing', async () => {
   localStorage.setItem('video_quality_preference', '720p')
   let acknowledge, withdraw
