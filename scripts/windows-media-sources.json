@@ -1,0 +1,65 @@
+{
+  "toolchain": {
+    "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64.tar.xz",
+    "sha256": "919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926",
+    "root": "llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64",
+    "release": "20261104",
+    "license": "LICENSE.TXT"
+  },
+  "sources": {
+    "ffmpeg": {
+      "url": "https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz",
+      "sha256": "7138d28c96d9d3e3af4ee3d8cad72741f8ffb40da90c1112235dea3ecd3178a3",
+      "root": "ffmpeg-8.1.3",
+      "license": "COPYING.GPLv3"
+    },
+    "x264": {
+      "url": "https://code.videolan.org/videolan/x264/-/archive/b35605ace3ddf7c1a5d67a2eb553f034aef41d55/x264-b35605ace3ddf7c1a5d67a2eb553f034aef41d55.tar.gz",
+      "sha256": "cd71a7515b0e9a012e1ac9b1f8415bebcaf6fc97d4db32286642ac4c0fbe24f9",
+      "root": "x264-b35605ace3ddf7c1a5d67a2eb553f034aef41d55",
+      "license": "COPYING"
+    },
+    "webp": {
+      "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz",
+      "sha256": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
+      "root": "libwebp-1.6.0",
+      "license": "COPYING"
+    },
+    "nasm": {
+      "url": "https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/nasm-2.16.03.tar.xz",
+      "sha256": "1412a1c760bbd05db026b6c0d1657affd6631cd0a63cddb6f73cc6d4aa616148",
+      "root": "nasm-2.16.03",
+      "license": "LICENSE"
+    },
+    "dav1d": {
+      "url": "https://codeload.github.com/videolan/dav1d/tar.gz/b546257f770768b2c88258c533da38b91a06f737",
+      "filename": "dav1d-b546257f770768b2c88258c533da38b91a06f737.tar.gz",
+      "root": "dav1d-b546257f770768b2c88258c533da38b91a06f737",
+      "commit": "b546257f770768b2c88258c533da38b91a06f737",
+      "license": "COPYING",
+      "sha256": "c5b7428c3f5b28db0aee0c62f6ffb2b42f4b08e7be5ce49d7ad046aaf0dc151d"
+    },
+    "ffnvcodec": {
+      "url": "https://codeload.github.com/FFmpeg/nv-codec-headers/tar.gz/e844e5b26f46bb77479f063029595293aa8f812d",
+      "filename": "nv-codec-headers-e844e5b26f46bb77479f063029595293aa8f812d.tar.gz",
+      "root": "nv-codec-headers-e844e5b26f46bb77479f063029595293aa8f812d",
+      "commit": "e844e5b26f46bb77479f063029595293aa8f812d",
+      "license": "include/ffnvcodec/nvEncodeAPI.h",
+      "sha256": "42d72fbcca46e05a1c05a79f1cda1fedd68ba686b21adf917e05d908153645d9"
+    },
+    "zlib": {
+      "url": "https://codeload.github.com/madler/zlib/tar.gz/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf",
+      "filename": "zlib-51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf.tar.gz",
+      "root": "zlib-51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf",
+      "commit": "51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf",
+      "license": "LICENSE",
+      "sha256": "d9e270d46252734aa49770fbc544125391617956266f220bd63216c834f3a522"
+    },
+    "meson": {
+      "url": "https://files.pythonhosted.org/packages/48/d8/6c1dd1c740b7d5fd73a6ad67900a09e3dd6642013f58fa9e22ae6faaffc7/meson-1.9.1.tar.gz",
+      "sha256": "4e076606f2afff7881d195574bddcd8d89286f35a17b4977a216f535dc0c74ac",
+      "root": "meson-1.9.1",
+      "license": "COPYING"
+    }
+  }
+}
