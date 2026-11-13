@@ -10,6 +10,11 @@ fi
 python3 "$ROOT/scripts/check-release-version.py"
 CHECK_ONLY="${LOCALBOORU_MACOS_CHECK_ONLY:-0}"
 [[ "$CHECK_ONLY" == 0 || "$CHECK_ONLY" == 1 ]] || { echo 'LOCALBOORU_MACOS_CHECK_ONLY must be 0 or 1' >&2; exit 2; }
+SOURCE_COMMIT="$(git -C "$ROOT" rev-parse --verify HEAD^{commit})"
+[[ -z "$(git -C "$ROOT" status --porcelain)" ]] || {
+  echo 'ERROR: native macOS inspection requires a clean exact source checkout' >&2
+  exit 1
+}
 TARGET="universal-apple-darwin"
 TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/src-tauri/target}"
 export CARGO_TARGET_DIR="$TARGET_DIR"
@@ -161,6 +166,9 @@ cp "$HELPER_PAYLOAD/DonutMediaCenter-macOS-media-sources.tar.xz" "$DIST_DIR/"
 cp "$HELPER_PAYLOAD/media-build-receipt.json" "$DIST_DIR/"
 ditto -c -k --sequesterRsrc --keepParent \
   "$APP" "$DIST_DIR/$ARTIFACT_NAME.zip"
+git -C "$ROOT" diff --exit-code
+python3 "$ROOT/scripts/export-application-source.py" --repo "$ROOT" --commit "$SOURCE_COMMIT" \
+  --output "$DIST_DIR/DonutMediaCenter-macOS-source.tar.xz" > "$DIST_DIR/application-source-receipt.json"
 
 (
   cd "$DIST_DIR"
@@ -169,6 +177,7 @@ ditto -c -k --sequesterRsrc --keepParent \
     "$ARTIFACT_NAME.dmg" \
     "$ARTIFACT_NAME.zip" \
     DonutMediaCenter-macOS-media-sources.tar.xz \
+    DonutMediaCenter-macOS-source.tar.xz application-source-receipt.json \
     media-build-receipt.json media-signature-receipt.json \
     > SHA256SUMS-macOS
   shasum -a 256 -c SHA256SUMS-macOS

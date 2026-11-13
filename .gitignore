@@ -12,6 +12,8 @@ python-embed/
 /DonutMediaCenter.apk
 /DonutMediaCenter.apk.idsig
 /dist-windows-local/
+/dist-macos/
+/dist-macos-lite/
 /build-windows-docker/
 /.sccache-windows-docker/
 /.android-signing.*/
