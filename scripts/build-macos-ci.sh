@@ -67,6 +67,8 @@ mkdir -p "$DIST_DIR"
   echo "ERROR: use a fresh macOS artifact output directory; existing files were preserved" >&2
   exit 1
 }
+PACKAGING_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/dmc-macos-package.XXXXXX")"
+trap 'rm -rf "$PACKAGING_ROOT"' EXIT
 
 "$ROOT/scripts/run-cargo.sh" test --locked --manifest-path "$ROOT/src-tauri/Cargo.toml" --lib
 if [[ "$EDITION" == store-lite ]]; then
@@ -79,9 +81,9 @@ fi
 # Resources use absolute source paths in an external generated config. Nothing is
 # copied into the checkout, and a fresh output prevents accepting a partial build.
 HELPER_CACHE="${LOCALBOORU_MACOS_HELPER_CACHE:-${XDG_CACHE_HOME:-$HOME/Library/Caches}/dmc-macos-media}"
-HELPER_PAYLOAD="$DIST_DIR/media-helpers"
+HELPER_PAYLOAD="$PACKAGING_ROOT/media-helpers"
 python3 "$ROOT/scripts/build-macos-media.py" --cache "$HELPER_CACHE" --output "$HELPER_PAYLOAD"
-RESOURCE_CONFIG="$DIST_DIR/media-resource-config.json"
+RESOURCE_CONFIG="$PACKAGING_ROOT/media-resource-config.json"
 python3 - "$ROOT" "$EDITION" "$HELPER_PAYLOAD" "$RESOURCE_CONFIG" <<'PY'
 import json, sys
 from pathlib import Path
@@ -126,7 +128,8 @@ python3 "$ROOT/scripts/package-macos-media.py" --app "$APP" --payload "$HELPER_P
 
 # Tauri's earlier DMG would predate the explicit nested-helper signatures. Create
 # it only after the final app has passed its payload and signature gates.
-DMG_STAGE="$(mktemp -d "$DIST_DIR/dmg-stage.XXXXXX")"
+DMG_STAGE="$PACKAGING_ROOT/dmg-stage"
+mkdir "$DMG_STAGE"
 ditto "$APP" "$DMG_STAGE/$APP_NAME.app"
 ln -s /Applications "$DMG_STAGE/Applications"
 DMG="$DIST_DIR/$ARTIFACT_NAME.dmg"

@@ -53,6 +53,9 @@ inspection signatures, not App Store or Developer ID signing.
 
 The release includes the exact upstream source archives, this recipe, pins,
 licenses and a build receipt in `DonutMediaCenter-macOS-media-sources.tar.xz`.
+Generated resource mappings and unsigned staging payloads stay in an owned
+temporary packaging directory and are removed on exit; they are not release
+artifacts. Compiler and verified source caches are retained separately.
 Ship it alongside the application and its complete corresponding application
 source. The original component licenses and patent notices are included in the
 application resources. Do not substitute a different binary under the receipt.
