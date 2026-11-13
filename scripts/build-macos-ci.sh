@@ -3,7 +3,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ "$(uname -s)" == Darwin && "${DMC_MAC_BUILD_LOCK_HELD:-0}" != 1 ]]; then
+  exec python3 "$ROOT/scripts/macos-build-lock.py" \
+    --wait "${LOCALBOORU_MACOS_BUILD_WAIT_SECONDS:-0}" -- "$0" "$@"
+fi
 python3 "$ROOT/scripts/check-release-version.py"
+CHECK_ONLY="${LOCALBOORU_MACOS_CHECK_ONLY:-0}"
+[[ "$CHECK_ONLY" == 0 || "$CHECK_ONLY" == 1 ]] || { echo 'LOCALBOORU_MACOS_CHECK_ONLY must be 0 or 1' >&2; exit 2; }
 TARGET="universal-apple-darwin"
 TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/src-tauri/target}"
 export CARGO_TARGET_DIR="$TARGET_DIR"
@@ -48,8 +54,15 @@ rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
 
 npm --prefix "$ROOT/frontend" ci
-npm --prefix "$ROOT/frontend" test
+if [[ "$CHECK_ONLY" != 1 ]]; then npm --prefix "$ROOT/frontend" test; fi
 npm --prefix "$ROOT/frontend" run build
+
+if [[ "$CHECK_ONLY" == 1 ]]; then
+  "$ROOT/scripts/run-cargo.sh" check --locked --manifest-path "$ROOT/src-tauri/Cargo.toml" "${FEATURE_ARGS[@]}"
+  git -C "$ROOT" diff --exit-code -- Cargo.lock
+  echo "Native macOS $EDITION check passed; no package was built or signed."
+  exit 0
+fi
 
 "$ROOT/scripts/run-cargo.sh" test --locked --manifest-path "$ROOT/src-tauri/Cargo.toml" --lib
 if [[ "$EDITION" == store-lite ]]; then
