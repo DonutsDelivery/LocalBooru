@@ -136,6 +136,7 @@ export LOCALBOORU_DISABLE_SINGLE_INSTANCE=1
 export LOCALBOORU_DEV_TARGET_DIR="$TEST_ROOT/target"
 export CARGO_TARGET_DIR="$TEST_ROOT/target"
 export LOCALBOORU_DEV_LOG="$TEST_ROOT/dev.log"
+export LOCALBOORU_TEST_READY_FILE="$TEST_ROOT/ready"
 export LOCALBOORU_ENABLE_NATIVE_SVP=0
 LOCALBOORU_ISOLATED_INSTANCE_ID="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export LOCALBOORU_ISOLATED_INSTANCE_ID
@@ -188,6 +189,8 @@ sys.exit(0 if valid else 1)
       exit 1
     fi
     printf 'Isolated LocalBooru instance is ready on http://127.0.0.1:%s\n' "$PORT"
+    # Fast fixture controllers must observe readiness before testing restarts.
+    (umask 077; printf '%s\n' "$LOCALBOORU_ISOLATED_INSTANCE_ID" > "$LOCALBOORU_TEST_READY_FILE")
     wait "$APP_PID"
     exit $?
   fi

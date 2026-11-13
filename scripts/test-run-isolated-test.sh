@@ -76,6 +76,7 @@ root="${HOME%/home}"
 [[ "$LOCALBOORU_PORT" == '18790' && "$VITE_LOCALBOORU_PORT" == '18790' ]]
 [[ "$LOCALBOORU_DISABLE_SINGLE_INSTANCE" == '1' && "$LOCALBOORU_ENABLE_NATIVE_SVP" == '0' ]]
 [[ "$LOCALBOORU_DEV_LOG" == "$root/dev.log" ]]
+[[ "$LOCALBOORU_TEST_READY_FILE" == "$root/ready" ]]
 [[ "$LOCALBOORU_ISOLATED_INSTANCE_ID" =~ ^[0-9a-f]{64}$ ]]
 [[ "$LOCALBOORU_ISOLATED_INSTANCE_ID" != 'inherited-foreign-instance' ]]
 printf '%s\n' "$LOCALBOORU_ISOLATED_INSTANCE_ID" >>"$SYNTHETIC_IDENTITIES"
@@ -87,6 +88,8 @@ if [[ "${SYNTHETIC_HOLD:-0}" == '1' ]]; then
   trap 'exit 0' TERM
   while :; do sleep 0.05; done
 fi
+for _ in $(seq 1 50); do [[ -f "$LOCALBOORU_TEST_READY_FILE" ]] && break; sleep 0.05; done
+[[ "$(cat "$LOCALBOORU_TEST_READY_FILE")" == "$LOCALBOORU_ISOLATED_INSTANCE_ID" ]]
 EOF
 chmod +x "$TEST_DIR/bin/"* "$TEST_DIR/candidate" "$TEST_DIR/daemon"
 export PATH="$TEST_DIR/bin:$PATH"
