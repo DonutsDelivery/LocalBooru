@@ -181,4 +181,9 @@ if PATH="$TEST_DIR/no-dbus" "$LAUNCHER" >"$TEST_DIR/no-dbus-output" 2>&1; then e
 grep -F 'requires dbus-run-session and setsid' "$TEST_DIR/no-dbus-output" >/dev/null
 [[ ! -e "$(tail -n 1 "$SYNTHETIC_ROOTS")" ]]
 [[ "$(wc -l <"$SYNTHETIC_DBUS_CALLS")" -eq 7 ]]
+# Mac container overrides must never change Linux profile selection.
+if LOCALBOORU_TEST_MACOS_APP=/synthetic/Lite.app LOCALBOORU_TEST_MACOS_CONTAINER_PARENT=/synthetic/container \
+  "$LAUNCHER" >"$TEST_DIR/wrong-platform-output" 2>&1; then exit 1; fi
+grep -F 'Container isolation requires macOS' "$TEST_DIR/wrong-platform-output" >/dev/null
+[[ "$(wc -l <"$SYNTHETIC_DBUS_CALLS")" -eq 7 ]]
 printf 'Isolated launcher safety tests passed\n'

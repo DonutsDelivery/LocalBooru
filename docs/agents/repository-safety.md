@@ -91,3 +91,15 @@ geometry across launches. Backend persistence remains under the owned portable
 profile. Do not launch a sandboxed Mac candidate until its owned data-directory
 access has been verified; sandbox denial is not permission to fall back to the
 normal app profile or disable the sandbox.
+
+For a prebuilt sandboxed Mac Lite candidate, set both
+`LOCALBOORU_TEST_MACOS_APP` to the verified `.app` and
+`LOCALBOORU_TEST_MACOS_CONTAINER_PARENT` to its Foundation-resolved container
+Application Support directory, after native preflight has verified access.
+Keep using `npm run app:test-isolated` with `LOCALBOORU_TEST_BINARY`.
+The launcher creates a fresh private directory there, keeps all test data beneath
+it, and checks its owner, permissions and filesystem identity before cleanup.
+It never opens the ordinary library. A wrong edition, parent path, symlink,
+changed identity or unsafe permissions fail closed. Do not create the parent by
+guessing another app's container, grant broad sandbox exceptions, or use this
+option as evidence of Powerbox/bookmark/media-helper acceptance.

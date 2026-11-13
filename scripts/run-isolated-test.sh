@@ -5,7 +5,10 @@ set -euo pipefail
 set +m
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TEST_ROOT="$(mktemp -d /tmp/localbooru-isolated.XXXXXX)"
+TEST_ROOT=""
+TEST_ROOT_IDENTITY=""
+MAC_CONTAINER_PARENT="${LOCALBOORU_TEST_MACOS_CONTAINER_PARENT:-}"
+MAC_CONTAINER_APP="${LOCALBOORU_TEST_MACOS_APP:-}"
 APP_PID=""
 APP_GROUP=""
 HOST_HOME="${HOME:-/tmp}"
@@ -23,11 +26,32 @@ cleanup() {
     kill "$APP_PID" 2>/dev/null || true
   fi
   if [[ -n "$APP_PID" ]]; then wait "$APP_PID" 2>/dev/null || true; fi
-  rm -rf "$TEST_ROOT"
+  if [[ -n "$TEST_ROOT_IDENTITY" ]]; then
+    if ! HOME="$HOST_HOME" python3 "$ROOT/scripts/isolated-macos-root.py" cleanup \
+      --app "$MAC_CONTAINER_APP" --parent "$MAC_CONTAINER_PARENT" \
+      --root "$TEST_ROOT" --identity "$TEST_ROOT_IDENTITY"; then
+      printf 'Disposable container cleanup failed; the owned fixture was preserved\n' >&2
+      exit 1
+    fi
+  elif [[ -n "$TEST_ROOT" ]]; then
+    rm -rf "$TEST_ROOT"
+  fi
 }
 trap cleanup EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
+
+if [[ -n "$MAC_CONTAINER_PARENT" || -n "$MAC_CONTAINER_APP" ]]; then
+  if [[ "$(uname -s)" != Darwin || -z "$MAC_CONTAINER_PARENT" || -z "$MAC_CONTAINER_APP" || -z "${LOCALBOORU_TEST_BINARY:-}" ]]; then
+    printf 'Container isolation requires macOS, a verified Lite app and container parent, and a prebuilt candidate\n' >&2
+    exit 2
+  fi
+  ROOT_RESULT="$(python3 "$ROOT/scripts/isolated-macos-root.py" create --app "$MAC_CONTAINER_APP" --parent "$MAC_CONTAINER_PARENT")"
+  TEST_ROOT="${ROOT_RESULT%$'\n'*}"
+  TEST_ROOT_IDENTITY="${ROOT_RESULT##*$'\n'}"
+else
+  TEST_ROOT="$(mktemp -d /tmp/localbooru-isolated.XXXXXX)"
+fi
 
 PORT="${LOCALBOORU_TEST_PORT:-18790}"
 READY_TIMEOUT_SECONDS="${LOCALBOORU_TEST_READY_TIMEOUT_SECONDS:-1800}"
