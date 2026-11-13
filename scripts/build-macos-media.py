@@ -127,6 +127,10 @@ def build(cache, output):
     # NASM is a build-only dependency. Bootstrap locally; never install Homebrew packages.
     nasm = work / 'nasm-build'; nasm.mkdir(exist_ok=True)
     if not (nasm / 'nasm').is_file():
+        # NASM does not create every out-of-tree object directory.
+        for directory in trees['nasm'].rglob('*'):
+            if directory.is_dir():
+                (nasm / directory.relative_to(trees['nasm'])).mkdir(parents=True, exist_ok=True)
         run([os.path.relpath(trees['nasm'] / 'configure', nasm), '--prefix=/DMC/build-tools'],
             nasm, environment)
         run(['make', '-j1', 'nasm'], nasm, environment)
