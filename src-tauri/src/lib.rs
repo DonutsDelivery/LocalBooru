@@ -339,29 +339,36 @@ pub fn run() {
             - tauri_plugin_window_state::StateFlags::DECORATIONS;
         // LaunchAgent installation is outside the sandbox's supported policy.
         // A future store login item must use the platform's approved mechanism.
-        if !cfg!(all(target_os = "macos", feature = "store-lite")) {
+        let isolated_runtime = std::env::var_os("LOCALBOORU_ISOLATED_INSTANCE_ID").is_some();
+        if !isolated_runtime && !cfg!(all(target_os = "macos", feature = "store-lite")) {
             builder = builder.plugin(tauri_plugin_autostart::init(
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                 None,
             ));
         }
-        builder = builder
-            // Decorations are platform-owned configuration. Restoring the old
-            // frameless value would undo the native macOS title bar migration.
-            .plugin(
-                tauri_plugin_window_state::Builder::new()
-                    .with_state_flags(window_state_flags)
-                    .build(),
-            );
+        if !isolated_runtime {
+            builder = builder
+                // Decorations are platform-owned configuration. Restoring the old
+                // frameless value would undo the native macOS title bar migration.
+                .plugin(
+                    tauri_plugin_window_state::Builder::new()
+                        .with_state_flags(window_state_flags)
+                        .build(),
+                );
+        }
     }
 
     builder = builder.setup(move |app| {
         // Logging — always enabled (Android logcat, desktop stdout)
-        app.handle().plugin(
-            tauri_plugin_log::Builder::default()
-                .level(log::LevelFilter::Info)
-                .build(),
-        )?;
+        let mut logging = tauri_plugin_log::Builder::default().level(log::LevelFilter::Info);
+        if std::env::var_os("LOCALBOORU_ISOLATED_INSTANCE_ID").is_some() {
+            // Native log/window paths on macOS do not follow XDG/HOME overrides.
+            // The isolated launcher's stdout file is its only log destination.
+            logging = logging.targets([tauri_plugin_log::Target::new(
+                tauri_plugin_log::TargetKind::Stdout,
+            )]);
+        }
+        app.handle().plugin(logging.build())?;
 
         // ── Initialize AppState (database + config) ──
         let data_dir = get_data_dir(app.handle())?;
@@ -824,7 +831,9 @@ pub fn run() {
                     }
                     // Save window state before hiding (plugin only saves on destroy)
                     use tauri_plugin_window_state::{AppHandleExt, StateFlags};
-                    let _ = window.app_handle().save_window_state(StateFlags::all());
+                    if std::env::var_os("LOCALBOORU_ISOLATED_INSTANCE_ID").is_none() {
+                        let _ = window.app_handle().save_window_state(StateFlags::all());
+                    }
                     api.prevent_close();
                     let _ = window.hide();
                 }
@@ -832,6 +841,14 @@ pub fn run() {
         });
     }
 
+    let mut context = tauri::generate_context!();
+    if std::env::var_os("LOCALBOORU_ISOLATED_INSTANCE_ID").is_some() {
+        // WKWebView's default store is tied to the bundle ID, not the portable
+        // library. Never load the normal app's cookies/localStorage in a fixture.
+        for window in &mut context.config_mut().app.windows {
+            window.incognito = true;
+        }
+    }
     let app = builder
         .invoke_handler(tauri::generate_handler![
             // Backend commands (compatibility stubs + status)
@@ -887,7 +904,7 @@ pub fn run() {
             native_video_set_desktop_player_mode,
             native_video_set_display_mode,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {

@@ -80,3 +80,13 @@ fail closed. Portable and isolated credential storage also bypasses shared OS
 keyring reads and writes, using only the owned profile's protected credential file.
 An isolated process without an explicit portable data directory refuses credential
 access before resolving any normal profile path.
+
+Native isolated candidates also disable autostart and the normal window-state
+plugin, send application logs only to the launcher's stdout file, and use an
+ephemeral WebView store. This is essential on macOS, where system-managed log,
+window-state and WKWebView paths do not follow XDG/HOME overrides. These test
+runs do not establish persistence of WebView localStorage or normal window
+geometry across launches. Backend persistence remains under the owned portable
+profile. Do not launch a sandboxed Mac candidate until its owned data-directory
+access has been verified; sandbox denial is not permission to fall back to the
+normal app profile or disable the sandbox.
