@@ -128,7 +128,7 @@ prepare_webkit() {
   local bridge_patch_hash bridge_stamp
   bridge_patch_hash="$(cat "$bridge_patch" "$process_patch" | sha256sum | cut -d' ' -f1)"
   bridge_stamp="$build_dir/.localbooru-flatpak-bridge-$bridge_patch_hash"
-  local webkit_targets=(WebKit WebKitWebProcess WebKitNetworkProcess)
+  local webkit_targets=(WebKit WebKitWebProcess WebKitNetworkProcess webkit2gtkinjectedbundle)
   if grep -q '^ENABLE_GPU_PROCESS:BOOL=ON$' "$build_dir/CMakeCache.txt"; then
     webkit_targets+=(WebKitGPUProcess)
   fi
@@ -149,7 +149,7 @@ prepare_webkit() {
     timeout --signal=TERM --kill-after=30s "$NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS" \
       cmake --build "$build_dir" --target "${webkit_targets[@]}" --parallel "$JOBS"
     touch "$bridge_stamp"
-  elif [[ ! -f "$bridge_stamp" || ! -x "$build_dir/bin/WebKitNetworkProcess" ]] || {
+  elif [[ ! -f "$bridge_stamp" || ! -x "$build_dir/bin/WebKitNetworkProcess" || ! -s "$build_dir/lib/libwebkit2gtkinjectedbundle.so" ]] || {
     grep -q '^ENABLE_GPU_PROCESS:BOOL=ON$' "$build_dir/CMakeCache.txt" && [[ ! -x "$build_dir/bin/WebKitGPUProcess" ]];
   }; then
     echo "==> Updating WebKitGTK Flatpak video bridge"
@@ -161,6 +161,7 @@ prepare_webkit() {
   fi
   test -s "$build_dir/lib/libwebkit2gtk-4.1.so.0"
   test -x "$build_dir/bin/WebKitWebProcess"
+  test -s "$build_dir/lib/libwebkit2gtkinjectedbundle.so"
   test -x "$build_dir/bin/WebKitNetworkProcess"
   if grep -q '^ENABLE_GPU_PROCESS:BOOL=ON$' "$build_dir/CMakeCache.txt"; then test -x "$build_dir/bin/WebKitGPUProcess"; fi
 }
@@ -215,6 +216,8 @@ stage_native_runtime() {
   mkdir -p "$runtime/bin" "$runtime/lib" "$runtime/gstreamer" \
     "$runtime/python-home/lib/python3.12/site-packages" "$runtime/licenses"
 
+  mkdir -p "$runtime/injected-bundle"
+  install -m 0755 "$webkit/lib/libwebkit2gtkinjectedbundle.so" "$runtime/injected-bundle/"
   cp -a "$webkit/lib/libwebkit2gtk-4.1.so.0"* "$runtime/lib/"
   cp -a "$webkit/lib/libjavascriptcoregtk-4.1.so.0"* "$runtime/lib/"
   install -m 0755 "$webkit/bin/WebKitWebProcess" "$runtime/bin/mpv"
@@ -234,6 +237,7 @@ stage_native_runtime() {
   # packaged library search path explicitly.
   for binary in \
     "$runtime/bin/"* \
+    "$runtime/injected-bundle/libwebkit2gtkinjectedbundle.so" \
     "$runtime/lib/libwebkit2gtk-4.1.so.0" \
     "$runtime/lib/libjavascriptcoregtk-4.1.so.0"; do
     patchelf --remove-rpath "$binary"
@@ -382,6 +386,9 @@ package_appimage() {
   for tray_lib in libayatana-appindicator3.so.1 libayatana-indicator3.so.7 libayatana-ido3-0.4.so.0 libdbusmenu-gtk3.so.4 libdbusmenu-glib.so.4; do
     install -m 0644 "/usr/lib/x86_64-linux-gnu/$tray_lib" "$stage/usr/lib/$tray_lib"
   done
+  test -s "$stage/usr/lib/gstreamer-1.0/libgstopengl.so"
+  mkdir -p "$stage/usr/share/doc/gstreamer1.0-gl"
+  cp /usr/share/doc/gstreamer1.0-gl/copyright "$stage/usr/share/doc/gstreamer1.0-gl/"
   # Xcursor needs a real cursor theme in minimal contained runtimes. Keep the
   # distro-provided attribution alongside the bundled Adwaita fallback.
   mkdir -p "$stage/usr/share/icons/Adwaita" "$stage/usr/share/doc/adwaita-icon-theme"
@@ -428,7 +435,7 @@ package_source_offer() {
   cp "$ROOT/scripts/select-appimage-webkit.sh" "$source_stage/"
   git -C "$BUILD/vapoursynth-r75" archive --format=tar.gz \
     --output="$source_stage/vapoursynth-R75.tar.gz" "$VAPOURSYNTH_COMMIT"
-  cp "$ROOT/Dockerfile.linux-release" "$source_stage/"
+  cp "$ROOT/Dockerfile.linux-release" "$ROOT/Dockerfile.linux-release-gl" "$source_stage/"
   cp "$ROOT/scripts/build-linux-docker.sh" "$source_stage/"
   cp "$ROOT/release/linux/THIRD_PARTY_NOTICES.md" "$source_stage/"
   tar -cJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \

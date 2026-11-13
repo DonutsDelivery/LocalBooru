@@ -38,6 +38,28 @@ sed -i 's/^Exec="donutmediacenter"/Exec=donutmediacenter/' "$out/build/files/lib
 cat > "$out/build/files/bin/donutmediacenter" <<'LAUNCHER'
 #!/bin/sh
 export APPDIR=/app/lib/donutmediacenter
+RUNTIME="$APPDIR/usr/lib/localbooru/native-svp"
+PLATFORM_LIB=/usr/lib/x86_64-linux-gnu
+# Keep one matching GLib/GStreamer/driver cohort. AppImage hooks hide the
+# platform's GL plugin and load older Ubuntu core libraries into newer plugins.
+# The patched WebKit pair and private helpers remain supplied by DMC.
+for name in libwebkit2gtk-4.1.so.0 libjavascriptcoregtk-4.1.so.0; do
+  if [ -e "$PLATFORM_LIB/$name" ]; then
+    echo 'Unsupported platform WebKit collision; rebuild against the selected Flatpak runtime.' >&2
+    exit 1
+  fi
+done
+export LD_LIBRARY_PATH="$PLATFORM_LIB:$RUNTIME/lib:$RUNTIME/python-home/lib:$APPDIR/usr/lib"
+export GST_PLUGIN_SYSTEM_PATH_1_0="$PLATFORM_LIB/gstreamer-1.0"
+export GST_PLUGIN_PATH_1_0="$RUNTIME/gstreamer"
+export GST_PLUGIN_SCANNER_1_0="$PLATFORM_LIB/gstreamer-1.0/gst-plugin-scanner"
+export GST_PTP_HELPER_1_0="$PLATFORM_LIB/gstreamer-1.0/gst-ptp-helper"
+export PYTHONHOME="$RUNTIME/python-home"
+export PYTHONPATH="$RUNTIME/python-home/lib/python3.12/site-packages"
+export LOCALBOORU_GSTREAMER_SVP_DIR="$RUNTIME/gstreamer"
+export LOCALBOORU_WEB_PROCESS_PATH="$RUNTIME/bin/mpv"
+export LOCALBOORU_WEBKIT_PROCESS_DIR="$RUNTIME/bin"
+export WEBKIT_INJECTED_BUNDLE_PATH="$RUNTIME/injected-bundle"
 # Preserve an available user-selected cursor theme; use the bundled fallback
 # when the selected theme is absent from the sandbox.
 case "${XCURSOR_THEME:-}" in
@@ -46,7 +68,8 @@ case "${XCURSOR_THEME:-}" in
 esac
 export XCURSOR_PATH="/app/share/icons:/usr/share/icons${XCURSOR_PATH:+:$XCURSOR_PATH}"
 export PATH="$APPDIR/usr/bin:$PATH"
-exec "$APPDIR/AppRun" "$@"
+# Avoid linuxdeploy's AppImage-only environment hooks reordering these paths.
+exec "$APPDIR/usr/bin/donutmediacenter" "$@"
 LAUNCHER
 chmod 755 "$out/build/files/bin/donutmediacenter"
 sed -e "s/^Icon=.*/Icon=$id/" "$root/src-tauri/linux/com.localbooru.app.desktop" > "$out/build/files/share/applications/$id.desktop"

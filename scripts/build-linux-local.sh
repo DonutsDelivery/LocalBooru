@@ -9,7 +9,9 @@ source "$ROOT/scripts/build-resource-limits.sh"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/localbooru"
 SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
 DOCKERFILE_HASH="$(sha256sum "$ROOT/Dockerfile.linux-release" | cut -c1-12)"
-IMAGE="localbooru-linux-release:ubuntu24.04-webkit2.52.3-v1-$DOCKERFILE_HASH"
+BASE_IMAGE="localbooru-linux-release:ubuntu24.04-webkit2.52.3-v1-$DOCKERFILE_HASH"
+OVERLAY_HASH="$(sha256sum "$ROOT/Dockerfile.linux-release-gl" | cut -c1-12)"
+IMAGE="localbooru-linux-release:ubuntu24.04-webkit2.52.3-gl-$DOCKERFILE_HASH-$OVERLAY_HASH"
 REBUILD=0
 BOOTSTRAP_NATIVE_RUNTIME=0
 BUNDLES="appimage,deb,rpm"
@@ -210,10 +212,14 @@ localbooru_build_write_owner "$SOURCE_COMMIT"
 localbooru_build_resource_limits
 localbooru_build_check_disk / "$BUILD_ROOT" "$DIST_ROOT" "$CCACHE_ROOT"
 
-if [[ "$REBUILD" == 1 ]] || ! "$CONTAINER" image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "==> Building release toolchain image $IMAGE"
+if [[ "$REBUILD" == 1 ]] || ! "$CONTAINER" image inspect "$BASE_IMAGE" >/dev/null 2>&1; then
+  echo "==> Building release base toolchain image $BASE_IMAGE"
   localbooru_build_started "$SOURCE_COMMIT" container-image
-  "$CONTAINER" build -t "$IMAGE" - < "$ROOT/Dockerfile.linux-release"
+  "$CONTAINER" build -t "$BASE_IMAGE" - < "$ROOT/Dockerfile.linux-release"
+fi
+if [[ "$REBUILD" == 1 ]] || ! "$CONTAINER" image inspect "$IMAGE" >/dev/null 2>&1; then
+  localbooru_build_started "$SOURCE_COMMIT" container-image
+  "$CONTAINER" build --build-arg "BASE_IMAGE=$BASE_IMAGE" -t "$IMAGE" - < "$ROOT/Dockerfile.linux-release-gl"
 fi
 
 echo "==> Building LocalBooru Linux artifacts"

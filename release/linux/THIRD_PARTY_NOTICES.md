@@ -42,6 +42,9 @@ closure: JPEG XL, Highway, Brotli, and Little CMS 2. Their package copyright
 and license notices are included alongside this file in the runtime `licenses`
 directory.
 
+The AppImage includes Ubuntu gstreamer1.0-gl; its package copyright and
+license notice accompanies the bundled plugin.
+
 The `libgstlocalboorupass.so` and `libgstlocalbooruvs.so` bridge plugins are
 DonutMediaCenter components covered by the repository GPL-3.0-only license.
 

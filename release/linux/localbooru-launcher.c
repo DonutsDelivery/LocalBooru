@@ -48,6 +48,9 @@ int main(int argc, char **argv) {
         goto env_error;
     if (setenv("LOCALBOORU_GSTREAMER_SVP_DIR", path, 1) != 0)
         goto env_error;
+    snprintf(path, sizeof(path), "%s/injected-bundle", runtime);
+    if (setenv("WEBKIT_INJECTED_BUNDLE_PATH", path, 1) != 0)
+        goto env_error;
     snprintf(path, sizeof(path), "%s/bin", runtime);
     if (setenv("LOCALBOORU_WEBKIT_PROCESS_DIR", path, 1) != 0)
         goto env_error;

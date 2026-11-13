@@ -19,6 +19,7 @@ verify_runtime_tree() {
   local runtime="$root/usr/lib/localbooru/native-svp"
   for path in \
     "$runtime/bin/mpv" \
+    "$runtime/injected-bundle/libwebkit2gtkinjectedbundle.so" \
     "$runtime/bin/WebKitWebProcess" \
     "$runtime/bin/WebKitNetworkProcess" \
     "$runtime/lib/libwebkit2gtk-4.1.so.0" \
@@ -69,6 +70,8 @@ tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
 tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
   | grep 'vapoursynth-R75.tar.gz' >/dev/null
 
+tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" | grep "Dockerfile.linux-release-gl" >/dev/null
+
 if has_bundle deb; then
   require_file "$DIST/DonutMediaCenter-Linux.deb"
   dpkg-deb --info "$DIST/DonutMediaCenter-Linux.deb" >/dev/null
@@ -98,6 +101,8 @@ if has_bundle appimage; then
   test -x "$WORK/squashfs-root/AppRun"
   bash -n "$WORK/squashfs-root/AppRun"
   verify_runtime_tree "$WORK/squashfs-root"
+  require_file "$WORK/squashfs-root/usr/lib/gstreamer-1.0/libgstopengl.so"
+  require_file "$WORK/squashfs-root/usr/share/doc/gstreamer1.0-gl/copyright"
 
   require_file "$DIST/DonutMediaCenter-Linux.zip"
   unzip -tq "$DIST/DonutMediaCenter-Linux.zip" >/dev/null
