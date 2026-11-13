@@ -108,6 +108,8 @@ class MediaTests(unittest.TestCase):
         pins_path = self.root / 'pins.json'; pins_path.write_text(json.dumps(pins))
         output = self.root / 'output'; (output / 'bin').mkdir(parents=True)
         for name in media.TOOLS: (output / 'bin' / name).write_bytes(b'Synthetic unit-test bytes, not runnable')
+        (output / 'licenses').mkdir()
+        (output / 'licenses/COPYING').write_text('Synthetic license fixture')
         source_name = 'source-offer.tar.xz'
         with patch.object(media, 'PINS', pins_path):
             with tarfile.open(output / source_name, 'w:xz') as source:
@@ -119,6 +121,7 @@ class MediaTests(unittest.TestCase):
                    'environment_sha256': hashlib.sha256(json.dumps(
                        {'fixture': 'synthetic, not executed'}, sort_keys=True).encode()).hexdigest(),
                    'required_components': list(media.REQUIRED), 'source_archive': source_name,
+                   'licenses': {'COPYING': media.digest(output / 'licenses/COPYING')},
                    'source_archive_sha256': media.digest(output / source_name),
                    'binaries': {name: media.digest(output / 'bin' / name) for name in media.TOOLS}}
         (output / 'media-build-receipt.json').write_text(json.dumps(receipt))
@@ -149,6 +152,49 @@ class MediaTests(unittest.TestCase):
         (output / 'media-build-receipt.json').write_text(json.dumps(receipt))
         with patch.object(media, 'PINS', pins_path):
             with self.assertRaises(ValueError): media.verify_output(output, 'f' * 64)
+
+    def test_changed_or_missing_notices_are_rejected(self):
+        output, pins_path, receipt = self.output_fixture()
+        with patch.object(media, 'PINS', pins_path):
+            (output / 'licenses/COPYING').write_text('changed synthetic license')
+            with self.assertRaises(ValueError): media.verify_output(output, 'f' * 64)
+            (output / 'licenses/COPYING').unlink()
+            with self.assertRaises(ValueError): media.verify_output(output, 'f' * 64)
+
+    def test_release_staging_keeps_helpers_notices_and_sources_together(self):
+        output, pins_path, receipt = self.output_fixture()
+        release = self.root / 'fresh-release'; release.mkdir()
+        with patch.object(media, 'PINS', pins_path), patch.object(media, 'recipe_hash', return_value='f' * 64):
+            media.stage_output(output, release)
+            for name in media.TOOLS:
+                self.assertEqual((release / 'src-tauri/ffmpeg-bin' / name).read_bytes(),
+                                 (output / 'bin' / name).read_bytes())
+            notices = release / 'LICENSES/ffmpeg'
+            for name in (receipt['source_archive'], 'media-build-receipt.json'):
+                self.assertEqual((notices / name).read_bytes(), (output / name).read_bytes())
+            self.assertEqual((notices / 'COPYING').read_text(), 'Synthetic license fixture')
+            with self.assertRaises(ValueError): media.stage_output(output, release)
+
+    def test_packaged_helpers_and_source_offer_must_match(self):
+        output, pins_path, receipt = self.output_fixture()
+        portable = self.root / 'portable'; installed = self.root / 'installed'
+        for destination in (portable / 'bin', installed / 'app/bin'):
+            destination.mkdir(parents=True)
+            for name in media.TOOLS:
+                (destination / name).write_bytes((output / 'bin' / name).read_bytes())
+        for destination in (portable / 'LICENSES/ffmpeg', installed / 'app/licenses/LICENSES/ffmpeg'):
+            destination.mkdir(parents=True)
+            for name in (receipt['source_archive'], 'media-build-receipt.json'):
+                (destination / name).write_bytes((output / name).read_bytes())
+            (destination / 'COPYING').write_bytes((output / 'licenses/COPYING').read_bytes())
+        with patch.object(media, 'PINS', pins_path), patch.object(media, 'recipe_hash', return_value='f' * 64):
+            media.verify_packages(output, portable, installed)
+            helper = installed / 'app/bin/ffmpeg.exe'; original = helper.read_bytes()
+            helper.write_bytes(b'wrong synthetic payload')
+            with self.assertRaises(ValueError): media.verify_packages(output, portable, installed)
+            helper.write_bytes(original)
+            (installed / 'app/licenses/LICENSES/ffmpeg' / receipt['source_archive']).unlink()
+            with self.assertRaises(ValueError): media.verify_packages(output, portable, installed)
 
     def test_rehashed_source_offer_still_must_contain_pinned_inputs(self):
         output, pins_path, receipt = self.output_fixture()

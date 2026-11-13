@@ -258,6 +258,15 @@ not Windows GUI acceptance: before publication, install and run the artifacts
 on a real supported Windows system and report Authenticode state accurately.
 See `docs/WINDOWS_PACKAGING.md` for the concise command reference.
 
+The local wrapper builds pinned static media helpers using the small
+`Dockerfile.windows-media` derivative of the cached MSVC image. It verifies
+source trees, required CPU/GPU features, PE imports, notices and source offers,
+and compares helper/source bytes in portable and installer payloads. It exports
+the exact application source alongside the media sources and both receipts.
+See `docs/WINDOWS_MEDIA_HELPERS.md`. The native Windows CI inspection script
+does not yet stage that helper/source payload and is not a qualified replacement
+for this local path.
+
 ## Linux release command
 
 From the repository root:

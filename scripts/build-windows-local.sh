@@ -9,7 +9,6 @@ STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/localbooru"
 SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
 localbooru_build_acquire_lock "$STATE_DIR" windows "$SOURCE_REVISION"
 python3 "$ROOT/scripts/check-release-version.py"
-DOCKERFILE="$ROOT/Dockerfile.windows-release"
 REBUILD=0
 JOBS="${LOCALBOORU_BUILD_JOBS:-1}"
 
@@ -30,12 +29,14 @@ else
   exit 1
 fi
 
-DOCKERFILE_HASH="$(sha256sum "$DOCKERFILE" | cut -c1-12)"
-IMAGE="localbooru-windows-release:msvc-wine-$DOCKERFILE_HASH"
 BUILD_ROOT="${LOCALBOORU_WINDOWS_BUILD_ROOT:-/mnt/storage/Programs/localbooru-build-windows-docker}"
 DIST_PATH="${LOCALBOORU_DIST_WINDOWS_DIR:-$ROOT/dist-windows-local}"
 BUILD_LIMIT_GB="${LOCALBOORU_WINDOWS_BUILD_LIMIT_GB:-30}"
 SOURCE_COMMIT="$(git -C "$ROOT" rev-parse --verify "${SOURCE_REVISION}^{commit}")"
+DOCKERFILE_HASH="$(git -C "$ROOT" show "$SOURCE_COMMIT:Dockerfile.windows-release" | sha256sum | cut -c1-12)"
+MEDIA_DOCKERFILE_HASH="$(git -C "$ROOT" show "$SOURCE_COMMIT:Dockerfile.windows-media" | sha256sum | cut -c1-12)"
+BASE_IMAGE="localbooru-windows-release:msvc-wine-$DOCKERFILE_HASH"
+IMAGE="localbooru-windows-release:source-media-$DOCKERFILE_HASH-$MEDIA_DOCKERFILE_HASH"
 GIT_COMMON_DIR="$(realpath "$(git -C "$ROOT" rev-parse --git-common-dir)")"
 localbooru_build_write_owner "$SOURCE_COMMIT"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct "$SOURCE_COMMIT")}"
@@ -110,23 +111,17 @@ printf '==> Windows persistent build cache before build: %s (limit: %sG)\n' \
 localbooru_build_resource_limits
 localbooru_build_check_disk / "$BUILD_ROOT" "$DIST_PATH"
 
-# Windows has no system ffmpeg, so the app ships its own. A GPL build is
-# needed for libx264 transcoding; the release tag is permanent.
-FFMPEG_ARCHIVE_NAME="ffmpeg-8.1-full_build-shared.zip"
-FFMPEG_ARCHIVE_URL="https://github.com/GyanD/codexffmpeg/releases/download/8.1/$FFMPEG_ARCHIVE_NAME"
-FFMPEG_ARCHIVE_SHA256="e184e012ca9a3527ed45d61f8e250c50b07b8661d90849820ea754239049efb4"
-FFMPEG_ARCHIVE="$BUILD_ROOT/downloads/$FFMPEG_ARCHIVE_NAME"
-if [[ ! -f "$FFMPEG_ARCHIVE" ]]; then
-  mkdir -p "$BUILD_ROOT/downloads"
-  curl -sSfL -o "$FFMPEG_ARCHIVE.part" "$FFMPEG_ARCHIVE_URL"
-  mv "$FFMPEG_ARCHIVE.part" "$FFMPEG_ARCHIVE"
-fi
-echo "$FFMPEG_ARCHIVE_SHA256  $FFMPEG_ARCHIVE" | sha256sum -c -
-
-if [[ "$REBUILD" == 1 ]] || ! "$DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "==> Building Windows MSVC/Wine image $IMAGE"
+if [[ "$REBUILD" == 1 ]] || ! "$DOCKER" image inspect "$BASE_IMAGE" >/dev/null 2>&1; then
+  echo "==> Building Windows MSVC/Wine image $BASE_IMAGE"
   localbooru_build_started "$SOURCE_COMMIT" container-image
-  "$DOCKER" build -t "$IMAGE" - < "$DOCKERFILE"
+  git -C "$ROOT" show "$SOURCE_COMMIT:Dockerfile.windows-release" \
+    | "$DOCKER" build -t "$BASE_IMAGE" -
+fi
+if [[ "$REBUILD" == 1 ]] || ! "$DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; then
+  echo "==> Adding source-media prerequisites to $BASE_IMAGE"
+  localbooru_build_started "$SOURCE_COMMIT" container-image
+  git -C "$ROOT" show "$SOURCE_COMMIT:Dockerfile.windows-media" \
+    | "$DOCKER" build --build-arg "BASE_IMAGE=$BASE_IMAGE" -t "$IMAGE" -
 fi
 
 printf '==> Building Windows x64 artifacts with %s jobs\n' "$JOBS"
@@ -140,8 +135,7 @@ container_result=0
   -e LOCALBOORU_BUILD_JOBS="$JOBS" \
   -e LOCALBOORU_SOURCE_REVISION="$SOURCE_COMMIT" \
   -e SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
-  -e LOCALBOORU_FFMPEG_ARCHIVE="/build/downloads/$FFMPEG_ARCHIVE_NAME" \
-  -e LOCALBOORU_FFMPEG_SHA256="$FFMPEG_ARCHIVE_SHA256" \
+  -e DMC_WINDOWS_MEDIA_BUILD_LOCKED=1 \
   -e npm_config_cache=/build/npm-cache \
   -e GIT_DIR=/git \
   -e GIT_WORK_TREE=/source \
@@ -171,11 +165,24 @@ assert receipt['schema'] == 1 and receipt['source_commit'] == source
 assert receipt['target'] == 'x86_64-pc-windows-msvc'
 assert receipt['recipe_sha256'] == hashlib.sha256(recipe).hexdigest()
 for key, name in [('portable_sha256', 'DonutMediaCenter-Windows.zip'),
-                  ('installer_sha256', 'DonutMediaCenter-Windows-Setup.exe')]:
+                  ('installer_sha256', 'DonutMediaCenter-Windows-Setup.exe'),
+                  ('media_receipt_sha256', 'media-build-receipt.json'),
+                  ('media_source_archive_sha256', 'DonutMediaCenter-Windows-media-sources.tar.xz'),
+                  ('application_source_archive_sha256', 'DonutMediaCenter-Windows-source.tar.xz')]:
     with (dist / name).open('rb') as stream:
         assert receipt[key] == hashlib.file_digest(stream, 'sha256').hexdigest()
+def source_file(name):
+    return subprocess.check_output(['git', '-C', root, 'show', source + ':' + name])
+media = json.loads((dist / 'media-build-receipt.json').read_text())
+pins = json.loads(source_file('scripts/windows-media-sources.json'))
+assert media['sources'] == pins['sources'] and media['toolchain'] == pins['toolchain']
+assert media['recipe_sha256'] == hashlib.sha256(b''.join(source_file(p) for p in (
+    'scripts/build-windows-media.py', 'scripts/windows-media-sources.json',
+    'scripts/build-macos-media.py', 'Dockerfile.windows-media', 'Dockerfile.windows-release'))).hexdigest()
 print('Windows source/recipe/artifact receipt verified')
 PY
+python3 "$ROOT/scripts/export-application-source.py" \
+  --verify-receipt "$DIST_PATH/application-source-receipt.json" --commit "$SOURCE_COMMIT"
 
 printf '==> Windows persistent build cache after build: %s\n' "$(du -sh "$BUILD_ROOT" | cut -f1)"
 printf '==> Local Windows artifacts verified in %s:\n' "$DIST_PATH"

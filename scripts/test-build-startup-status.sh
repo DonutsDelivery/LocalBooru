@@ -38,16 +38,36 @@ if [[ "${1:-}" == run ]]; then
         sha256sum DonutMediaCenter-Windows-Setup.exe DonutMediaCenter-Windows.zip >SHA256SUMS-Windows
       )
       python3 - "$dist" "$BUILD_STATUS_TEST_SOURCE_REPO" <<'PY'
-import hashlib, json, pathlib, subprocess, sys
+import hashlib, io, json, pathlib, subprocess, sys, tarfile
 dist, root = pathlib.Path(sys.argv[1]), sys.argv[2]
 source = subprocess.check_output(['git', '-C', root, 'rev-parse', 'HEAD'], text=True).strip()
 recipe = subprocess.check_output(['git', '-C', root, 'show', source + ':scripts/build-windows-docker.sh'])
 def digest(name): return hashlib.sha256((dist / name).read_bytes()).hexdigest()
+def source_file(name): return subprocess.check_output(['git', '-C', root, 'show', source + ':' + name])
+pins = json.loads(source_file('scripts/windows-media-sources.json'))
+(dist / 'media-build-receipt.json').write_text(json.dumps({
+    'sources': pins['sources'], 'toolchain': pins['toolchain'],
+    'recipe_sha256': hashlib.sha256(b''.join(source_file(name) for name in (
+        'scripts/build-windows-media.py', 'scripts/windows-media-sources.json',
+        'scripts/build-macos-media.py', 'Dockerfile.windows-media', 'Dockerfile.windows-release'))).hexdigest(),
+}))
+(dist / 'DonutMediaCenter-Windows-media-sources.tar.xz').write_bytes(b'Synthetic media source offer')
+archive = dist / 'DonutMediaCenter-Windows-source.tar.xz'
+with tarfile.open(archive, 'w:xz') as tar:
+    data = b'Synthetic receipt fixture, not an application source export'
+    entry = tarfile.TarInfo('DonutMediaCenter-' + source + '/SYNTHETIC'); entry.size = len(data)
+    tar.addfile(entry, io.BytesIO(data))
+(dist / 'application-source-receipt.json').write_text(json.dumps({
+    'source_commit': source, 'archive': archive.name, 'sha256': digest(archive.name),
+}))
 (dist / 'Windows-build-receipt.json').write_text(json.dumps({
     'schema': 1, 'source_commit': source, 'target': 'x86_64-pc-windows-msvc',
     'recipe_sha256': hashlib.sha256(recipe).hexdigest(),
     'portable_sha256': digest('DonutMediaCenter-Windows.zip'),
     'installer_sha256': digest('DonutMediaCenter-Windows-Setup.exe'),
+    'media_receipt_sha256': digest('media-build-receipt.json'),
+    'media_source_archive_sha256': digest('DonutMediaCenter-Windows-media-sources.tar.xz'),
+    'application_source_archive_sha256': digest(archive.name),
 }))
 PY
     fi

@@ -10,7 +10,7 @@ TARGET="x86_64-pc-windows-msvc"
 TARGET_DIR="$BUILD_ROOT/target"
 RELEASE_DIR="$TARGET_DIR/$TARGET/release"
 DIST_DIR="${LOCALBOORU_DIST_WINDOWS_DIR:-/dist}"
-JOBS="${LOCALBOORU_BUILD_JOBS:-2}"
+JOBS="${LOCALBOORU_BUILD_JOBS:-1}"
 
 export CARGO_HOME="$BUILD_ROOT/cargo-home"
 export CARGO_TARGET_DIR="$TARGET_DIR"
@@ -59,26 +59,32 @@ git -c safe.directory="$SOURCE_DIR" -C "$SOURCE_DIR" \
   | tar -xf - -C "$WORKTREE"
 
 cd "$WORKTREE"
+# Upstream source tools must not inspect the application's Git directory.
+unset GIT_DIR GIT_WORK_TREE
 python3 scripts/check-release-version.py
 
 # Bundle ffmpeg and ffprobe as bin\ next to the executable, where
 # platform_paths::helper looks first.
-FFMPEG_ARCHIVE="${LOCALBOORU_FFMPEG_ARCHIVE:?LOCALBOORU_FFMPEG_ARCHIVE is required}"
-echo "${LOCALBOORU_FFMPEG_SHA256:?LOCALBOORU_FFMPEG_SHA256 is required}  $FFMPEG_ARCHIVE" | sha256sum -c -
-FFMPEG_EXTRACT="$BUILD_ROOT/ffmpeg-extract"
-rm -rf "$FFMPEG_EXTRACT"
-unzip -q "$FFMPEG_ARCHIVE" -d "$FFMPEG_EXTRACT"
-FFMPEG_ROOT="$(find "$FFMPEG_EXTRACT" -mindepth 1 -maxdepth 1 -type d)"
-mkdir -p src-tauri/ffmpeg-bin LICENSES/ffmpeg
-cp "$FFMPEG_ROOT"/bin/ffmpeg.exe "$FFMPEG_ROOT"/bin/ffprobe.exe "$FFMPEG_ROOT"/bin/*.dll src-tauri/ffmpeg-bin/
-cp "$FFMPEG_ROOT/LICENSE" LICENSES/ffmpeg/LICENSE
-cp "$FFMPEG_ROOT/README.txt" LICENSES/ffmpeg/README.txt
-cat > LICENSES/ffmpeg/SOURCE.txt <<'SOURCE'
-bin\ contains FFmpeg 8.1 (GPLv3 build) from
-https://github.com/GyanD/codexffmpeg/releases/tag/8.1
-FFmpeg source: https://ffmpeg.org/releases/ffmpeg-8.1.tar.xz
-The build configuration and the sources of its bundled libraries are listed in README.txt.
-SOURCE
+MEDIA_RECIPE="$(python3 -B - <<'PY'
+import importlib.util
+from pathlib import Path
+spec = importlib.util.spec_from_file_location('media', Path('scripts/build-windows-media.py'))
+media = importlib.util.module_from_spec(spec); spec.loader.exec_module(media)
+print(media.recipe_hash())
+PY
+)"
+MEDIA_OUTPUT="$BUILD_ROOT/windows-media-output/$MEDIA_RECIPE"
+if [[ -e "$MEDIA_OUTPUT" || -L "$MEDIA_OUTPUT" ]]; then
+  python3 -B scripts/build-windows-media.py --output "$MEDIA_OUTPUT" --check-output
+else
+  mkdir -p "$BUILD_ROOT/windows-media-output"
+  MEDIA_PENDING="$(mktemp -d "$BUILD_ROOT/windows-media-output/.pending.XXXXXX")"
+  python3 -B scripts/build-windows-media.py --cache "$BUILD_ROOT/windows-media-cache" \
+    --output "$MEDIA_PENDING/payload"
+  mv "$MEDIA_PENDING/payload" "$MEDIA_OUTPUT"
+  rmdir "$MEDIA_PENDING"
+fi
+python3 -B scripts/build-windows-media.py --output "$MEDIA_OUTPUT" --stage-into "$WORKTREE"
 python3 - src-tauri/tauri.windows.conf.json "$BUILD_ROOT/tauri.windows.bundle.conf.json" <<'PY'
 import json, sys
 config = json.load(open(sys.argv[1]))
@@ -86,6 +92,12 @@ config.setdefault('bundle', {}).setdefault('resources', {})['ffmpeg-bin/'] = 'bi
 json.dump(config, open(sys.argv[2], 'w'), indent=2)
 PY
 rm -rf "$DIST_DIR"/*
+cp "$MEDIA_OUTPUT/DonutMediaCenter-Windows-media-sources.tar.xz" \
+  "$MEDIA_OUTPUT/media-build-receipt.json" "$DIST_DIR/"
+GIT_DIR=/git GIT_WORK_TREE="$SOURCE_DIR" python3 scripts/export-application-source.py \
+  --repo "$SOURCE_DIR" --commit "$RESOLVED_SOURCE_REVISION" \
+  --output "$DIST_DIR/DonutMediaCenter-Windows-source.tar.xz" \
+  > "$DIST_DIR/application-source-receipt.json"
 LOCK_HASH_BEFORE="$(sha256sum Cargo.lock | cut -d' ' -f1)"
 
 printf 'Windows Docker toolchain:\n'
@@ -187,10 +199,14 @@ for helper in ffmpeg.exe ffprobe.exe; do
     exit 1
   }
 done
+python3 -B scripts/build-windows-media.py --output "$MEDIA_OUTPUT" \
+  --portable "$STAGE" --installed "$INSTALLER_PAYLOAD"
 
 (
   cd "$DIST_DIR"
-  sha256sum DonutMediaCenter-Windows-Setup.exe DonutMediaCenter-Windows.zip > SHA256SUMS-Windows
+  sha256sum DonutMediaCenter-Windows-Setup.exe DonutMediaCenter-Windows.zip \
+    DonutMediaCenter-Windows-source.tar.xz application-source-receipt.json \
+    DonutMediaCenter-Windows-media-sources.tar.xz media-build-receipt.json > SHA256SUMS-Windows
   sha256sum -c SHA256SUMS-Windows
 )
 
@@ -209,6 +225,9 @@ receipt = {
     'portable_sha256': digest(dist / 'DonutMediaCenter-Windows.zip'),
     'installer_sha256': digest(dist / 'DonutMediaCenter-Windows-Setup.exe'),
     'recipe_sha256': digest(pathlib.Path('scripts/build-windows-docker.sh')),
+    'media_receipt_sha256': digest(dist / 'media-build-receipt.json'),
+    'media_source_archive_sha256': digest(dist / 'DonutMediaCenter-Windows-media-sources.tar.xz'),
+    'application_source_archive_sha256': digest(dist / 'DonutMediaCenter-Windows-source.tar.xz'),
 }
 (dist / 'Windows-build-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
 PY

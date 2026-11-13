@@ -2,7 +2,7 @@
 
 `scripts/build-windows-media.py` is a prototype for replacing the prebuilt
 FFmpeg dependency with an explicit, source-pinned Windows x86-64 build.
-It is not integrated into the release wrapper yet and has not passed a real
+It is wired into the local release wrapper but has not passed a real
 compiler or Windows runtime run. The current Gyan-based package remains an
 inspection artifact with its dependency-source closure unresolved.
 
@@ -41,9 +41,10 @@ python3 scripts/build-windows-media.py --check-output \
 ```
 
 Verification binds the payload, input archives and recipe files. It is unsigned
-provenance, not independent build attestation. Integration must stage helpers,
-notices, source offer and receipts into installer, portable and MSIX packages
-and their checksums. Test H.264/AAC/AV1 decoding, WebP thumbnails, HLS, hardware
+provenance, not independent build attestation. The local wrapper stages helpers, notices, source offer and receipts into
+installer and portable payloads, and checks both against the verified output.
+The optional MSIX path consumes that portable payload. Application and media
+sources also accompany the packages and their checksums. Test H.264/AAC/AV1 decoding, WebP thumbnails, HLS, hardware
 fallback and restart on actual Windows. Wine CLI checks are build evidence.
 
 Lightweight fixtures use a disposable directory on owned storage:

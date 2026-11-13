@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Exercise build safety without starting a compiler or real container."""
 import json
+import io
+import hashlib
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import tarfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,12 +51,12 @@ class BuildResourceTests(unittest.TestCase):
                                  LOCALBOORU_BUILD_MIN_FREE_GB='1', LOCALBOORU_BUILD_ROOT_MIN_FREE_GB='1', FIXTURE_PATH=tmp+'/not created/cache')
             self.assertEqual(result.returncode, 0, result.stderr)
 
-    def wrapper(self, platform, minimum='1', run_exit=0, missing_overlay=False):
+    def wrapper(self, platform, minimum='1', run_exit=0, missing_overlay=False, missing_media=False):
         with tempfile.TemporaryDirectory(prefix='dmc-build-safety-') as tmp:
             tmp = Path(tmp)
             binary = tmp/'bin'; binary.mkdir()
             docker = binary/'docker'
-            docker.write_text('#!/usr/bin/env python3\nimport json, os, sys\nwith open(os.environ["FAKE_DOCKER_LOG"], "a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\nif sys.argv[1:3] == ["image", "inspect"] and "webkit2.52.3-gl-" in sys.argv[3] and os.environ.get("FAKE_MISSING_GL_OVERLAY") == "1": sys.exit(1)\nsys.exit(int(os.environ.get("FAKE_DOCKER_EXIT", "0")) if sys.argv[1] == "run" else 0)\n')
+            docker.write_text('#!/usr/bin/env python3\nimport json, os, sys\nwith open(os.environ["FAKE_DOCKER_LOG"], "a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\nif sys.argv[1:3] == ["image", "inspect"] and (("webkit2.52.3-gl-" in sys.argv[3] and os.environ.get("FAKE_MISSING_GL_OVERLAY") == "1") or ("source-media-" in sys.argv[3] and os.environ.get("FAKE_MISSING_MEDIA_OVERLAY") == "1")): sys.exit(1)\nsys.exit(int(os.environ.get("FAKE_DOCKER_EXIT", "0")) if sys.argv[1] == "run" else 0)\n')
             docker.chmod(0o755)
             cache = tmp/'cache'; cache.mkdir()
             (cache/'.localbooru-build-cache').write_text('localbooru-build-cache-v1\n')
@@ -61,20 +64,40 @@ class BuildResourceTests(unittest.TestCase):
             (output/'SHA256SUMS-Windows').write_text('')
             # The production host verifier now requires the canonical source
             # record. These public synthetic bytes exercise that check too.
-            import hashlib
             source = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip()
-            recipe = subprocess.check_output(['git', '-C', str(ROOT), 'show', source+':scripts/build-windows-docker.sh'])
+            def source_file(name):
+                return subprocess.check_output(['git', '-C', str(ROOT), 'show', source+':'+name])
+            recipe = source_file('scripts/build-windows-docker.sh')
             for name in ('DonutMediaCenter-Windows.zip', 'DonutMediaCenter-Windows-Setup.exe'):
                 (output/name).write_bytes(b'synthetic artifact')
+            pins = json.loads(source_file('scripts/windows-media-sources.json'))
+            (output/'media-build-receipt.json').write_text(json.dumps({
+                'sources': pins['sources'], 'toolchain': pins['toolchain'],
+                'recipe_sha256': hashlib.sha256(b''.join(source_file(name) for name in (
+                    'scripts/build-windows-media.py', 'scripts/windows-media-sources.json',
+                    'scripts/build-macos-media.py', 'Dockerfile.windows-media', 'Dockerfile.windows-release'))).hexdigest(),
+            }))
+            (output/'DonutMediaCenter-Windows-media-sources.tar.xz').write_bytes(b'Synthetic media source offer')
+            archive = output/'DonutMediaCenter-Windows-source.tar.xz'
+            with tarfile.open(archive, 'w:xz') as tar:
+                data = b'Synthetic receipt fixture, not an application source export'
+                entry = tarfile.TarInfo('DonutMediaCenter-'+source+'/SYNTHETIC'); entry.size = len(data)
+                tar.addfile(entry, io.BytesIO(data))
+            def digest(name): return hashlib.sha256((output/name).read_bytes()).hexdigest()
+            (output/'application-source-receipt.json').write_text(json.dumps({
+                'source_commit': source, 'archive': archive.name, 'sha256': digest(archive.name),
+            }))
             (output/'Windows-build-receipt.json').write_text(json.dumps({
                 'schema': 1, 'source_commit': source, 'target': 'x86_64-pc-windows-msvc',
                 'recipe_sha256': hashlib.sha256(recipe).hexdigest(),
                 'portable_sha256': hashlib.sha256(b'synthetic artifact').hexdigest(),
                 'installer_sha256': hashlib.sha256(b'synthetic artifact').hexdigest(),
+                'media_receipt_sha256': digest('media-build-receipt.json'),
+                'media_source_archive_sha256': digest('DonutMediaCenter-Windows-media-sources.tar.xz'),
+                'application_source_archive_sha256': digest(archive.name),
             }))
             # Synthetic cache sentinels prevent an implicit native bootstrap.
             patch_hash = subprocess.check_output(['git', '-C', str(ROOT), 'show', 'HEAD:patches/webkitgtk/2.52.3-playbin-video-filter.patch', 'HEAD:patches/webkitgtk/2.52.3-flatpak-video-bridge.patch', 'HEAD:patches/webkitgtk/2.52.3-bundled-process-directory.patch'])
-            import hashlib
             files = ['webkit-build/.localbooru-config-ubuntu24-gtk3-ruby34-v3',
                      'webkit-build/lib/libwebkit2gtk-4.1.so.0', 'webkit-build/lib/libjavascriptcoregtk-4.1.so.0',
                      'webkit-build/bin/WebKitWebProcess', 'webkitgtk-2.52.3/.localbooru-patch-'+hashlib.sha256(patch_hash).hexdigest(),
@@ -84,7 +107,7 @@ class BuildResourceTests(unittest.TestCase):
             log = tmp/'docker.jsonl'
             env = {k: v for k, v in os.environ.items() if not k.startswith('LOCALBOORU_BUILD_')}
             env.update(PATH=str(binary)+os.pathsep+env['PATH'], XDG_STATE_HOME=str(tmp/'state'),
-                       FAKE_DOCKER_LOG=str(log), FAKE_DOCKER_EXIT=str(run_exit), FAKE_MISSING_GL_OVERLAY=str(int(missing_overlay)), LOCALBOORU_BUILD_LOCK_TIMEOUT='0', LOCALBOORU_BUILD_MIN_FREE_GB=minimum, LOCALBOORU_BUILD_ROOT_MIN_FREE_GB='1',
+                       FAKE_DOCKER_LOG=str(log), FAKE_DOCKER_EXIT=str(run_exit), FAKE_MISSING_GL_OVERLAY=str(int(missing_overlay)), FAKE_MISSING_MEDIA_OVERLAY=str(int(missing_media)), LOCALBOORU_BUILD_LOCK_TIMEOUT='0', LOCALBOORU_BUILD_MIN_FREE_GB=minimum, LOCALBOORU_BUILD_ROOT_MIN_FREE_GB='1',
                        LOCALBOORU_DOCKER_BUILD_ROOT=str(cache), LOCALBOORU_CCACHE_DIR=str(tmp/'ccache'),
                        LOCALBOORU_DIST_LINUX_DIR=str(output), LOCALBOORU_WINDOWS_BUILD_ROOT=str(cache), LOCALBOORU_DIST_WINDOWS_DIR=str(output))
             # An empty checksum file is only a fake packaging fixture, so fake
@@ -113,7 +136,6 @@ class BuildResourceTests(unittest.TestCase):
                 self.assertTrue(any(args[0] == 'run' for args in calls))
 
     def test_linux_derivative_reuses_existing_base_and_keys_both_recipes(self):
-        import hashlib
         result, calls = self.wrapper('linux', missing_overlay=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         base_hash = hashlib.sha256((ROOT/'Dockerfile.linux-release').read_bytes()).hexdigest()[:12]
@@ -132,6 +154,23 @@ class BuildResourceTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(any(args[0] in ['run', 'build'] for args in calls))
                 self.assertIn('refusing build', result.stderr)
+
+    def test_windows_media_overlay_reuses_base_and_uses_gated_source_builder(self):
+        result, calls = self.wrapper('windows', missing_media=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        base_hash = hashlib.sha256(subprocess.check_output(
+            ['git', '-C', str(ROOT), 'show', 'HEAD:Dockerfile.windows-release'])).hexdigest()[:12]
+        overlay_hash = hashlib.sha256(subprocess.check_output(
+            ['git', '-C', str(ROOT), 'show', 'HEAD:Dockerfile.windows-media'])).hexdigest()[:12]
+        builds = [args for args in calls if args[0] == 'build']
+        self.assertEqual(len(builds), 1)
+        self.assertIn('BASE_IMAGE=localbooru-windows-release:msvc-wine-'+base_hash, builds[0])
+        image = 'localbooru-windows-release:source-media-'+base_hash+'-'+overlay_hash
+        self.assertEqual(builds[0][builds[0].index('-t')+1], image)
+        run = next(args for args in calls if args[0] == 'run')
+        self.assertIn(image, run)
+        self.assertIn('DMC_WINDOWS_MEDIA_BUILD_LOCKED=1', run)
+        self.assertFalse(any('LOCALBOORU_FFMPEG_ARCHIVE' in arg for arg in run))
 
 
 if __name__ == '__main__':

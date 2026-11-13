@@ -143,7 +143,8 @@ def extract(path, pin, directory):
 
 def recipe_hash():
     return hashlib.sha256(b''.join(p.read_bytes() for p in (
-        Path(__file__), PINS, BASE_HELPER, DOCKERFILE))).hexdigest()
+        Path(__file__), PINS, BASE_HELPER, DOCKERFILE,
+        HERE.parent / 'Dockerfile.windows-release'))).hexdigest()
 
 
 def check_features(text):
@@ -190,6 +191,13 @@ def verify_output(output, expected_recipe=None):
     if receipt['environment_sha256'] != hashlib.sha256(
             json.dumps(receipt['tool_versions'], sort_keys=True).encode()).hexdigest():
         raise ValueError('Media tool-version receipt changed')
+    licenses = output / 'licenses'
+    if licenses.is_symlink() or any(p.is_symlink() for p in licenses.rglob('*')):
+        raise ValueError('Refusing symlink notices')
+    actual_notices = {p.relative_to(licenses).as_posix(): digest(p)
+                      for p in licenses.rglob('*') if p.is_file()}
+    if not actual_notices or receipt['licenses'] != actual_notices:
+        raise ValueError('Media notices changed or are missing')
     name = receipt['source_archive']
     if not isinstance(name, str) or Path(name).name != name or name in ('', '.', '..'):
         raise ValueError('Invalid source archive basename')
@@ -217,10 +225,51 @@ def recipe_files():
         'scripts/windows-media-sources.json': PINS,
         'scripts/build-macos-media.py': BASE_HELPER,
         'Dockerfile.windows-media': DOCKERFILE,
+        'Dockerfile.windows-release': HERE.parent / 'Dockerfile.windows-release',
         'docs/WINDOWS_MEDIA_HELPERS.md': HERE.parent / 'docs/WINDOWS_MEDIA_HELPERS.md',
         'LICENSE': HERE.parent / 'LICENSE', 'NOTICE': HERE.parent / 'NOTICE',
         'LICENSES/MIT-legacy.txt': HERE.parent / 'LICENSES/MIT-legacy.txt',
     }
+
+
+def stage_output(output, source_root):
+    """Stage verified tools and their source offer into a fresh release tree."""
+    receipt = verify_output(output)
+    helpers = source_root / 'src-tauri/ffmpeg-bin'
+    notices = source_root / 'LICENSES/ffmpeg'
+    for destination in (helpers, notices):
+        if destination.exists() or destination.is_symlink():
+            raise ValueError('Media staging needs fresh release destinations')
+    helpers.mkdir(parents=True)
+    shutil.copytree(output / 'licenses', notices)
+    for name in TOOLS:
+        shutil.copy2(output / 'bin' / name, helpers / name)
+    for name in (receipt['source_archive'], 'media-build-receipt.json'):
+        shutil.copy2(output / name, notices / name)
+    (notices / 'SOURCE.txt').write_text(
+        'FFmpeg and codec inputs are pinned in the accompanying source archive.\n'
+        'media-build-receipt.json records the source pins, recipe, configuration,\n'
+        'tool versions, PE imports and helper/source hashes. It is unsigned\n'
+        'build provenance, not Windows runtime or independent attestation.\n')
+    return receipt
+
+
+def verify_packages(output, portable, installed):
+    receipt = verify_output(output)
+    prefix = 'licenses/LICENSES/ffmpeg/'
+    payloads = {'bin/' + name: output / 'bin' / name for name in TOOLS}
+    payloads.update({prefix + name: output / name
+                     for name in (receipt['source_archive'], 'media-build-receipt.json')})
+    payloads.update({prefix + name: output / 'licenses' / name for name in receipt['licenses']})
+    for relative, expected in payloads.items():
+        actual = portable / (relative.removeprefix('licenses/'))
+        matches = [p for p in installed.rglob(Path(relative).name)
+                   if p.as_posix().lower().endswith('/' + relative.lower())]
+        if len(matches) != 1 or any(p.is_symlink() for p in (actual, *matches)):
+            raise ValueError('Missing, duplicate or symlink packaged media: ' + relative)
+        if digest(expected) != digest(actual) or digest(expected) != digest(matches[0]):
+            raise ValueError('Packaged media hash mismatch: ' + relative)
+    return receipt
 
 
 def build(cache, output):
@@ -324,7 +373,8 @@ def build(cache, output):
     configure = [os.path.relpath(trees['ffmpeg'] / 'configure', ffmpeg), '--prefix=' + PREFIX,
                  '--arch=x86_64', '--target-os=mingw32', '--enable-cross-compile',
                  '--cc=' + TARGET + '-clang', '--cxx=' + TARGET + '-clang++',
-                 '--ar=llvm-ar', '--ranlib=llvm-ranlib', '--nvcc=host-cuda-clang',
+                 '--ar=llvm-ar', '--ranlib=llvm-ranlib', '--nm=llvm-nm',
+                 '--strip=llvm-strip', '--windres=llvm-windres', '--nvcc=host-cuda-clang',
                  '--disable-autodetect', '--disable-shared', '--enable-static',
                  '--enable-gpl', '--enable-version3', '--disable-nonfree',
                  '--enable-libx264', '--enable-libwebp', '--enable-libdav1d', '--enable-zlib',
@@ -375,6 +425,8 @@ def build(cache, output):
                'required_components': features, 'system_dll_imports': imports,
                'configuration': configure, 'windows_runtime_acceptance': 'not_run',
                'source_archive': source_name, 'source_archive_sha256': digest(output / source_name),
+               'licenses': {p.relative_to(licenses).as_posix(): digest(p)
+                            for p in licenses.rglob('*') if p.is_file()},
                'binaries': {name: digest(binaries / name) for name in TOOLS}}
     (output / 'media-build-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
     verify_output(output, recipe)
@@ -386,9 +438,20 @@ if __name__ == '__main__':
     parser.add_argument('--cache', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--check-output', action='store_true')
+    parser.add_argument('--stage-into', type=Path)
+    parser.add_argument('--portable', type=Path)
+    parser.add_argument('--installed', type=Path)
     args = parser.parse_args()
     try:
-        if args.check_output:
+        if args.portable or args.installed:
+            if not args.portable or not args.installed or args.stage_into or args.cache or args.check_output:
+                parser.error('Package verification needs only --portable and --installed')
+            result = verify_packages(args.output, args.portable, args.installed)
+        elif args.stage_into:
+            if args.cache or args.check_output:
+                parser.error('Staging does not accept --cache or --check-output')
+            result = stage_output(args.output, args.stage_into)
+        elif args.check_output:
             result = verify_output(args.output)
         else:
             if args.cache is None:
