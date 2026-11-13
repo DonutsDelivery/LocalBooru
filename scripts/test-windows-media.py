@@ -69,6 +69,17 @@ class MediaTests(unittest.TestCase):
         (tree / 'added').write_text('synthetic modification')
         with self.assertRaises(ValueError): media.verify_tree(path, pin, tree)
 
+    def test_new_attempt_excludes_previous_compiler_products(self):
+        recipe = 'f' * 64
+        first = media.fresh_work_directory(self.root, recipe)
+        (first / 'nasm').mkdir()
+        (first / 'nasm/nasm').write_bytes(b'Substituted synthetic executable, not runnable')
+        (first / 'ffmpeg.o').write_bytes(b'Stale synthetic compiler product')
+        second = media.fresh_work_directory(self.root, recipe)
+        self.assertNotEqual(first, second)
+        self.assertEqual(list(second.iterdir()), [])
+        self.assertTrue((first / 'ffmpeg.o').is_file())
+
     def test_unsafe_archive_members_are_rejected(self):
         for name, link in [('../outside', None), ('/absolute', None),
                            ('source/link', '../../outside'), ('source/link', '..')]:

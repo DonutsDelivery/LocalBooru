@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.request
 from urllib.parse import urlsplit
 
@@ -145,6 +146,11 @@ def recipe_hash():
     return hashlib.sha256(b''.join(p.read_bytes() for p in (
         Path(__file__), PINS, BASE_HELPER, DOCKERFILE,
         HERE.parent / 'Dockerfile.windows-release'))).hexdigest()
+
+
+def fresh_work_directory(cache, recipe):
+    # Input trees are reusable; writable compiler products are not inputs.
+    return Path(tempfile.mkdtemp(prefix='attempt-' + recipe[:16] + '-', dir=cache))
 
 
 def check_features(text):
@@ -299,8 +305,7 @@ def build(cache, output):
         'host_clang': ['/usr/bin/clang', '--version'], 'ninja': ['ninja', '--version'],
         'pkg_config': ['pkg-config', '--version']}.items()}
     recipe = recipe_hash()
-    environment_hash = hashlib.sha256(json.dumps(versions, sort_keys=True).encode()).hexdigest()
-    work = cache / (recipe + '-' + environment_hash[:16]); work.mkdir(exist_ok=True)
+    work = fresh_work_directory(cache, recipe)
     env = os.environ.copy()
     env.pop('GIT_DIR', None)
     env.pop('GIT_WORK_TREE', None)
@@ -309,12 +314,11 @@ def build(cache, output):
                CC='/usr/bin/clang', CXX='/usr/bin/clang++',
                CFLAGS='-O2', CXXFLAGS='-O2', LDFLAGS='')
     nasm = work / 'nasm'; nasm.mkdir(exist_ok=True)
-    if not (nasm / 'nasm').is_file():
-        for directory in trees['nasm'].rglob('*'):
-            if directory.is_dir():
-                (nasm / directory.relative_to(trees['nasm'])).mkdir(parents=True, exist_ok=True)
-        run([os.path.relpath(trees['nasm'] / 'configure', nasm), '--prefix=/DMC/build-tools'], nasm, env)
-        run(['make', '-j1', 'nasm'], nasm, env)
+    for directory in trees['nasm'].rglob('*'):
+        if directory.is_dir():
+            (nasm / directory.relative_to(trees['nasm'])).mkdir(parents=True, exist_ok=True)
+    run([os.path.relpath(trees['nasm'] / 'configure', nasm), '--prefix=/DMC/build-tools'], nasm, env)
+    run(['make', '-j1', 'nasm'], nasm, env)
     wrappers = work / 'tools'; wrappers.mkdir(exist_ok=True)
     cuda = wrappers / 'host-cuda-clang'
     maps = [f'-ffile-prefix-map={cache}=/DMC/source', f'-fdebug-prefix-map={cache}=/DMC/source']

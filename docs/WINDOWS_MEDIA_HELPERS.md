@@ -30,8 +30,12 @@ DMC_WINDOWS_MEDIA_BUILD_LOCKED=1 python3 scripts/build-windows-media.py \
 ```
 
 Use an absolute cache path without whitespace and a fresh absolute output path.
-Recognized downloads and immutable source/compiler trees are reused. No global
-compiler installation or user application profile is used. Outputs include
+Recognized downloads and verified immutable source/compiler trees are reused.
+Each compile attempt gets a fresh private workspace: NASM, codec libraries,
+Meson state, FFmpeg objects and staging products are never accepted from a
+previous attempt. Finalized helper outputs are reused only after their payload,
+source, recipe and notice checks pass. No global compiler installation or user
+application profile is used. Outputs include
 `bin/ffmpeg.exe`, `bin/ffprobe.exe`, notices, selected sources and a receipt
 binding configuration, compiler identity, input/output hashes and PE imports.
 
