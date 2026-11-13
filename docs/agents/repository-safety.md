@@ -82,8 +82,9 @@ An isolated process without an explicit portable data directory refuses credenti
 access before resolving any normal profile path.
 
 Native isolated candidates also disable autostart and the normal window-state
-plugin, send application logs only to the launcher's stdout file, and use an
-ephemeral WebView store. This is essential on macOS, where system-managed log,
+plugin and send application logs only to the launcher's stdout file. macOS and
+Windows use an ephemeral WebView store; Linux retains its private XDG store so
+GTK automation remains attached to the correct WebContext. This is essential on macOS, where system-managed log,
 window-state and WKWebView paths do not follow XDG/HOME overrides. These test
 runs do not establish persistence of WebView localStorage or normal window
 geometry across launches. Backend persistence remains under the owned portable

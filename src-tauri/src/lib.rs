@@ -842,9 +842,13 @@ pub fn run() {
     }
 
     let mut context = tauri::generate_context!();
-    if std::env::var_os("LOCALBOORU_ISOLATED_INSTANCE_ID").is_some() {
+    if !cfg!(target_os = "linux")
+        && std::env::var_os("LOCALBOORU_ISOLATED_INSTANCE_ID").is_some()
+    {
         // WKWebView's default store is tied to the bundle ID, not the portable
-        // library. Never load the normal app's cookies/localStorage in a fixture.
+        // library. Windows known folders also ignore HOME. Linux already uses
+        // the launcher's private XDG store; Wry's separate ephemeral GTK context
+        // does not inherit automation registration from the normal context.
         for window in &mut context.config_mut().app.windows {
             window.incognito = true;
         }
