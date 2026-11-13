@@ -1,3 +1,4 @@
+import { useEditionCapabilities } from '../contexts/edition'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { adjustmentLocator, imageFileHash, imageIdentityKey } from '../utils/imageAdjustments.js'
 import { createErrorMessage, getImageWorkflow, openImageWorkflow } from '../services/donutCreate'
@@ -5,6 +6,8 @@ import { toast } from '../components/Toast'
 
 /** Sidecar reads belong to the displayed image and the selected DMC server. */
 export function useImageWorkflow(image, enabled) {
+  const canCreate = useEditionCapabilities().downloaded_executable_addons
+  enabled = enabled && canCreate
   const locator = useMemo(() => {
     if (!image || image._remote || image.is_local_direct_file) return null
     try {
@@ -86,7 +89,7 @@ export function useImageWorkflow(image, enabled) {
   }, [enabled, identity, locator, serverRevision])
 
   const loadWorkflow = useCallback(async () => {
-    if (!locator || loadLock.current || switching.current) return false
+    if (!canCreate || !locator || loadLock.current || switching.current) return false
     loadLock.current = true
     const controller = new AbortController()
     loadRequest.current = controller
@@ -109,7 +112,7 @@ export function useImageWorkflow(image, enabled) {
         if (mounted.current) setLoading('')
       }
     }
-  }, [identity, locator, image])
+  }, [canCreate, identity, locator, image])
 
   return { available: enabled && availability.identity === identity && availability.available, loading: loadingIdentity === identity && !!identity, loadWorkflow }
 }

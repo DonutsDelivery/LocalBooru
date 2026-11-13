@@ -149,7 +149,9 @@ prepare_webkit() {
     timeout --signal=TERM --kill-after=30s "$NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS" \
       cmake --build "$build_dir" --target "${webkit_targets[@]}" --parallel "$JOBS"
     touch "$bridge_stamp"
-  elif [[ ! -f "$bridge_stamp" ]]; then
+  elif [[ ! -f "$bridge_stamp" || ! -x "$build_dir/bin/WebKitNetworkProcess" ]] || {
+    grep -q '^ENABLE_GPU_PROCESS:BOOL=ON$' "$build_dir/CMakeCache.txt" && [[ ! -x "$build_dir/bin/WebKitGPUProcess" ]];
+  }; then
     echo "==> Updating WebKitGTK Flatpak video bridge"
     timeout --signal=TERM --kill-after=30s "$NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS" \
       cmake --build "$build_dir" --target "${webkit_targets[@]}" --parallel "$JOBS"

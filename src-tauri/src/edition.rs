@@ -77,14 +77,12 @@ pub fn request_allowed(path: &str) -> bool {
         return false;
     }
     if !capabilities().downloaded_executable_addons {
-        if [
-            "/api/create",
-            "/api/app-update",
-            "/api/settings/svp",
-            "/api/cast",
-        ]
-        .iter()
-        .any(|prefix| within(prefix))
+        if within("/api/create") && path != "/api/create/workflow" {
+            return false;
+        }
+        if ["/api/app-update", "/api/settings/svp", "/api/cast"]
+            .iter()
+            .any(|prefix| within(prefix))
         {
             return false;
         }
@@ -125,6 +123,8 @@ mod tests {
             "/api/device-pairing/desktop/start",
             "/api/libraries",
             "/api/music",
+            "/api/create/workflow",
+            "/api/settings/wd14-sidecar/import",
             "/api/network",
             "/api/share",
             "/remote/api/images/7/file",
