@@ -64,11 +64,14 @@ def download(pin, downloads):
 
 
 def extract(archive, pin, sources):
+    if digest(archive) != pin['sha256']:
+        raise ValueError('Source archive checksum mismatch')
     target = sources / pin['root']
     marker = sources / (pin['root'] + '.sha256')
     if target.exists():
-        if target.is_symlink() or not marker.is_file() or marker.read_text().strip() != pin['sha256']:
+        if target.is_symlink() or marker.is_symlink() or not marker.is_file() or marker.read_text().strip() != pin['sha256']:
             raise ValueError('Unrecognized extracted source tree')
+        verify_tree(archive, pin, target)
         return target
     with tarfile.open(archive) as source:
         for member in source.getmembers():
@@ -78,7 +81,40 @@ def extract(archive, pin, sources):
                 raise ValueError('Unsafe source archive member')
         source.extractall(sources, filter='data')
     marker.write_text(pin['sha256'] + '\n')
+    verify_tree(archive, pin, target)
     return target
+
+
+def verify_tree(archive, pin, target):
+    """Bind the compiled source tree to the pinned archive, not just its marker."""
+    if target.is_symlink() or not target.is_dir():
+        raise ValueError('Invalid extracted source directory')
+    expected = set()
+    with tarfile.open(archive) as source:
+        for member in source.getmembers():
+            relative = PurePosixPath(member.name).relative_to(pin['root'])
+            if relative == PurePosixPath('.'):
+                continue
+            expected.add(relative.as_posix())
+            expected.update(parent.as_posix() for parent in relative.parents if parent != PurePosixPath('.'))
+            path = target / relative
+            if any((target / part).is_symlink() for part in (relative, *relative.parents)
+                   if part != PurePosixPath('.')):
+                raise ValueError('Symlink in extracted source tree')
+            if member.isdir():
+                if not path.is_dir():
+                    raise ValueError('Extracted source directory is missing')
+            elif member.isfile():
+                if (not path.is_file() or path.stat().st_size != member.size
+                        or path.stat().st_mode & 0o111 != member.mode & 0o111):
+                    raise ValueError('Extracted source file changed')
+                with source.extractfile(member) as original:
+                    if digest(path) != hashlib.file_digest(original, 'sha256').hexdigest():
+                        raise ValueError('Extracted source file checksum mismatch')
+            else:
+                raise ValueError('Unsafe extracted source type')
+    if {path.relative_to(target).as_posix() for path in target.rglob('*')} != expected:
+        raise ValueError('Extracted source tree contains added or missing entries')
 
 
 def validate_tool(path, archs=ARCHS):
@@ -200,6 +236,9 @@ def build(cache, output):
         if not any(line.split()[1:2] == [encoder] for line in encoders.splitlines()):
             raise ValueError('Required media encoder absent: ' + encoder)
     for name, pin in pins.items():
+        if digest(archives[name]) != pin['sha256']:
+            raise ValueError('Source archive changed during compilation')
+        verify_tree(archives[name], pin, trees[name])
         destination = licenses / name; destination.mkdir()
         for path in trees[name].iterdir():
             if path.is_file() and (path.name.startswith(('COPYING', 'LICENSE', 'PATENTS')) or path.name == 'AUTHORS'):

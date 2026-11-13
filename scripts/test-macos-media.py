@@ -58,7 +58,7 @@ class BuildBoundaryTests(unittest.TestCase):
                     member = tarfile.TarInfo(member_name); member.type = kind; member.linkname = '/escape'
                     target.addfile(member, io.BytesIO())
                 with self.assertRaises(ValueError):
-                    builder.extract(archive, {'root': 'source', 'sha256': '0' * 64}, sources)
+                    builder.extract(archive, {'root': 'source', 'sha256': builder.digest(archive)}, sources)
                 self.assertFalse((root / 'escape').exists())
 
     def test_source_extraction_is_pinned_and_reusable(self):
@@ -77,6 +77,23 @@ class BuildBoundaryTests(unittest.TestCase):
             with patch.object(builder, 'run') as run:
                 with self.assertRaises(ValueError): builder.build(Path('/not-read'), Path('/not-written'))
                 run.assert_not_called()
+
+    def test_source_marker_cannot_hide_modified_added_or_missing_files(self):
+        for change in ('modify', 'add', 'remove', 'symlink', 'executable-mode'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp); archive = root / 'input.tar'; sources = root / 'sources'; sources.mkdir()
+                with tarfile.open(archive, 'w') as target:
+                    member = tarfile.TarInfo('source/COPYING'); member.size = 4
+                    target.addfile(member, io.BytesIO(b'test'))
+                pin = {'root': 'source', 'sha256': builder.digest(archive)}
+                tree = builder.extract(archive, pin, sources)
+                if change == 'modify': (tree / 'COPYING').write_bytes(b'evil')
+                elif change == 'add': (tree / 'added.c').write_bytes(b'added')
+                elif change == 'remove': (tree / 'COPYING').unlink()
+                elif change == 'symlink':
+                    (tree / 'COPYING').unlink(); (tree / 'COPYING').symlink_to(archive)
+                else: (tree / 'COPYING').chmod(0o755)
+                with self.assertRaises(ValueError): builder.extract(archive, pin, sources)
 
 
 class PayloadTests(unittest.TestCase):

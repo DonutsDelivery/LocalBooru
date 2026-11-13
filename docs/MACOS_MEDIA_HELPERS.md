@@ -30,7 +30,10 @@ python3 scripts/macos-build-lock.py -- \
 ```
 
 The cache keeps only recognized source/build directories; it refuses unknown
-nonempty roots and altered source hashes. Failed or partial output directories
+nonempty roots and altered source hashes. Every extracted source file, executable
+mode and directory entry is compared with its pinned archive before reuse and
+again before the receipt is emitted; a matching marker cannot hide an edited
+cache tree. Failed or partial output directories
 are never accepted as completed payloads. Choose a fresh output for a retry and
 retain the warm compilation cache. No user profiles or libraries are inputs.
 
