@@ -20,6 +20,9 @@ mod create_drop;
 pub mod db;
 mod direct_file;
 pub mod edition;
+mod macos_folder_access;
+#[cfg(any(test, all(target_os = "macos", feature = "store-lite")))]
+mod macos_grants;
 pub mod native_video;
 pub mod online;
 mod platform_paths;
@@ -334,11 +337,15 @@ pub fn run() {
     {
         let window_state_flags = tauri_plugin_window_state::StateFlags::all()
             - tauri_plugin_window_state::StateFlags::DECORATIONS;
-        builder = builder
-            .plugin(tauri_plugin_autostart::init(
+        // LaunchAgent installation is outside the sandbox's supported policy.
+        // A future store login item must use the platform's approved mechanism.
+        if !cfg!(all(target_os = "macos", feature = "store-lite")) {
+            builder = builder.plugin(tauri_plugin_autostart::init(
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                 None,
-            ))
+            ));
+        }
+        builder = builder
             // Decorations are platform-owned configuration. Restoring the old
             // frameless value would undo the native macOS title bar migration.
             .plugin(
@@ -358,6 +365,8 @@ pub fn run() {
 
         // ── Initialize AppState (database + config) ──
         let data_dir = get_data_dir(app.handle())?;
+        #[cfg(all(target_os = "macos", feature = "store-lite"))]
+        macos_folder_access::initialize(app.handle(), &data_dir);
         platform_paths::init(app.path().resource_dir().ok());
         let port = get_server_port();
         // Before any pool opens the main database: probe for confirmed
@@ -844,6 +853,8 @@ pub fn run() {
             show_image_context_menu,
             read_create_drop_file,
             pick_direct_media_file,
+            macos_folder_access::pick_persistent_media_folder,
+            macos_folder_access::folder_access_status,
             release_direct_media_file,
             report_direct_file_stage,
             #[cfg(desktop)]

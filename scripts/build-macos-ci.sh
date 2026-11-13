@@ -55,6 +55,7 @@ npm --prefix "$ROOT/frontend" run build
 if [[ "$EDITION" == store-lite ]]; then
   "$ROOT/scripts/run-cargo.sh" test --locked --manifest-path "$ROOT/src-tauri/Cargo.toml" --lib "${FEATURE_ARGS[@]}" edition::tests
   "$ROOT/scripts/run-cargo.sh" test --locked --manifest-path "$ROOT/src-tauri/Cargo.toml" --lib "${FEATURE_ARGS[@]}" store_lite_policy
+  "$ROOT/scripts/run-cargo.sh" test --locked --manifest-path "$ROOT/src-tauri/Cargo.toml" --lib "${FEATURE_ARGS[@]}" macos_grants::tests
 fi
 "$ROOT/scripts/run-cargo.sh" check --locked --manifest-path "$ROOT/src-tauri/Cargo.toml" "${FEATURE_ARGS[@]}"
 (
@@ -89,6 +90,17 @@ printf '%s\n' "$SIGNATURE_INFO"
   exit 1
 }
 echo "macOS app ad-hoc signature verification passed"
+if [[ "$EDITION" == store-lite ]]; then
+  codesign -d --entitlements :- "$APP" > "$DIST_DIR/store-lite-entitlements.plist"
+  python3 - "$DIST_DIR/store-lite-entitlements.plist" <<'PY'
+import plistlib, sys
+with open(sys.argv[1], 'rb') as stream:
+    entitlements = plistlib.load(stream)
+for key in ('app-sandbox', 'network.client', 'network.server',
+            'files.user-selected.read-write', 'files.bookmarks.app-scope'):
+    assert entitlements.get('com.apple.security.' + key) is True, key
+PY
+fi
 
 cp "$DMG" "$DIST_DIR/$ARTIFACT_NAME.dmg"
 ditto -c -k --sequesterRsrc --keepParent \
@@ -106,6 +118,6 @@ ditto -c -k --sequesterRsrc --keepParent \
 
 printf 'macOS universal artifacts verified (%s):\n' "$ARCHS"
 if [[ "$EDITION" == store-lite ]]; then
-  echo "Lite capability inspection build only: App Sandbox bookmarks, store signing and real-Mac acceptance remain required."
+  echo "Sandboxed lite inspection build only: native folder access, media helpers, store signing and real-Mac acceptance remain required."
 fi
 find "$DIST_DIR" -maxdepth 1 -type f -exec stat -f '  %N (%z bytes)' {} \; | sort

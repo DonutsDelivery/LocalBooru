@@ -45,6 +45,24 @@ function DirectoriesPage() {
   const [pendingDirectory, setPendingDirectory] = useState(null)
   const [newDirectoryMedia, setNewDirectoryMedia] = useState({ show_images: false, show_videos: false, show_music: true })
   const [addingDirectory, setAddingDirectory] = useState(false)
+  const [folderAccess, setFolderAccess] = useState(null)
+
+  const refreshFolderAccess = async () => {
+    const status = await getDesktopAPI()?.getFolderAccessStatus?.()
+    setFolderAccess(status || null)
+  }
+
+  const restoreFolderAccess = async () => {
+    try {
+      const selected = await getDesktopAPI()?.addDirectory?.()
+      if (!selected) return
+      await refreshFolderAccess()
+      await refreshDirectories()
+      toast.success('Folder access saved for future launches')
+    } catch (error) {
+      toast.error(error.message || 'Folder access could not be restored. Select the folder again.')
+    }
+  }
 
   const refreshDirectories = async () => {
     const { fetchDirectories } = await import('../api')
@@ -80,6 +98,7 @@ function DirectoriesPage() {
   }
 
   useEffect(() => {
+    refreshFolderAccess().catch(() => setFolderAccess({ required: true, storage_error: true }))
     refreshDirectories()
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -532,6 +551,14 @@ function DirectoriesPage() {
           <div className="directories-page">
             <h2>Watch Directories</h2>
             <p>Add folders to your Images, Videos, or Music library.</p>
+            {folderAccess?.required && (folderAccess.failed > 0 || folderAccess.storage_error) && (
+              <div role="alert" className="warning-box">
+                <p>Some folder permissions could not be restored. Your library references are preserved.
+                  Reconnect unavailable drives, then select each folder again to restore access.
+                  If a folder moved, use its Relocate action.</p>
+                <button onClick={restoreFolderAccess}>Restore folder access</button>
+              </div>
+            )}
 
             <div className="directory-buttons">
               <label className="directory-library-target">

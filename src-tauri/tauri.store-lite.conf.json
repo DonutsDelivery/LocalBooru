@@ -1,5 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DonutMediaCenter Lite",
-  "identifier": "com.localbooru.app.lite"
+  "identifier": "com.localbooru.app.lite",
+  "bundle": {
+    "macOS": { "entitlements": "macos/store-lite.entitlements.plist" }
+  }
 }

@@ -28,9 +28,13 @@ directory, application name, and artifacts. The normal full build is unchanged.
 The output is still ad-hoc signed for inspection. Native Apple compilation has
 not been verified by Linux unit tests.
 
-Before distribution through the Mac App Store, implement and test persistent
-security-scoped bookmarks and permission recovery, App Sandbox entitlements,
-bundled media helpers and codec behavior, account/provisioning/store signing,
+The macOS lite config now selects App Sandbox entitlements and its native folder
+picker persists security-scoped bookmarks with startup restoration and recovery.
+See [folder access](MACOS_FOLDER_ACCESS.md) for the implementation and remaining
+native acceptance. These paths have not yet been validated on an Apple build.
+
+Before distribution through the Mac App Store, verify native bookmark/permission
+behavior and App Sandbox entitlements, bundled media helpers and codec behavior, account/provisioning/store signing,
 license/source obligations, migration and eviction behavior, and acceptance on
 real supported Macs. This config intentionally does not assert those unfinished
 properties or submit anything to a store.

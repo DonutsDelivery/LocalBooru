@@ -9,6 +9,7 @@ vi.mock('@tauri-apps/api/window', () => ({}))
 
 afterEach(() => {
   delete window.__TAURI_INTERNALS__
+  delete window.__DMC_EDITION_CAPABILITIES__
   vi.unstubAllGlobals()
   vi.resetModules()
   invoke.mockReset()
@@ -54,4 +55,26 @@ test('Mac keeps the native desktop folder picker and filenames with spaces', asy
   expect(await tauriAPI.addDirectory()).toBe('/synthetic/Users/Person/Music/日本語 album')
   expect(open).toHaveBeenCalledWith({ directory: true, multiple: false, title: 'Select folder to watch' })
   expect(invoke).not.toHaveBeenCalled()
+})
+
+test('Mac Lite authorizes folders through the native bookmark picker', async () => {
+  window.__TAURI_INTERNALS__ = {}
+  window.__DMC_EDITION_CAPABILITIES__ = { edition: 'store-lite' }
+  vi.stubGlobal('navigator', { userAgent: 'Macintosh' })
+  invoke.mockResolvedValue('/synthetic/Music/日本語 album')
+  const { tauriAPI } = await import('./tauriAPI')
+  expect(await tauriAPI.addDirectory()).toBe('/synthetic/Music/日本語 album')
+  expect(invoke).toHaveBeenCalledWith('pick_persistent_media_folder')
+  expect(open).not.toHaveBeenCalled()
+})
+
+test('Mac Lite preserves cancellation and displays failed permission persistence', async () => {
+  window.__TAURI_INTERNALS__ = {}
+  window.__DMC_EDITION_CAPABILITIES__ = { edition: 'store-lite' }
+  vi.stubGlobal('navigator', { userAgent: 'Macintosh' })
+  invoke.mockResolvedValueOnce(null).mockRejectedValueOnce('Folder access could not be saved')
+  const { tauriAPI } = await import('./tauriAPI')
+  expect(await tauriAPI.addDirectory()).toBeNull()
+  await expect(tauriAPI.addDirectory()).rejects.toThrow('Folder access could not be saved')
+  expect(open).not.toHaveBeenCalled()
 })

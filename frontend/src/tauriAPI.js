@@ -76,6 +76,14 @@ const tauriAPI = {
         throw typeof error === 'string' ? new Error(error) : error
       }
     }
+    if (/Macintosh|Mac OS X/i.test(navigator.userAgent)
+      && window.__DMC_EDITION_CAPABILITIES__?.edition === 'store-lite' && tauriInvoke) {
+      try {
+        return await tauriInvoke('pick_persistent_media_folder')
+      } catch (error) {
+        throw typeof error === 'string' ? new Error(error) : error
+      }
+    }
     if (!tauriDialog) return null
     try {
       const result = await tauriDialog.open({
@@ -88,6 +96,12 @@ const tauriAPI = {
       console.error('[TauriAPI] addDirectory failed:', e)
       return null
     }
+  },
+
+  getFolderAccessStatus: async () => {
+    await tauriReady
+    if (!tauriInvoke) return { required: false, failed: 0, storage_error: false }
+    return tauriInvoke('folder_access_status')
   },
 
   // Get backend server status
