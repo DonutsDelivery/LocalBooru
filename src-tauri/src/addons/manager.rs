@@ -654,6 +654,9 @@ impl AddonManager {
     /// `{"enabled": true}` state and is installed will be started.
     /// Failures are logged and do not prevent other addons from starting.
     pub async fn resume_addons(&self) {
+        if !crate::edition::capabilities().downloaded_executable_addons {
+            return;
+        }
         log::info!("[AddonManager] Checking for previously-enabled addons to resume...");
 
         let mut resumed = 0u32;
@@ -716,6 +719,7 @@ impl AddonManager {
         accepted_license: bool,
         timeout: Duration,
     ) -> Result<LadaReadiness, String> {
+        crate::edition::require_addon("lada")?;
         if self.shutting_down.load(Ordering::SeqCst) {
             return Err("Application shutdown is in progress".into());
         }
@@ -817,6 +821,13 @@ impl AddonManager {
     }
 
     pub async fn probe_lada_runtime(&self, timeout: Duration) -> LadaReadiness {
+        if !crate::edition::addon_allowed("lada") {
+            return LadaReadiness::new(
+                lada::LadaReadinessStatus::UnsupportedPlatform,
+                LadaBackendPreference::Auto,
+                crate::edition::UNAVAILABLE,
+            );
+        }
         let preference = self.lada_backend_preference();
         let Ok(_operation) = self.lada_operation.try_lock() else {
             return LadaReadiness::new(
@@ -912,12 +923,16 @@ impl AddonManager {
     pub fn list_addons(&self) -> Vec<AddonInfo> {
         get_addon_registry()
             .iter()
+            .filter(|manifest| crate::edition::addon_allowed(manifest.id))
             .map(|manifest| self.addon_info(manifest))
             .collect()
     }
 
     /// Get information about a single addon.
     pub fn get_addon(&self, id: &str) -> Option<AddonInfo> {
+        if !crate::edition::addon_allowed(id) {
+            return None;
+        }
         get_addon_manifest(id).map(|manifest| self.addon_info(manifest))
     }
 
@@ -931,6 +946,7 @@ impl AddonManager {
     }
 
     pub fn begin_repair(&self, id: &str) -> Result<bool, String> {
+        crate::edition::require_addon(id)?;
         let mut state = self
             .addons
             .get_mut(id)
@@ -959,6 +975,7 @@ impl AddonManager {
     /// This is a blocking operation (venv creation + pip install) and should be called
     /// from a context where blocking is acceptable (e.g. `tokio::task::spawn_blocking`).
     pub fn install_addon(&self, id: &str) -> Result<(), String> {
+        crate::edition::require_addon(id)?;
         let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
         if manifest.installation == AddonInstallation::ManagedBundle {
             return Err(format!(
@@ -1052,6 +1069,7 @@ impl AddonManager {
 
     /// Reinstall an existing addon's dependencies and redeploy its embedded source.
     pub fn repair_addon(&self, id: &str) -> Result<(), String> {
+        crate::edition::require_addon(id)?;
         let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
         if manifest.installation == AddonInstallation::ManagedBundle {
             return Err(format!(
@@ -1154,6 +1172,7 @@ impl AddonManager {
     /// The addon must be installed. The process is spawned asynchronously
     /// and health-checked before marking it as running.
     pub async fn start_addon(&self, id: &str) -> Result<(), String> {
+        crate::edition::require_addon(id)?;
         let lifecycle = self.lifecycle.read().await;
         if self.shutting_down.load(Ordering::SeqCst) {
             return Err("Application shutdown is in progress".into());
@@ -1576,6 +1595,9 @@ impl AddonManager {
 
     /// Get the base URL for a running addon, or `None` if it is not running.
     pub fn addon_url(&self, id: &str) -> Option<String> {
+        if !crate::edition::addon_allowed(id) {
+            return None;
+        }
         let manifest = get_addon_manifest(id)?;
         let status = self.get_addon_status(id);
 
@@ -1644,6 +1666,45 @@ impl AddonManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "store-lite")]
+    #[tokio::test]
+    async fn store_lite_policy_blocks_executable_install_start_and_resume_without_changes() {
+        let fixture = tempfile::tempdir().unwrap();
+        let manager = AddonManager::new(fixture.path());
+        let addon_dir = manager.addon_dir("donut-create");
+        std::fs::create_dir_all(&addon_dir).unwrap();
+        manager.save_enabled_state("donut-create", true);
+        let before = manager.load_enabled_state("donut-create");
+        assert_eq!(
+            manager.install_addon("donut-create").unwrap_err(),
+            crate::edition::UNAVAILABLE
+        );
+        assert_eq!(
+            manager.repair_addon("donut-create").unwrap_err(),
+            crate::edition::UNAVAILABLE
+        );
+        assert_eq!(
+            manager.start_addon("donut-create").await.unwrap_err(),
+            crate::edition::UNAVAILABLE
+        );
+        assert_eq!(
+            manager
+                .install_lada(true, Duration::from_secs(1))
+                .await
+                .unwrap_err(),
+            crate::edition::UNAVAILABLE
+        );
+        manager.resume_addons().await;
+        assert_eq!(manager.load_enabled_state("donut-create"), before);
+        assert!(!manager.venv_dir("donut-create").exists());
+        assert!(manager.addon_url("donut-create").is_none());
+        assert!(manager
+            .list_addons()
+            .iter()
+            .all(|addon| crate::edition::addon_allowed(&addon.id)));
+        assert!(manager.get_addon("curation-game").is_some());
+    }
 
     // AC: @lada-runtime-readiness ac-actionable-status
     // AC: @lada-runtime-readiness ac-active-backend-evidence
@@ -2444,7 +2505,11 @@ printf '%s\n' '{"addon_version":"0.1.0","protocol_version":1,"upstream_revision"
         )
         .unwrap();
         assert!(!installed_dependencies_match(venv.path(), &deps));
-        std::fs::write(venv.path().join(INSTALLED_DEPENDENCIES_FILE), deps.join("\n")).unwrap();
+        std::fs::write(
+            venv.path().join(INSTALLED_DEPENDENCIES_FILE),
+            deps.join("\n"),
+        )
+        .unwrap();
         assert!(installed_dependencies_match(venv.path(), &deps));
     }
 

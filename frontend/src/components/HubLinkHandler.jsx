@@ -1,3 +1,4 @@
+import { useEditionCapabilities } from '../contexts/edition'
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { completeHubAuthorization } from '../api'
@@ -6,6 +7,7 @@ import { toast } from './Toast'
 // Links request enrollment or finish a pending PKCE flow; neither grants access.
 export default function HubLinkHandler() {
   const navigate = useNavigate()
+  const edition = useEditionCapabilities()
   const handled = useRef(new Set())
 
   useEffect(() => {
@@ -20,6 +22,7 @@ export default function HubLinkHandler() {
       if (!((url.hostname === 'hub' && url.pathname === '/add') || (url.hostname === 'auth' && url.pathname === '/callback'))) return
       handled.current.add(raw)
       if (handled.current.size > 32) handled.current.delete(handled.current.values().next().value)
+      if (!edition.community_hubs) { toast.error('Community connections are not included in DonutMediaCenter Lite.'); return }
       if (url.hostname === 'hub') {
         window.__dmcPendingHubLink = raw
         navigate('/settings/fediverse')
@@ -47,7 +50,7 @@ export default function HubLinkHandler() {
       })
       .catch(() => { if (active) toast.error('Community links are unavailable in this app. Paste the link in Settings → Fediverse & Nodes.') })
     return () => { active = false; unlisten?.() }
-  }, [navigate])
+  }, [navigate, edition.community_hubs])
 
   return null
 }

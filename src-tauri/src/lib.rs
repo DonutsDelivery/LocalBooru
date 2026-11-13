@@ -19,6 +19,7 @@ mod commands;
 mod create_drop;
 pub mod db;
 mod direct_file;
+pub mod edition;
 pub mod native_video;
 pub mod online;
 mod platform_paths;
@@ -94,7 +95,8 @@ pub(crate) fn get_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
                 std::env::consts::OS,
                 base,
                 app.path().app_data_dir().map_err(|error| error.to_string()),
-                cfg!(target_os = "linux") && std::path::Path::new("/.flatpak-info").is_file(),
+                (cfg!(target_os = "linux") && std::path::Path::new("/.flatpak-info").is_file())
+                    || cfg!(all(target_os = "macos", feature = "store-lite")),
             )?
         }
     };
@@ -278,7 +280,8 @@ pub fn run() {
     // The native process resolves this before any frontend module loads; a
     // prebuilt acceptance window must never use a baked-in user-instance port.
     let mut builder = tauri::Builder::default().append_invoke_initialization_script(format!(
-        "Object.defineProperty(window, '__LOCALBOORU_PORT__', {{ value: {}, writable: false, configurable: false }}); Object.defineProperty(window, '__LOCALBOORU_ISOLATED_INSTANCE_ID__', {{ value: {}, writable: false, configurable: false }});",
+        "Object.defineProperty(window, '__DMC_EDITION_CAPABILITIES__', {{ value: Object.freeze({}), writable: false, configurable: false }}); Object.defineProperty(window, '__LOCALBOORU_PORT__', {{ value: {}, writable: false, configurable: false }}); Object.defineProperty(window, '__LOCALBOORU_ISOLATED_INSTANCE_ID__', {{ value: {}, writable: false, configurable: false }});",
+        serde_json::to_string(&edition::capabilities()).expect("serialize edition capabilities"),
         get_server_port(),
         serde_json::to_string(&std::env::var("LOCALBOORU_ISOLATED_INSTANCE_ID").ok()).expect("serialize isolated instance identity")
     ));
@@ -402,12 +405,14 @@ pub fn run() {
         let native_safe_mode = true;
         // Store AppState for both Tauri commands and axum server
         app.manage(app_state.clone());
-        app.manage(online::peer::start(app_state.clone()));
-        // Both guards are owned by the app; supervisors retain only Weak refs.
-        // A startup failure remains visible in offline settings and worker kicks.
-        match online::offline::start(app_state.clone()) {
-            Ok(runtime) => { app.manage(runtime); }
-            Err(error) => log::error!("[Offline] Startup failed: {error}"),
+        if edition::capabilities().community_hubs {
+            app.manage(online::peer::start(app_state.clone()));
+            // Both guards are owned by the app; supervisors retain only Weak refs.
+            // A startup failure remains visible in offline settings and worker kicks.
+            match online::offline::start(app_state.clone()) {
+                Ok(runtime) => { app.manage(runtime); }
+                Err(error) => log::error!("[Offline] Startup failed: {error}"),
+            }
         }
         #[cfg(desktop)]
         {

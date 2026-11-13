@@ -71,6 +71,10 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         .route("/api", get(api_root))
         .route("/health", get(health))
         .route(
+            "/api/edition",
+            get(|| async { Json(crate::edition::capabilities()) }),
+        )
+        .route(
             "/api/direct-files/{token}",
             get(crate::direct_file::serve_direct_media_file),
         )
@@ -167,7 +171,7 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         }
     }
 
-    app
+    app.layer(axum::middleware::from_fn(crate::edition::enforce))
 }
 
 /// Start the axum HTTP server.
@@ -244,7 +248,10 @@ mod isolated_health_tests {
                 "status": "healthy", "isolated_instance_id": "synthetic-own-instance"
             })
         );
-        assert_ne!(response, health_response(Some("synthetic-foreign-instance")));
+        assert_ne!(
+            response,
+            health_response(Some("synthetic-foreign-instance"))
+        );
     }
 }
 
@@ -270,6 +277,13 @@ async fn remote_proxy_handler(
 
     // Capture parts we need before consuming `req` for the body.
     let path = req.uri().path().to_string();
+    if !crate::edition::request_allowed(&path) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"detail": crate::edition::UNAVAILABLE})),
+        )
+            .into_response();
+    }
     let query = req
         .uri()
         .query()

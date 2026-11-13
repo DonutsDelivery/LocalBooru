@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useEditionCapabilities, addonAvailableInEdition } from '../contexts/edition'
+import { useState, useEffect, useMemo } from 'react'
 import { getAddons } from '../api'
 
 // Shared cache so multiple components don't spam the API
@@ -35,8 +36,10 @@ async function fetchAddonsCached() {
  * Returns { loading, installed, running, addon }
  */
 export function useAddonStatus(addonId) {
-  const [addon, setAddon] = useState(null)
+  const edition = useEditionCapabilities()
+  const [cachedAddon, setAddon] = useState(null)
   const [loading, setLoading] = useState(true)
+  const addon = addonAvailableInEdition(cachedAddon, edition) ? cachedAddon : null
 
   useEffect(() => {
     let cancelled = false
@@ -67,7 +70,9 @@ export function useAddonStatus(addonId) {
  * Returns { loading, addons, isInstalled(id), isRunning(id) }
  */
 export function useAllAddonStatuses() {
-  const [addons, setAddons] = useState([])
+  const edition = useEditionCapabilities()
+  const [allAddons, setAddons] = useState([])
+  const addons = useMemo(() => allAddons.filter(addon => addonAvailableInEdition(addon, edition)), [allAddons, edition])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

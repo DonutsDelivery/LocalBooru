@@ -301,6 +301,7 @@ async fn provider(
     bootstrap: &HubBootstrap,
     mode: TransportMode,
 ) -> Result<Arc<Provider>> {
+    crate::edition::require_community()?;
     transport::validate_bootstrap(bootstrap)?;
     if mode == TransportMode::Anonymous {
         return Err("Anonymous peer hosting is unsupported".into());

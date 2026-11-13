@@ -1,0 +1,5 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DonutMediaCenter Lite",
+  "identifier": "com.localbooru.app.lite"
+}

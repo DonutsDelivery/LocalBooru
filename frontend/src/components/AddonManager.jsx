@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import { useEditionCapabilities, addonAvailableInEdition } from '../contexts/edition'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   cancelAddonInstall,
   getAddons,
@@ -20,7 +21,9 @@ import {
 import './AddonManager.css'
 
 export default function AddonManager() {
-  const [addons, setAddons] = useState([])
+  const edition = useEditionCapabilities()
+  const [allAddons, setAddons] = useState([])
+  const addons = useMemo(() => allAddons.filter(addon => addonAvailableInEdition(addon, edition)), [allAddons, edition])
   const [loading, setLoading] = useState(true)
   const [actionInProgress, setActionInProgress] = useState({}) // { addonId: action }
   const [licenseAccepted, setLicenseAccepted] = useState({})
@@ -55,7 +58,7 @@ export default function AddonManager() {
       pollRef.current = setInterval(async () => {
         try {
           const data = await getAddons()
-          const nextAddons = data.addons || []
+          const nextAddons = (data.addons || []).filter(addon => addonAvailableInEdition(addon, edition))
           setAddons(nextAddons)
           setActionInProgress(prev => {
             const next = { ...prev }
@@ -80,7 +83,7 @@ export default function AddonManager() {
       clearInterval(pollRef.current)
       pollRef.current = null
     }
-  }, [addons, actionInProgress])
+  }, [addons, actionInProgress, edition])
 
 
   async function handleAction(addonId, action, options) {

@@ -1,3 +1,5 @@
+import { CapabilityGate } from './contexts/EditionContext'
+import { useEditionCapabilities } from './contexts/edition'
 import GalleryTileSizeControl from './components/GalleryTileSizeControl'
 /**
  * DonutMediaCenter - Local media library
@@ -347,7 +349,7 @@ function SettingsPage({ onServerChange }) {
 
             {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
             {activeTab === 'directories' && <div className="settings-tab-content active wide"><DirectoriesPage /></div>}
-            {activeTab === 'fediverse' && <div className="settings-tab-content active wide"><OnlinePage initialTab="sources" /></div>}
+            {activeTab === 'fediverse' && <div className="settings-tab-content active wide"><CapabilityGate capability="community_hubs"><OnlinePage initialTab="sources" /></CapabilityGate></div>}
             <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
               <VideoPlaybackSettings />
 
@@ -374,7 +376,7 @@ function SettingsPage({ onServerChange }) {
             </div>
 
             <div className={`settings-tab-content ${activeTab === 'addon-settings' ? 'active' : ''}`}>
-              <AddonSettings />
+              <CapabilityGate capability="downloaded_executable_addons"><AddonSettings /></CapabilityGate>
             </div>
 
             <div className={`settings-tab-content ${activeTab === 'tasks' ? 'active' : ''}`}>
@@ -2198,6 +2200,7 @@ function Gallery({ mediaType = 'image' }) {
 }
 
 function AppShell() {
+  const edition = useEditionCapabilities()
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
   const requiresBackendProof = isTauri || Boolean(getIsolatedInstanceId())
   const [backendReady, setBackendReady] = useState(!requiresBackendProof)
@@ -2426,12 +2429,12 @@ function AppShell() {
             <Route path="/directories" element={<Navigate to="/settings" replace />} />
             <Route path="/collections" element={<CollectionsPage />} />
             <Route path="/collections/:id" element={<CollectionDetailPage />} />
-            <Route path="/shared/:sourceId" element={<SharedCollectionPage />} />
+            <Route path="/shared/:sourceId" element={<CapabilityGate capability="community_hubs"><SharedCollectionPage /></CapabilityGate>} />
             <Route path="/watch/:token" element={<WatchPage />} />
             <Route path="/settings" element={<SettingsPage onServerChange={handleServerChange} />} />
             <Route path="/settings/:section" element={<SettingsPage onServerChange={handleServerChange} />} />
           </Routes>
-          <CreateStudioHost />
+          {edition.downloaded_executable_addons && <CreateStudioHost />}
           <PersistentMusicPlayer placement="mobile" />
         </MusicPlayerProvider>
       </BrowserRouter>

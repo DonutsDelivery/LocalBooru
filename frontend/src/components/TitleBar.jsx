@@ -1,3 +1,4 @@
+import { useEditionCapabilities } from '../contexts/edition'
 /**
  * Custom Title Bar Component
  * Replaces the native OS title bar for a consistent look
@@ -24,6 +25,7 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
   const [desktopServers, setDesktopServers] = useState([]);
   const [appVersion, setAppVersion] = useState(null);
   const [updateStatus, setUpdateStatus] = useState(null);
+  const edition = useEditionCapabilities();
 
   useEffect(() => {
     if (!isDesktop || isMobile) return;
@@ -41,14 +43,14 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
         if (active) setAppVersion(version);
       }).catch(console.error);
     }
-    const unsubscribe = api.onUpdaterStatus?.(status => {
+    const unsubscribe = edition.self_updates && api.onUpdaterStatus?.(status => {
       if (active) setUpdateStatus(status);
     });
     return () => {
       active = false;
-      unsubscribe?.();
+      if (typeof unsubscribe === 'function') unsubscribe();
     };
-  }, []);
+  }, [edition.self_updates]);
 
   // Set the live title bar offset and desktop transparency class.
   useEffect(() => {
@@ -119,7 +121,7 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
                 <path d="m29 25 11 7-11 7V25Z" fill="currentColor"/>
               </svg>
             </div>
-            <span className="title-bar-title">DonutMediaCenter</span>
+            <span className="title-bar-title">{edition.edition === 'store-lite' ? 'DonutMediaCenter Lite' : 'DonutMediaCenter'}</span>
             {appVersion && <span className="title-bar-version">v{appVersion}</span>}
           </div>
 
@@ -138,7 +140,7 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
             </button>
           </div>
         </div>
-        <UpdateBanner />
+        {edition.self_updates && <UpdateBanner />}
       </>
     );
   }
@@ -202,21 +204,21 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
             <path d="m29 25 11 7-11 7V25Z" fill="currentColor"/>
           </svg>
         </div>
-        <span className="title-bar-title">DonutMediaCenter</span>
+        <span className="title-bar-title">{edition.edition === 'store-lite' ? 'DonutMediaCenter Lite' : 'DonutMediaCenter'}</span>
         {appVersion && <span className="title-bar-version">v{appVersion}</span>}
       </div>
 
-      {updateStatus?.status === 'available' && (
+      {edition.self_updates && updateStatus?.status === 'available' && (
         <button className="title-bar-update" onClick={() => apiRef.current?.downloadUpdate?.()}
           title={`Update to v${updateStatus.version}`}>Update</button>
       )}
-      {updateStatus?.status === 'downloading' && (
+      {edition.self_updates && updateStatus?.status === 'downloading' && (
         <span className="title-bar-update busy">{Math.round(updateStatus.progress || 0)}%</span>
       )}
-      {updateStatus?.status === 'extracting' && (
+      {edition.self_updates && updateStatus?.status === 'extracting' && (
         <span className="title-bar-update busy">Extracting…</span>
       )}
-      {updateStatus?.status === 'downloaded' && (
+      {edition.self_updates && updateStatus?.status === 'downloaded' && (
         <button className="title-bar-update ready" onClick={() => apiRef.current?.installUpdate?.()}
           title="Restart and install update">Restart</button>
       )}

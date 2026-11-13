@@ -1188,6 +1188,7 @@ impl Drop for OfflineRuntime {
 static RUNTIMES: OnceLock<Mutex<HashMap<PathBuf, Weak<RuntimeInner>>>> = OnceLock::new();
 static JOBS: OnceLock<Mutex<HashSet<(PathBuf, String)>>> = OnceLock::new();
 pub fn start(state: AppState) -> Result<OfflineRuntime, String> {
+    crate::edition::require_community()?;
     crate::routes::online::initialize_offline_database(state.data_dir())?;
     open(state.data_dir()).map_err(|e| e.to_string())?;
     let handle = tauri::async_runtime::handle();
@@ -1221,6 +1222,7 @@ impl Drop for JobGuard {
     }
 }
 pub fn kick(state: &AppState, sid: &str) -> Result<(), AppError> {
+    crate::edition::require_community().map_err(AppError::Forbidden)?;
     let runtime = RUNTIMES
         .get_or_init(Default::default)
         .lock()

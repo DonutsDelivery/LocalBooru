@@ -50,7 +50,7 @@ const EXEMPT_PREFIXES: &[&str] = &[
 ];
 
 /// Endpoints exempt from access control (exact match).
-const EXEMPT_EXACT: &[&str] = &["/api"];
+const EXEMPT_EXACT: &[&str] = &["/api", "/api/edition"];
 
 /// Endpoints under localhost-only prefixes that should still be accessible from network.
 const LOCALHOST_EXEMPTIONS: &[&str] = &[

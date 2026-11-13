@@ -9,11 +9,11 @@ pub fn desktop_data_dir(
     os: &str,
     base: Option<PathBuf>,
     app_data: Result<PathBuf, String>,
-    flatpak: bool,
+    contained: bool,
 ) -> Result<PathBuf, String> {
-    // Flatpak retains the host HOME while redirecting XDG data to its container.
-    // A home-relative legacy path may be inaccessible and must never win here.
-    if os == "linux" && flatpak {
+    // Contained editions must use their own app data, even when host HOME still
+    // names an existing legacy library. Full desktop editions retain migration.
+    if contained && matches!(os, "linux" | "macos") {
         return app_data;
     }
     let legacy = base
@@ -107,6 +107,24 @@ impl HideConsoleWindow for tokio::process::Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mac_lite_uses_its_own_data_without_opening_an_existing_full_library() {
+        let fixture = tempfile::tempdir().unwrap();
+        let home = fixture.path().join("synthetic home");
+        let legacy = home.join(".localbooru");
+        let app_data = fixture.path().join("lite-container/app-data");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("synthetic-media.txt"), "preserve").unwrap();
+        assert_eq!(
+            desktop_data_dir("macos", Some(home), Ok(app_data.clone()), true).unwrap(),
+            app_data
+        );
+        assert_eq!(
+            std::fs::read_to_string(legacy.join("synthetic-media.txt")).unwrap(),
+            "preserve"
+        );
+        assert!(!legacy.join("settings.json").exists());
+    }
     #[test]
     fn new_mac_data_uses_application_support_but_preserves_existing_libraries() {
         let temporary = tempfile::Builder::new()

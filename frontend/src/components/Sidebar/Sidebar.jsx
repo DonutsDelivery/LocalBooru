@@ -1,3 +1,4 @@
+import { useEditionCapabilities } from '../../contexts/edition'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { fetchCollections, fetchDirectories, getFileDimensions, getSavedSearches, createSavedSearch, deleteSavedSearch } from '../../api'
@@ -61,6 +62,7 @@ function Sidebar({
   const isGalleryPage = location.pathname === '/' || location.pathname === '/videos'
   const isCollectionPage = location.pathname === '/collections' || location.pathname.startsWith('/collections/') || location.pathname.startsWith('/shared/')
   const isSearchPage = isGalleryPage || (isCollectionPage && Boolean(onSearch))
+  const edition = useEditionCapabilities()
   const isRemote = filterScope === 'remote'
   const galleryReturnTo = collectionGalleryTarget(location, mediaType)
   const collectionNavigationState = { galleryReturnTo }
@@ -457,7 +459,7 @@ function Sidebar({
       <div className="sidebar-content">
         <SidebarNavigation />
 
-        {location.pathname === '/' && mediaType === 'image' && (
+        {edition.downloaded_executable_addons && location.pathname === '/' && mediaType === 'image' && (
           <div className="sidebar-section create-entry-section">
             <button type="button" className="sidebar-create-button" onClick={() => {
               window.dispatchEvent(new CustomEvent('donut-create-open'))
@@ -510,11 +512,11 @@ function Sidebar({
           <div className="sidebar-section settings-nav">
             {[['directories','Watch Directories'], ['general','General'], ['video','Video'], ['network','Network'],
               ['servers','Servers'], ['fediverse','Fediverse & Nodes'], ['mobile','Mobile'], ['data','Data'], ['addons','Addons'], ['addon-settings','Add-on Settings'], ['tasks','Tasks']
-            ].map(([key, label]) => (
+            ].filter(([key]) => (key !== 'fediverse' || edition.community_hubs) && (key !== 'addon-settings' || edition.downloaded_executable_addons)).map(([key, label]) => (
               <button key={key}
                 className={`settings-nav-item ${settingsTab === key ? 'active' : ''}`}
                 onClick={() => { onSettingsTabChange(key); if (onClose) onClose() }}
-              >{label}</button>
+              >{key === 'addons' && !edition.downloaded_executable_addons ? 'Built-in tools' : label}</button>
             ))}
           </div>
         )}
