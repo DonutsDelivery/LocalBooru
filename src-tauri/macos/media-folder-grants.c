@@ -93,8 +93,8 @@ __attribute__((constructor)) static void activate_media_grants(void) {
         free(bytes);
         if (!data) fail();
         url = CFURLCreateByResolvingBookmarkData(kCFAllocatorDefault, data,
-            kCFURLBookmarkResolutionWithSecurityScope | kCFURLBookmarkResolutionWithoutUI |
-            kCFURLBookmarkResolutionWithoutMounting, NULL, NULL, &stale, NULL);
+            kCFURLBookmarkResolutionWithSecurityScope | kCFURLBookmarkResolutionWithoutUIMask |
+            kCFURLBookmarkResolutionWithoutMountingMask, NULL, NULL, &stale, NULL);
         CFRelease(data);
         if (!url) continue;
         if (!stale && CFURLStartAccessingSecurityScopedResource(url))
