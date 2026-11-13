@@ -1,3 +1,5 @@
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
+USER root
 RUN apt-get update && apt-get install -y --no-install-recommends gstreamer1.0-gl && rm -rf /var/lib/apt/lists/*
+USER 1000:1000

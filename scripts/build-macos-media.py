@@ -134,7 +134,16 @@ def validate_tool(path, archs=ARCHS):
         commands = run(['otool', '-arch', arch, '-l', path], capture=True)
         if 'LC_RPATH' in commands:
             raise ValueError('Unexpected media helper runtime search path')
-        minimums = re.findall(r'^\s*(?:minos|version) (\d+\.\d+(?:\.\d+)?)\s*$', commands, re.M)
+        minimums = []
+        for load in re.split(r'(?m)^\s*Load command \d+\s*$', commands):
+            if re.search(r'^\s*cmd LC_BUILD_VERSION\s*$', load, re.M):
+                value = re.search(r'^\s*minos (\d+\.\d+(?:\.\d+)?)\s*$', load, re.M)
+            elif re.search(r'^\s*cmd LC_VERSION_MIN_MACOSX\s*$', load, re.M):
+                value = re.search(r'^\s*version (\d+\.\d+(?:\.\d+)?)\s*$', load, re.M)
+            else:
+                continue
+            if value:
+                minimums.append(value.group(1))
         if not minimums or any(tuple(map(int, value.split('.')[:2])) > (11, 0) for value in minimums):
             raise ValueError('Media helper exceeds the minimum macOS version')
 

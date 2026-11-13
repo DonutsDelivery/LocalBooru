@@ -117,7 +117,7 @@ class PayloadTests(unittest.TestCase):
                 if command[0] == 'lipo': return 'x86_64 arm64'
                 inspected.append(command[2])
                 if '-L' in command: return 'ffprobe:\n\t/usr/lib/libSystem.B.dylib (compatibility version 1)'
-                return 'cmd LC_BUILD_VERSION\nminos 11.0'
+                return 'Load command 10\ncmd LC_BUILD_VERSION\nminos 11.0\nsdk 27.2\nntools 1\ntool LD\nversion 1222.1\nLoad command 11\ncmd LC_SOURCE_VERSION\nversion 999.0'
             with patch.object(builder, 'run', side_effect=fake): builder.validate_tool(binary)
             self.assertEqual(inspected, ['arm64', 'arm64', 'x86_64', 'x86_64'])
 

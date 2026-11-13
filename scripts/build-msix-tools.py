@@ -70,15 +70,16 @@ def build(cache, archive=None):
     # Newer system ICU headers require C++17. Keep the compatibility change
     # bounded to the verified upstream file instead of accepting cache edits.
     with tarfile.open(source_archive) as archive_file:
-        original = archive_file.extractfile(source.name + '/CMakeLists.txt').read()
-    token = b'set(CMAKE_CXX_STANDARD 14)'
-    if original.count(token) != 1:
-        raise ValueError('Pinned SDK C++ standard declaration changed')
-    compatible = original.replace(token, b'set(CMAKE_CXX_STANDARD 17)')
-    project = source / 'CMakeLists.txt'
-    if project.read_bytes() not in (original, compatible):
-        raise ValueError('Unrecognized local MSIX source edits')
-    project.write_bytes(compatible)
+        for relative in ('CMakeLists.txt', 'lib/xerces/CMakeLists.txt'):
+            original = archive_file.extractfile(source.name + '/' + relative).read()
+            token = b'set(CMAKE_CXX_STANDARD 14)'
+            if original.count(token) != 1:
+                raise ValueError('Pinned SDK C++ standard declaration changed')
+            compatible = original.replace(token, b'set(CMAKE_CXX_STANDARD 17)')
+            project = source / relative
+            if project.read_bytes() not in (original, compatible):
+                raise ValueError('Unrecognized local MSIX source edits')
+            project.write_bytes(compatible)
     target = cache / ('build-' + COMMIT)
     command = ['cmake', '-S', str(source), '-B', str(target), '-G', 'Ninja',
                '-DCMAKE_BUILD_TYPE=Release', '-DLINUX=on',
