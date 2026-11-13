@@ -30,6 +30,29 @@ silently promoted into the website/GitHub stable matrix.
 
 ## Native macOS build
 
+The current physical Apple Silicon worker is reachable through `ssh
+donutstudio-mac`. Check its availability at admission; a coordination message
+does not reserve it. Native build entry points hold the shared Mac-local
+`/tmp/arbit-build.lock` for the complete operation and use one compiler job.
+Do not hold the Linux build token over SSH or interrupt another lock owner.
+Use a new owned source/output location, preserve warm build caches and owner
+applications, and never copy application profiles into a source checkout.
+
+For an early native check without packaging or signing:
+
+```sh
+LOCALBOORU_MACOS_EDITION=store-lite LOCALBOORU_MACOS_CHECK_ONLY=1 \
+  scripts/build-macos-ci.sh
+```
+
+This checks the native feature code and builds frontend resources. It does not
+establish sandbox/Powerbox behavior or replace package and real-device acceptance.
+The source must be the exact reviewed commit. Private staging can transfer only
+the chosen commit object and its current tree/blobs, with no parent history,
+then mark that commit as a shallow boundary; verify source identity and the
+transfer hash before building. Do not copy a user's library or repository-local
+generated state to populate an inspection checkout.
+
 `scripts/build-macos-ci.sh` is the canonical native build and verifier. It
 requires Node 20, the locked frontend dependencies, Rust targets
 `aarch64-apple-darwin` and `x86_64-apple-darwin`, Tauri CLI 2.9.4, and Apple
