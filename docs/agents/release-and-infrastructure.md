@@ -363,11 +363,16 @@ runtime opt-out; ordinary WebKit/GStreamer playback remains available.
 - `DonutMediaCenter-Linux.rpm`
 - `DonutMediaCenter-Linux.zip`
 - `DonutMediaCenter-Native-Runtime-Sources.tar.xz`
+- `DonutMediaCenter-Linux-source.tar.xz` — exact application revision
+- `application-source-receipt.json` — application revision and source-archive hash
 - `SHA256SUMS`
 
 The source archive accompanies the modified LGPL runtime and includes the exact
 upstream WebKitGTK source tarball, LocalBooru patch, VapourSynth source, and
 container build recipe.
+The separate application archive includes the exact committed application tree,
+lockfiles and build scripts. Release verification checks its hash and revision;
+the native-runtime archive is not a substitute for application source.
 
 ## Verification gates
 

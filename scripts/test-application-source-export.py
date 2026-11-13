@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Source-offer provenance tests using a disposable synthetic Git repository."""
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import tarfile
@@ -45,6 +46,29 @@ class SourceTests(unittest.TestCase):
         root, repo = self.fixture(); output = root / 'missing.tar.xz'
         with self.assertRaises(subprocess.CalledProcessError): module.export(repo, 'not-a-revision', output)
         self.assertFalse(output.exists())
+
+    def test_verified_receipt_binds_archive_and_expected_revision(self):
+        root, repo = self.fixture(); output = root / 'source.tar.xz'
+        receipt = module.export(repo, 'HEAD', output)
+        path = root / 'receipt.json'; path.write_text(json.dumps(receipt))
+        self.assertEqual(module.verify(path, receipt['source_commit']), receipt)
+        with self.assertRaises(ValueError): module.verify(path, '0' * 40)
+        receipt['source_commit'] = '0' * 40; path.write_text(json.dumps(receipt))
+        with self.assertRaises(ValueError): module.verify(path)
+
+    def test_changed_archive_is_rejected(self):
+        root, repo = self.fixture(); output = root / 'source.tar.xz'
+        receipt = module.export(repo, 'HEAD', output)
+        path = root / 'receipt.json'; path.write_text(json.dumps(receipt))
+        with output.open('ab') as stream: stream.write(b'changed synthetic archive')
+        with self.assertRaises(ValueError): module.verify(path)
+
+    def test_receipt_cannot_read_an_unrelated_path(self):
+        root, repo = self.fixture(); output = root / 'source.tar.xz'
+        receipt = module.export(repo, 'HEAD', output)
+        receipt['archive'] = '../unrelated.tar.xz'
+        path = root / 'receipt.json'; path.write_text(json.dumps(receipt))
+        with self.assertRaises(ValueError): module.verify(path)
 
 
 if __name__ == '__main__': unittest.main()

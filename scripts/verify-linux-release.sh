@@ -62,6 +62,12 @@ verify_runtime_tree() {
 }
 
 require_file "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz"
+require_file "$DIST/DonutMediaCenter-Linux-source.tar.xz"
+require_file "$DIST/application-source-receipt.json"
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+python3 "$SCRIPT_ROOT/scripts/export-application-source.py" \
+  --verify-receipt "$DIST/application-source-receipt.json" \
+  --commit "${LOCALBOORU_SOURCE_REVISION:-}" >/dev/null
 tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
   | grep 'webkitgtk-2.52.3.tar.xz' >/dev/null
 tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
@@ -112,6 +118,8 @@ if has_bundle appimage; then
   require_file "$DIST/DonutMediaCenter-Linux.zip"
   unzip -tq "$DIST/DonutMediaCenter-Linux.zip" >/dev/null
   unzip -l "$DIST/DonutMediaCenter-Linux.zip" | grep 'DonutMediaCenter-Linux.AppImage' >/dev/null
+  unzip -l "$DIST/DonutMediaCenter-Linux.zip" | grep 'DonutMediaCenter-Linux-source.tar.xz' >/dev/null
+  unzip -l "$DIST/DonutMediaCenter-Linux.zip" | grep 'application-source-receipt.json' >/dev/null
 fi
 
 # Report, but do not hide, the actual portability floor of the final app.

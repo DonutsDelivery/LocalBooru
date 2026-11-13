@@ -49,6 +49,7 @@ git -c safe.directory="$SOURCE" -C "$SOURCE" archive --format=tar "$RESOLVED_SOU
 unset GIT_DIR GIT_WORK_TREE
 
 rm -f "$DIST/SHA256SUMS" "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz"
+rm -f "$DIST/DonutMediaCenter-Linux-source.tar.xz" "$DIST/application-source-receipt.json"
 [[ ",$BUNDLES," == *",appimage,"* ]] && \
   rm -f "$DIST/DonutMediaCenter-Linux.AppImage" "$DIST/DonutMediaCenter-Linux.zip"
 [[ ",$BUNDLES," == *",deb,"* ]] && rm -f "$DIST/DonutMediaCenter-Linux.deb"
@@ -440,6 +441,12 @@ package_source_offer() {
   cp "$ROOT/release/linux/THIRD_PARTY_NOTICES.md" "$source_stage/"
   tar -cJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
     -C "$source_stage" .
+  # Restore the mounted repository only for this export, after dependency builds
+  # have completed with Git environment overrides removed.
+  GIT_DIR=/git GIT_WORK_TREE="$SOURCE" python3 "$ROOT/scripts/export-application-source.py" \
+    --repo "$SOURCE" --commit "$RESOLVED_SOURCE_REVISION" \
+    --output "$DIST/DonutMediaCenter-Linux-source.tar.xz" \
+    > "$DIST/application-source-receipt.json"
 }
 
 prepare_webkit
@@ -454,9 +461,10 @@ package_source_offer
 if has_bundle appimage; then
   rm -f "$DIST/DonutMediaCenter-Linux.zip"
   (cd "$DIST" && zip -q DonutMediaCenter-Linux.zip \
-    DonutMediaCenter-Linux.AppImage DonutMediaCenter-Native-Runtime-Sources.tar.xz)
+    DonutMediaCenter-Linux.AppImage DonutMediaCenter-Native-Runtime-Sources.tar.xz \
+    DonutMediaCenter-Linux-source.tar.xz application-source-receipt.json)
 fi
 
 bash "$ROOT/scripts/verify-linux-release.sh" "$DIST" "$BUNDLES"
-(cd "$DIST" && sha256sum DonutMediaCenter-* | sort -k2 > SHA256SUMS)
+(cd "$DIST" && sha256sum DonutMediaCenter-* application-source-receipt.json | sort -k2 > SHA256SUMS)
 ccache --show-stats
