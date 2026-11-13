@@ -25,6 +25,16 @@ packager = load('media_package', 'package-macos-media.py')
 
 
 class BuildBoundaryTests(unittest.TestCase):
+    def test_new_attempt_cannot_reuse_previous_compiler_products(self):
+        with tempfile.TemporaryDirectory(prefix='dmc media fixture ') as tmp:
+            root = Path(tmp)
+            first = builder.fresh_work_directory(root, 'f' * 64)
+            (first / 'nasm').write_bytes(b'Synthetic substituted compiler, not runnable')
+            second = builder.fresh_work_directory(root, 'f' * 64)
+            self.assertNotEqual(first, second)
+            self.assertEqual(list(second.iterdir()), [])
+            self.assertTrue((first / 'nasm').is_file())
+
     def test_unknown_cache_and_symlink_preserved(self):
         with tempfile.TemporaryDirectory(prefix='dmc media fixture ') as tmp:
             root = Path(tmp); original = root / 'original'; original.mkdir()

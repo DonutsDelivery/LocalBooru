@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tarfile
+import tempfile
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
@@ -46,6 +47,10 @@ def owned_directory(path, identity):
         raise ValueError('Refusing a nonempty unrecognized build directory')
     else:
         marker.write_text(json.dumps(identity, sort_keys=True) + '\n')
+
+
+def fresh_work_directory(cache, recipe):
+    return Path(tempfile.mkdtemp(prefix='attempt-' + recipe[:16] + '-', dir=cache))
 
 
 def download(pin, downloads):
@@ -164,24 +169,23 @@ def build(cache, output):
     if not output.is_absolute() or output.is_symlink():
         raise ValueError('Output must be a new absolute directory')
     downloads = cache / 'downloads'; downloads.mkdir(exist_ok=True)
-    work = cache / recipe; work.mkdir(exist_ok=True)
-    sources = work / 'sources'; sources.mkdir(exist_ok=True)
+    sources = cache / 'sources'; sources.mkdir(exist_ok=True)
     archives = {name: download(pin, downloads) for name, pin in pins.items()}
     trees = {name: extract(archives[name], pin, sources) for name, pin in pins.items()}
+    work = fresh_work_directory(cache, recipe)
     environment = os.environ.copy()
     environment.update(MAKEFLAGS='-j1', CMAKE_BUILD_PARALLEL_LEVEL='1',
                        MACOSX_DEPLOYMENT_TARGET='11.0', LC_ALL='C',
                        SOURCE_DATE_EPOCH='1773705600')
     # NASM is a build-only dependency. Bootstrap locally; never install Homebrew packages.
     nasm = work / 'nasm-build'; nasm.mkdir(exist_ok=True)
-    if not (nasm / 'nasm').is_file():
-        # NASM does not create every out-of-tree object directory.
-        for directory in trees['nasm'].rglob('*'):
-            if directory.is_dir():
-                (nasm / directory.relative_to(trees['nasm'])).mkdir(parents=True, exist_ok=True)
-        run([os.path.relpath(trees['nasm'] / 'configure', nasm), '--prefix=/DMC/build-tools'],
-            nasm, environment)
-        run(['make', '-j1', 'nasm'], nasm, environment)
+    # NASM does not create every out-of-tree object directory.
+    for directory in trees['nasm'].rglob('*'):
+        if directory.is_dir():
+            (nasm / directory.relative_to(trees['nasm'])).mkdir(parents=True, exist_ok=True)
+    run([os.path.relpath(trees['nasm'] / 'configure', nasm), '--prefix=/DMC/build-tools'],
+        nasm, environment)
+    run(['make', '-j1', 'nasm'], nasm, environment)
     environment['PATH'] = str(nasm) + os.pathsep + environment['PATH']
     versions = {name: run(command, capture=True).splitlines()[0] for name, command in {
         'clang': ['clang', '--version'], 'sdk': ['xcrun', '--show-sdk-version'],
@@ -193,7 +197,7 @@ def build(cache, output):
         # Prefix maps sanitize __FILE__ and debug paths without embedding private paths
         # in FFmpeg's public configure argument string.
         flags = (f'-O2 -arch {arch} -mmacosx-version-min=11.0 '
-                 f'-ffile-prefix-map={work}=/DMC/source -fdebug-prefix-map={work}=/DMC/source')
+                 f'-ffile-prefix-map={cache}=/DMC/source -fdebug-prefix-map={cache}=/DMC/source')
         env.update(CC='clang', CXX='clang++', CFLAGS=flags, CXXFLAGS=flags,
                    LDFLAGS=f'-arch {arch} -mmacosx-version-min=11.0',
                    PKG_CONFIG_PATH='', PKG_CONFIG_LIBDIR=str(stage / 'DMC/helpers/lib/pkgconfig'),

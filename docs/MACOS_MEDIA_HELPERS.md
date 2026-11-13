@@ -33,9 +33,11 @@ The cache keeps only recognized source/build directories; it refuses unknown
 nonempty roots and altered source hashes. Every extracted source file, executable
 mode and directory entry is compared with its pinned archive before reuse and
 again before the receipt is emitted; a matching marker cannot hide an edited
-cache tree. Failed or partial output directories
+cache tree. Each compile attempt uses a fresh private workspace and builds
+NASM, codec libraries and FFmpeg objects there; writable intermediates are never
+reused. Verified source archives and extracted trees remain cached. Failed or partial output directories
 are never accepted as completed payloads. Choose a fresh output for a retry and
-retain the warm compilation cache. No user profiles or libraries are inputs.
+retain the verified source cache. No user profiles or libraries are inputs.
 
 Before packaging, the actual bundled helpers must match the build receipt and
 pass synthetic H.264/AAC encode, decode and WebP-thumbnail checks. The lite
