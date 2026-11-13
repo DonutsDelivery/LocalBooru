@@ -53,7 +53,7 @@ exec "$@"
 EOF
 cat >"$TEST_DIR/bin/uname" <<'EOF'
 #!/usr/bin/env bash
-printf 'Linux\n'
+printf '%s\n' "${SYNTHETIC_PLATFORM:-Linux}"
 EOF
 cat >"$TEST_DIR/daemon" <<'EOF'
 #!/usr/bin/env bash
@@ -180,6 +180,21 @@ ln -s "$TEST_DIR/bin/uname" "$TEST_DIR/no-dbus/uname"
 if PATH="$TEST_DIR/no-dbus" "$LAUNCHER" >"$TEST_DIR/no-dbus-output" 2>&1; then exit 1; fi
 grep -F 'requires dbus-run-session and setsid' "$TEST_DIR/no-dbus-output" >/dev/null
 [[ ! -e "$(tail -n 1 "$SYNTHETIC_ROOTS")" ]]
+[[ "$(wc -l <"$SYNTHETIC_DBUS_CALLS")" -eq 7 ]]
+# The Darwin branch must not expand an empty command array under `set -u`.
+cat >"$TEST_DIR/mac-candidate" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+root="${HOME%/home}"
+[[ "$root" == /tmp/localbooru-isolated.* && "$LOCALBOORU_PORTABLE_DATA" == "$root/library" ]]
+printf '%s\n' "$root" >"$SYNTHETIC_MAC_ROOT"
+sleep 0.2
+EOF
+chmod +x "$TEST_DIR/mac-candidate"
+SYNTHETIC_MAC_ROOT="$TEST_DIR/mac-root" SYNTHETIC_PLATFORM=Darwin LOCALBOORU_TEST_BINARY="$TEST_DIR/mac-candidate" \
+  "$LAUNCHER" >"$TEST_DIR/mac-output" 2>&1
+grep -F 'Isolated LocalBooru instance is ready' "$TEST_DIR/mac-output" >/dev/null
+[[ ! -e "$(cat "$TEST_DIR/mac-root")" ]]
 [[ "$(wc -l <"$SYNTHETIC_DBUS_CALLS")" -eq 7 ]]
 # Mac container overrides must never change Linux profile selection.
 if LOCALBOORU_TEST_MACOS_APP=/synthetic/Lite.app LOCALBOORU_TEST_MACOS_CONTAINER_PARENT=/synthetic/container \

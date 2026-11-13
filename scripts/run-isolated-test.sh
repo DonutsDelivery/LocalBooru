@@ -18,6 +18,9 @@ HOST_BUILD_GATE="${HOST_HEAVY_BUILD_GATE:-$HOST_HOME/.local/bin/host-heavy-build
 HOST_BUILD_STATE_DIR="${HOST_HEAVY_BUILD_STATE_DIR:-${XDG_STATE_HOME:-$HOST_HOME/.local/state}/host-heavy-build}"
 
 cleanup() {
+  # Bash 3 may run an inherited EXIT trap after a background expansion fails.
+  # Only the launcher shell owns the disposable root and child cleanup.
+  if (( BASH_SUBSHELL != 0 )); then return; fi
   if [[ -n "$APP_GROUP" ]]; then
     # Linux acceptance owns this session/group, including the private bus and
     # its application descendants. Never target another app or user session.
@@ -78,6 +81,7 @@ if [[ -z "$TEST_BINARY" ]] && [[ ! -f "$HOST_BUILD_GATE" || ! -x "$HOST_BUILD_GA
   exit 75
 fi
 SESSION_LAUNCH=()
+PRIVATE_SESSION=0
 if [[ "$(uname -s)" == "Linux" ]]; then
   DBUS_RUN_SESSION="$(command -v dbus-run-session || true)"
   SETSID="$(command -v setsid || true)"
@@ -86,6 +90,7 @@ if [[ "$(uname -s)" == "Linux" ]]; then
     exit 75
   fi
   SESSION_LAUNCH=("$SETSID" --wait "$DBUS_RUN_SESSION" --)
+  PRIVATE_SESSION=1
 fi
 
 if ! python3 - "$PORT" <<'PY'
@@ -144,12 +149,20 @@ printf '  temporary root will be removed on exit\n'
 
 if [[ -n "$TEST_BINARY" ]]; then
   printf '  candidate binary: %s\n' "$TEST_BINARY"
-  "${SESSION_LAUNCH[@]}" "$TEST_BINARY" >"$LOCALBOORU_DEV_LOG" 2>&1 &
+  if (( PRIVATE_SESSION )); then
+    "${SESSION_LAUNCH[@]}" "$TEST_BINARY" >"$LOCALBOORU_DEV_LOG" 2>&1 &
+  else
+    "$TEST_BINARY" >"$LOCALBOORU_DEV_LOG" 2>&1 &
+  fi
 else
-  "${SESSION_LAUNCH[@]}" "$ROOT/run-dev.sh" &
+  if (( PRIVATE_SESSION )); then
+    "${SESSION_LAUNCH[@]}" "$ROOT/run-dev.sh" &
+  else
+    "$ROOT/run-dev.sh" &
+  fi
 fi
 APP_PID=$!
-if (( ${#SESSION_LAUNCH[@]} > 0 )); then APP_GROUP="$APP_PID"; fi
+if (( PRIVATE_SESSION )); then APP_GROUP="$APP_PID"; fi
 
 READY_DEADLINE=$((SECONDS + READY_TIMEOUT_SECONDS))
 while (( SECONDS < READY_DEADLINE )); do
