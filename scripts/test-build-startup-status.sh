@@ -37,6 +37,19 @@ if [[ "${1:-}" == run ]]; then
         cd "$dist"
         sha256sum DonutMediaCenter-Windows-Setup.exe DonutMediaCenter-Windows.zip >SHA256SUMS-Windows
       )
+      python3 - "$dist" "$BUILD_STATUS_TEST_SOURCE_REPO" <<'PY'
+import hashlib, json, pathlib, subprocess, sys
+dist, root = pathlib.Path(sys.argv[1]), sys.argv[2]
+source = subprocess.check_output(['git', '-C', root, 'rev-parse', 'HEAD'], text=True).strip()
+recipe = subprocess.check_output(['git', '-C', root, 'show', source + ':scripts/build-windows-docker.sh'])
+def digest(name): return hashlib.sha256((dist / name).read_bytes()).hexdigest()
+(dist / 'Windows-build-receipt.json').write_text(json.dumps({
+    'schema': 1, 'source_commit': source, 'target': 'x86_64-pc-windows-msvc',
+    'recipe_sha256': hashlib.sha256(recipe).hexdigest(),
+    'portable_sha256': digest('DonutMediaCenter-Windows.zip'),
+    'installer_sha256': digest('DonutMediaCenter-Windows-Setup.exe'),
+}))
+PY
     fi
   done
   exit 0
@@ -50,6 +63,7 @@ export HOME="$TEMP_DIR/home"
 export XDG_STATE_HOME="$TEMP_DIR/state"
 export PATH="$TEMP_DIR/bin:$PATH"
 export BUILD_STATUS_TEST_DOCKER_LOG="$TEMP_DIR/docker.log"
+export BUILD_STATUS_TEST_SOURCE_REPO="$ROOT"
 export LOCALBOORU_BUILD_LOCK_TIMEOUT=0
 # The fake container consumes no disk; allow its tiny disposable fixture.
 export LOCALBOORU_BUILD_MIN_FREE_GB=1

@@ -30,3 +30,8 @@ Expected outputs:
 The verifier checks archive integrity, PE headers, x64 architecture for both the standalone and installed NSIS payload, forbidden build paths, and final hashes. The NSIS launcher itself may be an i386 PE32 stub while installing the x64 PE32+ application. Local/CI artifacts are unsigned unless a separate Authenticode signing stage is configured.
 
 The Ubuntu 24.04 `sccache` package is currently not enabled as `RUSTC_WRAPPER`: `cc-rs` also applies that wrapper to MSVC resource preprocessing, where sccache 0.7.7 cannot detect `/showIncludes` output through Wine. Persistent Cargo target reuse remains active. Re-enable sccache only after verifying both Rust cache hits and Tauri's `resource.rc` compilation through the selected Wine/MSVC versions.
+# Optional store package
+
+The canonical build also emits a source/recipe/artifact receipt for the optional
+[full-trust MSIX path](WINDOWS_MSIX.md). NSIS and portable builds remain the
+default. SDK packaging, signing and real Windows acceptance are separate gates.

@@ -162,6 +162,20 @@ python3 "$ROOT/scripts/cargo-cache-hygiene.py" --target-directory "$BUILD_ROOT/t
   cd "$DIST_PATH"
   sha256sum -c SHA256SUMS-Windows
 )
+python3 - "$DIST_PATH" "$SOURCE_COMMIT" "$ROOT" <<'PY'
+import hashlib, json, pathlib, subprocess, sys
+dist, source, root = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+receipt = json.loads((dist / 'Windows-build-receipt.json').read_text())
+recipe = subprocess.check_output(['git', '-C', root, 'show', source + ':scripts/build-windows-docker.sh'])
+assert receipt['schema'] == 1 and receipt['source_commit'] == source
+assert receipt['target'] == 'x86_64-pc-windows-msvc'
+assert receipt['recipe_sha256'] == hashlib.sha256(recipe).hexdigest()
+for key, name in [('portable_sha256', 'DonutMediaCenter-Windows.zip'),
+                  ('installer_sha256', 'DonutMediaCenter-Windows-Setup.exe')]:
+    with (dist / name).open('rb') as stream:
+        assert receipt[key] == hashlib.file_digest(stream, 'sha256').hexdigest()
+print('Windows source/recipe/artifact receipt verified')
+PY
 
 printf '==> Windows persistent build cache after build: %s\n' "$(du -sh "$BUILD_ROOT" | cut -f1)"
 printf '==> Local Windows artifacts verified in %s:\n' "$DIST_PATH"

@@ -194,6 +194,25 @@ done
   sha256sum -c SHA256SUMS-Windows
 )
 
+# Bind the verified portable output to its exact staged source and recipe.
+# This is an unsigned build record, not a cryptographic publisher attestation.
+python3 - "$DIST_DIR" "$RESOLVED_SOURCE_REVISION" <<'PY'
+import hashlib, json, pathlib, sys
+dist = pathlib.Path(sys.argv[1])
+def digest(path):
+    with path.open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+receipt = {
+    'schema': 1,
+    'source_commit': sys.argv[2],
+    'target': 'x86_64-pc-windows-msvc',
+    'portable_sha256': digest(dist / 'DonutMediaCenter-Windows.zip'),
+    'installer_sha256': digest(dist / 'DonutMediaCenter-Windows-Setup.exe'),
+    'recipe_sha256': digest(pathlib.Path('scripts/build-windows-docker.sh')),
+}
+(dist / 'Windows-build-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+PY
+
 printf 'Windows Authenticode state (unsigned is expected for local builds):\n'
 file "$STAGE/DonutMediaCenter.exe" "$DIST_DIR/DonutMediaCenter-Windows-Setup.exe"
 sccache --show-stats || true
