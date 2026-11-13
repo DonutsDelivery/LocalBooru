@@ -1006,11 +1006,9 @@ pub async fn upload_image(
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("bin");
-    let tmp_path = std::env::temp_dir().join(format!(
-        "localbooru_upload_{}.{}",
-        uuid::Uuid::new_v4(),
-        ext
-    ));
+    let tmp_path = crate::platform_paths::temporary_dir()
+        .map_err(AppError::Internal)?
+        .join(format!("localbooru_upload_{}.{}", uuid::Uuid::new_v4(), ext));
 
     tokio::fs::write(&tmp_path, &data).await?;
 

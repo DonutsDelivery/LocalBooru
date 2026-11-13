@@ -71,6 +71,7 @@ root="${HOME%/home}"
 [[ "$HOME" == "$root/home" && "$XDG_CONFIG_HOME" == "$root/config" ]]
 [[ "$XDG_CACHE_HOME" == "$root/cache" && "$XDG_DATA_HOME" == "$root/xdg-data" ]]
 [[ "$XDG_STATE_HOME" == "$root/state" && "$TMPDIR" == "$root/tmp" ]]
+[[ "$LOCALBOORU_ISOLATED_TEMP_DIR" == "$root/tmp" ]]
 [[ "$LOCALBOORU_PORTABLE_DATA" == "$root/library" ]]
 [[ "$LOCALBOORU_DEV_TARGET_DIR" == "$root/target" && "$CARGO_TARGET_DIR" == "$root/target" ]]
 [[ "$LOCALBOORU_PORT" == '18790' && "$VITE_LOCALBOORU_PORT" == '18790' ]]

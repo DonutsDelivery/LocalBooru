@@ -58,6 +58,12 @@ This runs the candidate directly without invoking the development launcher or
 starting a build. It applies the same disposable home, XDG config/data/cache/state,
 temporary files, portable library, target directory, port, and disabled
 single-instance forwarding. The candidate receives no application file arguments.
+The launcher also exports `LOCALBOORU_ISOLATED_TEMP_DIR`; isolated media
+transcodes, upload/download staging and snapshots use that explicit directory
+and reject a missing or redirected root.
+Candidate adapters must preserve this variable rather than rely on an SDK's
+system temporary-directory selection. It is separate from the normal app's
+temporary cache and must remain inside the disposable profile.
 Its output stays in the temporary test log, and the launcher removes the profile
 and stops its child if readiness fails. Without this option the launcher retains
 its normal development behavior and host build-gate requirement. Never point the

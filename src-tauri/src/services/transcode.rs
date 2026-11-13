@@ -484,7 +484,8 @@ impl TranscodeManager {
         }
 
         // Create temp directory for HLS segments
-        let temp_dir = std::env::temp_dir().join(format!("transcode_{}", &stream_id[..8]));
+        let temp_dir = crate::platform_paths::temporary_dir()?
+            .join(format!("transcode_{}", &stream_id[..8]));
         let hls_dir = temp_dir.join("hls");
         std::fs::create_dir_all(&hls_dir)
             .map_err(|e| format!("Failed to create temp dir: {}", e))?;

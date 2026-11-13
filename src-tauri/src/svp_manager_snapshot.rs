@@ -39,7 +39,8 @@ impl ManagerGraphSnapshotStore {
         if Path::new("/.flatpak-info").exists() {
             return Self::in_flatpak_data(std::env::var_os("XDG_DATA_HOME").map(PathBuf::from));
         }
-        Ok(Self::new(std::env::temp_dir().join(format!(
+        let temporary = crate::platform_paths::temporary_dir().map_err(io::Error::other)?;
+        Ok(Self::new(temporary.join(format!(
             "localbooru-svp-snapshots-{}-{}",
             std::process::id(),
             uuid::Uuid::new_v4()

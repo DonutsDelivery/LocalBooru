@@ -647,7 +647,7 @@ async fn import_output(
     let temp = tempfile::Builder::new()
         .prefix(".donut-create-")
         .suffix(".png")
-        .tempfile()?;
+        .tempfile_in(crate::platform_paths::temporary_dir().map_err(AppError::Internal)?)?;
     let mut file = tokio::fs::File::from_std(temp.reopen()?);
     let mut stream = response.bytes_stream();
     let mut size = 0u64;

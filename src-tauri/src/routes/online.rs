@@ -1206,7 +1206,7 @@ where
     .map_err(|_| AppError::ServiceUnavailable("Community viewing stopped".into()))?;
     let directory = tempfile::Builder::new()
         .prefix("dmc-peer-view-")
-        .tempdir()?;
+        .tempdir_in(crate::platform_paths::temporary_dir().map_err(AppError::Internal)?)?;
     let destination = directory.path().join("verified-media");
     if !download(destination.clone()).await? {
         return Ok(None);

@@ -32,6 +32,30 @@ pub fn init(resources: Option<PathBuf>) {
     }
 }
 
+/// App Sandbox can replace TMPDIR when launching the native process. Isolated
+/// media work must use the launcher's explicit owned directory instead.
+pub fn temporary_dir() -> Result<PathBuf, String> {
+    if std::env::var_os("LOCALBOORU_ISOLATED_INSTANCE_ID").is_some() {
+        isolated_temporary_dir(std::env::var_os("LOCALBOORU_ISOLATED_TEMP_DIR").map(PathBuf::from))
+    } else {
+        Ok(std::env::temp_dir())
+    }
+}
+
+fn isolated_temporary_dir(directory: Option<PathBuf>) -> Result<PathBuf, String> {
+    let directory = directory.ok_or("Isolated temporary directory is required")?;
+    if !directory.is_absolute()
+        || directory
+            .components()
+            .any(|part| part == std::path::Component::ParentDir)
+        || !std::fs::symlink_metadata(&directory)
+            .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+    {
+        return Err("Isolated temporary directory is unavailable".into());
+    }
+    Ok(directory)
+}
+
 fn candidates(
     name: &str,
     os: &str,
@@ -155,6 +179,36 @@ impl HideConsoleWindow for tokio::process::Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn isolated_temporary_work_never_falls_back_to_system_storage() {
+        let fixture = tempfile::tempdir().unwrap();
+        let owned = fixture.path().join("owned temp");
+        std::fs::create_dir(&owned).unwrap();
+        assert_eq!(isolated_temporary_dir(Some(owned.clone())).unwrap(), owned);
+        for invalid in [
+            None,
+            Some(PathBuf::from("relative")),
+            Some(fixture.path().join("missing")),
+        ] {
+            assert!(isolated_temporary_dir(invalid).is_err());
+        }
+        let file = fixture.path().join("file");
+        std::fs::write(&file, b"synthetic fixture").unwrap();
+        assert!(isolated_temporary_dir(Some(file)).is_err());
+        assert!(isolated_temporary_dir(Some(owned.join(".."))).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn isolated_temporary_work_rejects_a_redirected_directory() {
+        let fixture = tempfile::tempdir().unwrap();
+        let owned = fixture.path().join("owned");
+        std::fs::create_dir(&owned).unwrap();
+        let redirected = fixture.path().join("redirected");
+        std::os::unix::fs::symlink(&owned, &redirected).unwrap();
+        assert!(isolated_temporary_dir(Some(redirected)).is_err());
+    }
+
     #[test]
     fn mac_lite_uses_its_own_data_without_opening_an_existing_full_library() {
         let fixture = tempfile::tempdir().unwrap();
