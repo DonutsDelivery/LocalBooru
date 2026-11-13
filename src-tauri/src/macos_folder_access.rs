@@ -31,12 +31,27 @@ struct NativeGrants {
     storage_error: bool,
 }
 
+#[cfg(all(target_os = "macos", feature = "store-lite"))]
+static HELPER_BOOKMARK_DIRECTORY: std::sync::OnceLock<std::path::PathBuf> =
+    std::sync::OnceLock::new();
+
+/// Only native initialization supplies the child's bookmark store. A web request
+/// or inherited environment variable cannot select a different grant directory.
+#[cfg(all(target_os = "macos", feature = "store-lite"))]
+pub(crate) fn helper_bookmark_directory() -> Option<&'static Path> {
+    HELPER_BOOKMARK_DIRECTORY
+        .get()
+        .map(std::path::PathBuf::as_path)
+}
+
 /// Called before opening auxiliary libraries or starting any directory watcher.
 #[cfg(all(target_os = "macos", feature = "store-lite"))]
 pub fn initialize(app: &tauri::AppHandle, data: &Path) {
     use tauri::Manager;
-    let mut grants = Grants::new(data.join("folder-grants"), apple::AppleBackend);
+    let directory = data.join("folder-grants");
+    let mut grants = Grants::new(directory.clone(), apple::AppleBackend);
     let storage_error = grants.restore().is_err();
+    let _ = HELPER_BOOKMARK_DIRECTORY.set(directory);
     app.manage(std::sync::Mutex::new(NativeGrants {
         grants,
         storage_error,

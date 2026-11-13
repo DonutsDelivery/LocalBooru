@@ -16,7 +16,7 @@ fn suppress_console_window(_command: &mut Command) {}
 pub fn check_ffmpeg_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
-        let mut command = Command::new(crate::platform_paths::helper("ffmpeg"));
+        let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffmpeg"));
         command
             .arg("-version")
             .stdout(std::process::Stdio::null())
@@ -30,7 +30,7 @@ pub fn check_ffmpeg_available() -> bool {
 pub fn check_ffprobe_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
-        let mut command = Command::new(crate::platform_paths::helper("ffprobe"));
+        let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffprobe"));
         command
             .arg("-version")
             .stdout(std::process::Stdio::null())
@@ -47,7 +47,7 @@ pub fn get_video_metadata(file_path: &str) -> Option<(i32, i32, f64)> {
         return None;
     }
 
-    let mut command = Command::new(crate::platform_paths::helper("ffprobe"));
+    let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffprobe"));
     command.args([
         "-v",
         "error",
@@ -123,7 +123,7 @@ pub fn get_hwaccel_args() -> Vec<String> {
         if !check_ffmpeg_available() {
             return vec![];
         }
-        let mut command = Command::new(crate::platform_paths::helper("ffmpeg"));
+        let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffmpeg"));
         command.arg("-hwaccels");
         suppress_console_window(&mut command);
         let output = command.output().ok();
@@ -253,7 +253,7 @@ pub fn extract_preview_frames(
         (cmd_args[0].clone(), cmd_args[1..].to_vec())
     };
 
-    let mut command = Command::new(&program);
+    let mut command = crate::platform_paths::media_command(&program);
     command
         .args(&args)
         .stdout(std::process::Stdio::null())
@@ -412,7 +412,7 @@ pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) 
             output_path.into(),
         ]);
 
-        let mut command = Command::new(&cmd_args[0]);
+        let mut command = crate::platform_paths::media_command(&cmd_args[0]);
         command.args(&cmd_args[1..]);
         suppress_console_window(&mut command);
         match command.output() {

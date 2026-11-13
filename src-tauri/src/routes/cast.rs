@@ -18,7 +18,6 @@ use axum::routing::{get, post};
 use axum::Router;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::process::Command;
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
 use uuid::Uuid;
@@ -264,7 +263,7 @@ fn cast_direct_play_reject(path: &Path, reason: &str) -> bool {
 }
 
 async fn is_chromecast_direct_play_safe(path: &Path) -> bool {
-    let output = match Command::new(crate::platform_paths::helper("ffprobe"))
+    let output = match crate::platform_paths::media_command_async(crate::platform_paths::helper("ffprobe"))
         .hide_console_window()
         .args([
             "-v",
@@ -370,7 +369,7 @@ async fn is_chromecast_direct_play_safe(path: &Path) -> bool {
         return cast_direct_play_reject(path, "720p frame rate is above 60 fps");
     }
 
-    let audio_output = match Command::new(crate::platform_paths::helper("ffprobe"))
+    let audio_output = match crate::platform_paths::media_command_async(crate::platform_paths::helper("ffprobe"))
         .hide_console_window()
         .args([
             "-v",

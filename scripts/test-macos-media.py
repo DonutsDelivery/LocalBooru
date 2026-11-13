@@ -82,7 +82,7 @@ class BuildBoundaryTests(unittest.TestCase):
 class PayloadTests(unittest.TestCase):
     def test_wrong_architecture_or_homebrew_dependency_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            binary = Path(tmp) / 'ffmpeg'; binary.write_bytes(b'fixture'); binary.chmod(0o755)
+            binary = Path(tmp) / 'ffmpeg'; binary.write_bytes(b'DMC_MEDIA_BOOKMARK_DIRECTORY'); binary.chmod(0o755)
             with patch.object(builder, 'run', return_value='arm64'):
                 with self.assertRaises(ValueError): builder.validate_tool(binary)
             def fake(command, **_kwargs):
@@ -94,7 +94,7 @@ class PayloadTests(unittest.TestCase):
 
     def test_every_slice_is_checked_and_system_dependencies_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
-            binary = Path(tmp) / 'ffprobe'; binary.write_bytes(b'fixture'); binary.chmod(0o755)
+            binary = Path(tmp) / 'ffprobe'; binary.write_bytes(b'DMC_MEDIA_BOOKMARK_DIRECTORY'); binary.chmod(0o755)
             inspected = []
             def fake(command, **_kwargs):
                 if command[0] == 'lipo': return 'x86_64 arm64'
@@ -117,7 +117,7 @@ class PayloadTests(unittest.TestCase):
 
     def test_newer_macos_dependency_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            binary = Path(tmp) / 'ffmpeg'; binary.write_bytes(b'fixture'); binary.chmod(0o755)
+            binary = Path(tmp) / 'ffmpeg'; binary.write_bytes(b'DMC_MEDIA_BOOKMARK_DIRECTORY'); binary.chmod(0o755)
             def fake(command, **_kwargs):
                 if command[0] == 'lipo': return 'arm64 x86_64'
                 if '-L' in command: return 'ffmpeg:\n\t/usr/lib/libSystem.B.dylib (compatibility version 1)'

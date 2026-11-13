@@ -60,6 +60,15 @@ fn candidates(
 
 pub fn helper(name: &str) -> PathBuf {
     let executable = std::env::current_exe().ok();
+    // The sandbox edition must never mask a missing bundled helper by running
+    // an unrelated Homebrew/PATH executable without our bookmark activation code.
+    #[cfg(all(target_os = "macos", feature = "store-lite"))]
+    return contained_helper(
+        name,
+        RESOURCES.get().map(PathBuf::as_path),
+        executable.as_deref().and_then(Path::parent),
+    );
+    #[cfg(not(all(target_os = "macos", feature = "store-lite")))]
     candidates(
         name,
         std::env::consts::OS,
@@ -69,6 +78,45 @@ pub fn helper(name: &str) -> PathBuf {
     .into_iter()
     .find(|path| path.is_file())
     .unwrap_or_else(|| PathBuf::from(name))
+}
+
+#[cfg(any(all(target_os = "macos", feature = "store-lite"), test))]
+fn contained_helper(name: &str, resources: Option<&Path>, executable: Option<&Path>) -> PathBuf {
+    let resources = resources.map(Path::to_path_buf).or_else(|| {
+        executable
+            .and_then(Path::parent)
+            .map(|contents| contents.join("Resources"))
+    });
+    resources
+        .unwrap_or_else(|| PathBuf::from("/DMC-missing-resources"))
+        .join("bin")
+        .join(name)
+}
+
+fn command_with_bookmarks(
+    program: impl AsRef<std::ffi::OsStr>,
+    directory: Option<&Path>,
+) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    command.env_remove("DMC_MEDIA_BOOKMARK_DIRECTORY");
+    if let Some(directory) = directory {
+        command.env("DMC_MEDIA_BOOKMARK_DIRECTORY", directory);
+    }
+    command
+}
+
+/// Media helpers activate the parent's persisted grants inside their own process.
+/// Full editions clear this private transfer variable rather than inherit it.
+pub fn media_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    #[cfg(all(target_os = "macos", feature = "store-lite"))]
+    let directory = crate::macos_folder_access::helper_bookmark_directory();
+    #[cfg(not(all(target_os = "macos", feature = "store-lite")))]
+    let directory = None;
+    command_with_bookmarks(program, directory)
+}
+
+pub fn media_command_async(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command {
+    tokio::process::Command::from(media_command(program))
 }
 
 /// Directory of a helper found outside PATH, so child processes that look it up
@@ -212,5 +260,43 @@ mod tests {
         let windows = candidates("ffmpeg", "windows", Some(Path::new("DMC æ space")), None);
         assert_eq!(windows[0], PathBuf::from("DMC æ space/bin/ffmpeg.exe"));
         assert_eq!(windows[1], PathBuf::from("DMC æ space/ffmpeg.exe"));
+    }
+
+    #[test]
+    fn contained_helpers_never_fall_back_to_host_search_paths() {
+        assert_eq!(
+            contained_helper(
+                "ffmpeg",
+                Some(Path::new("/fixture/Donut æ.app/Contents/Resources")),
+                None
+            ),
+            PathBuf::from("/fixture/Donut æ.app/Contents/Resources/bin/ffmpeg")
+        );
+        assert_eq!(
+            contained_helper(
+                "ffprobe",
+                None,
+                Some(Path::new("/fixture/App.app/Contents/MacOS"))
+            ),
+            PathBuf::from("/fixture/App.app/Contents/Resources/bin/ffprobe")
+        );
+        assert!(contained_helper("ffmpeg", None, None).is_absolute());
+    }
+
+    #[test]
+    fn media_bookmark_transfer_is_explicit_and_does_not_change_parent_environment() {
+        let original = std::env::var_os("DMC_MEDIA_BOOKMARK_DIRECTORY");
+        let directory = Path::new("/synthetic/container/folder grants");
+        let command = command_with_bookmarks("fixture-ffmpeg", Some(directory));
+        let values: Vec<_> = command.get_envs().collect();
+        assert!(values.contains(&(
+            std::ffi::OsStr::new("DMC_MEDIA_BOOKMARK_DIRECTORY"),
+            Some(directory.as_os_str())
+        )));
+        let full = command_with_bookmarks("fixture-ffmpeg", None);
+        assert!(full
+            .get_envs()
+            .any(|(name, value)| name == "DMC_MEDIA_BOOKMARK_DIRECTORY" && value.is_none()));
+        assert_eq!(std::env::var_os("DMC_MEDIA_BOOKMARK_DIRECTORY"), original);
     }
 }

@@ -14,6 +14,7 @@ import urllib.request
 
 HERE = Path(__file__).resolve().parent
 PINS = HERE / 'macos-media-sources.json'
+GRANT_LOADER = HERE.parent / 'src-tauri/macos/media-folder-grants.c'
 ARCHS = ('arm64', 'x86_64')
 TOOLS = ('ffmpeg', 'ffprobe')
 PREFIX = '/DMC/helpers'
@@ -85,6 +86,8 @@ def validate_tool(path, archs=ARCHS):
         raise ValueError('Missing regular executable: ' + str(path))
     if set(run(['lipo', '-archs', path], capture=True).split()) != set(archs):
         raise ValueError('Media helper architecture mismatch')
+    if b'DMC_MEDIA_BOOKMARK_DIRECTORY' not in path.read_bytes():
+        raise ValueError('Media helper bookmark activation code is missing')
     # Every slice must depend exclusively on Apple system libraries/frameworks.
     for arch in archs:
         lines = run(['otool', '-arch', arch, '-L', path], capture=True).splitlines()[1:]
@@ -109,7 +112,7 @@ def build(cache, output):
         if not shutil.which(tool):
             raise ValueError('Missing build prerequisite: ' + tool)
     pins = json.loads(PINS.read_text())
-    recipe = hashlib.sha256(Path(__file__).read_bytes() + PINS.read_bytes()).hexdigest()
+    recipe = hashlib.sha256(Path(__file__).read_bytes() + PINS.read_bytes() + GRANT_LOADER.read_bytes()).hexdigest()
     owned_directory(cache, {'kind': 'dmc-macos-media-cache', 'schema': 1})
     if output.exists():
         raise ValueError('Use a fresh helper output directory')
@@ -150,6 +153,8 @@ def build(cache, output):
                    LDFLAGS=f'-arch {arch} -mmacosx-version-min=11.0',
                    PKG_CONFIG_PATH='', PKG_CONFIG_LIBDIR=str(stage / 'DMC/helpers/lib/pkgconfig'),
                    PKG_CONFIG_SYSROOT_DIR=str(stage))
+        run(['clang', '-std=c11', '-Wall', '-Wextra', '-Werror', '-O2', '-arch', arch,
+             '-mmacosx-version-min=11.0', '-c', GRANT_LOADER, '-o', area / 'media-folder-grants.o'], area, env)
         host = ('aarch64' if arch == 'arm64' else 'x86_64') + '-apple-darwin'
         x264 = area / 'x264'; x264.mkdir(exist_ok=True)
         run([os.path.relpath(trees['x264'] / 'configure', x264), '--prefix=' + PREFIX,
@@ -165,6 +170,7 @@ def build(cache, output):
         run(['make', '-j1'], webp, env)
         run(['make', '-j1', 'install', 'DESTDIR=' + str(stage)], webp, env)
         ffmpeg = area / 'ffmpeg'; ffmpeg.mkdir(exist_ok=True)
+        env['LDFLAGS'] += ' ../media-folder-grants.o -framework CoreFoundation -liconv'
         configure = [os.path.relpath(trees['ffmpeg'] / 'configure', ffmpeg),
                      '--prefix=' + PREFIX, '--arch=' + ('aarch64' if arch == 'arm64' else arch),
                      '--target-os=darwin', '--enable-cross-compile', '--cc=clang', '--cxx=clang++',
@@ -211,6 +217,7 @@ def build(cache, output):
         for relative in ('scripts/build-macos-media.py', 'scripts/macos-media-sources.json',
                          'scripts/macos-build-lock.py', 'scripts/package-macos-media.py',
                          'src-tauri/macos/media-helper.entitlements.plist',
+                         'src-tauri/macos/media-folder-grants.c', 'src-tauri/macos/media-folder-grants.md',
                          'src-tauri/macos/store-lite.entitlements.plist', 'docs/MACOS_MEDIA_HELPERS.md'):
             offer.add(HERE.parent / relative, arcname=relative)
         offer.add(output / 'media-build-receipt.json', arcname='media-build-receipt.json')

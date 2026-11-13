@@ -15,7 +15,7 @@ use std::time::Duration;
 use dashmap::DashMap;
 use regex::Regex;
 use serde::Deserialize;
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::{watch, RwLock as TokioRwLock};
 
 /// Cached hardware capability detection (done once at startup).
@@ -28,7 +28,7 @@ struct HwCaps {
 }
 
 fn run_ffmpeg_probe(args: &[&str]) -> bool {
-    let mut command = std::process::Command::new(crate::platform_paths::helper("ffmpeg"));
+    let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffmpeg"));
     command
         .args(args)
         .stdout(Stdio::null())
@@ -148,7 +148,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
     };
 
     // Get video stream info
-    if let Ok(output) = Command::new(crate::platform_paths::helper("ffprobe"))
+    if let Ok(output) = crate::platform_paths::media_command_async(crate::platform_paths::helper("ffprobe"))
         .hide_console_window()
         .args([
             "-v",
@@ -189,7 +189,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
 
     // If stream-level duration is missing (MKV etc.), query format-level
     if info.duration <= 0.0 {
-        if let Ok(output) = Command::new(crate::platform_paths::helper("ffprobe"))
+        if let Ok(output) = crate::platform_paths::media_command_async(crate::platform_paths::helper("ffprobe"))
             .hide_console_window()
             .args([
                 "-v",
@@ -214,7 +214,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
     }
 
     // Check for audio stream
-    if let Ok(output) = Command::new(crate::platform_paths::helper("ffprobe"))
+    if let Ok(output) = crate::platform_paths::media_command_async(crate::platform_paths::helper("ffprobe"))
         .hide_console_window()
         .args([
             "-v",
@@ -254,7 +254,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
 /// Uses ffmpeg volumedetect on the first 15 seconds for a quick estimate.
 /// Returns a non-positive dB value. Quiet sources are never amplified.
 pub async fn detect_audio_gain(path: &str) -> Option<f64> {
-    let output = Command::new(crate::platform_paths::helper("ffmpeg"))
+    let output = crate::platform_paths::media_command_async(crate::platform_paths::helper("ffmpeg"))
         .hide_console_window()
         .args([
             "-i",
@@ -609,7 +609,7 @@ async fn start_hls_attempts(
             stream.stream_id,
             cmd.join(" ")
         );
-        let mut ffmpeg_cmd = Command::new(&cmd[0]);
+        let mut ffmpeg_cmd = crate::platform_paths::media_command_async(&cmd[0]);
         ffmpeg_cmd
             .args(&cmd[1..])
             .stdout(Stdio::null())
@@ -1036,7 +1036,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("dmc-synthetic-hls-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let source = root.join("source.mp4");
-        let generated = Command::new(crate::platform_paths::helper("ffmpeg"))
+        let generated = crate::platform_paths::media_command_async(crate::platform_paths::helper("ffmpeg"))
             .args([
                 "-loglevel",
                 "error",

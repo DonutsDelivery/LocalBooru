@@ -37,9 +37,13 @@ retain the warm compilation cache. No user profiles or libraries are inputs.
 Before packaging, the actual bundled helpers must match the build receipt and
 pass synthetic H.264/AAC encode, decode and WebP-thumbnail checks. The lite
 helpers are signed with **only** `app-sandbox` and `inherit` entitlements. This
-inherits static sandbox rights, **not** Powerbox grants acquired after launch;
-explicit bookmark or file-descriptor transfer remains required and must pass
-native acceptance before lite media access is considered complete. The full edition's
+inherits static sandbox rights, **not** Powerbox grants acquired after launch.
+The parent explicitly passes its native private bookmark-store directory to
+each media command, and the linked constructor in both helpers resolves and
+activates those bookmarks inside the child. Lite refuses host/PATH helper
+fallbacks. Full editions remove the private transfer variable and retain normal
+helper discovery. This transfer must pass native sandbox acceptance before lite
+media access is considered complete. The full edition's
 helpers do not receive sandbox inheritance. After nested helper signing, the app
 is re-signed and verified, and only then is the DMG created. These are ad-hoc
 inspection signatures, not App Store or Developer ID signing.
