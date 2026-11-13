@@ -33,6 +33,11 @@ verify_runtime_tree() {
   done
   file "$runtime/bin/mpv" | grep 'ELF 64-bit' >/dev/null
   file "$runtime/bin/WebKitNetworkProcess" | grep 'ELF 64-bit' >/dev/null
+  file "$runtime/injected-bundle/libwebkit2gtkinjectedbundle.so" | grep 'ELF 64-bit' >/dev/null
+  if readelf -d "$runtime/injected-bundle/libwebkit2gtkinjectedbundle.so" | grep -E '(RPATH|RUNPATH).*/build/' >/dev/null; then
+    echo 'ERROR: injected bundle retains a build-directory runtime path' >&2
+    exit 1
+  fi
   grep -aF 'LOCALBOORU_WEBKIT_PROCESS_DIR' "$runtime/lib/libwebkit2gtk-4.1.so.0" >/dev/null
   if grep -aF 'WebKitGPUProcess' "$runtime/lib/libwebkit2gtk-4.1.so.0" >/dev/null; then
     require_file "$runtime/bin/WebKitGPUProcess"
