@@ -33,3 +33,11 @@ profile for acceptance. An actual installed Flatpak, clean restart, file selecti
 helper behavior, LAN playback and filesystem recovery must be tested separately
 before claiming support. Runtime-compiled Python addons and access to an external
 SVP Manager have additional sandbox and runtime dependency constraints.
+
+The patched WebKit runs its video process in a nested Flatpak sandbox. DMC
+creates a private per-process bridge directory inside the container's XDG data
+directory and exposes only that directory to the nested process. Resize requests
+and decoded-frame geometry must be readable/writable on both sides. This is
+transient bridge state, removed when its last application owner releases it;
+it is not library media or a persistent download. Native non-Flatpak storage
+keeps its existing layout. Do not disable WebKit's sandbox to repair playback.

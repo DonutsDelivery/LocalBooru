@@ -72,20 +72,29 @@ prepare_webkit() {
   local source="$BUILD/webkitgtk-$WEBKIT_VERSION"
   local build_dir="$BUILD/webkit-build"
   local patch_file="$ROOT/patches/webkitgtk/2.52.3-playbin-video-filter.patch"
-  local patch_hash
+  local bridge_patch="$ROOT/patches/webkitgtk/2.52.3-flatpak-video-bridge.patch"
+  local patch_hash base_patch_hash
   local configure_stamp="$build_dir/.localbooru-config-ubuntu24-gtk3-ruby34-v3"
-  patch_hash="$(sha256sum "$patch_file" | cut -d' ' -f1)"
+  base_patch_hash="$(sha256sum "$patch_file" | cut -d' ' -f1)"
+  patch_hash="$(cat "$patch_file" "$bridge_patch" | sha256sum | cut -d' ' -f1)"
 
   download_checked \
     "https://webkitgtk.org/releases/webkitgtk-$WEBKIT_VERSION.tar.xz" \
     "$tarball" "$WEBKIT_SHA256"
 
   if [[ ! -f "$source/.localbooru-patch-$patch_hash" ]]; then
-    rm -rf "$source" "$build_dir"
-    tar -xJf "$tarball" -C "$BUILD"
-    patch -d "$source" -p1 < "$patch_file"
-    touch "$source/.localbooru-patch-$patch_hash"
+    if [[ ! -f "$source/.localbooru-patch-$base_patch_hash" ]]; then
+      rm -rf "$source" "$build_dir"
+      tar -xJf "$tarball" -C "$BUILD"
+      patch -d "$source" -p1 < "$patch_file"
+      touch "$source/.localbooru-patch-$base_patch_hash"
+    fi
   fi
+  # Recognize only the exact launcher pre/postimage. Keep the base runtime's
+  # expensive objects while updating its combined source identity.
+  python3 "$ROOT/scripts/prepare-webkit-flatpak-bridge.py" --source "$source" --apply
+  touch "$source/.localbooru-patch-$patch_hash"
+  rm -f "$source/.localbooru-patch-$base_patch_hash"
 
   if [[ ! -f "$configure_stamp" ]]; then
     echo "==> Configuring patched WebKitGTK $WEBKIT_VERSION"
@@ -113,6 +122,9 @@ prepare_webkit() {
     echo "==> Reusing patched WebKitGTK configuration"
   fi
 
+  local bridge_patch_hash bridge_stamp
+  bridge_patch_hash="$(sha256sum "$bridge_patch" | cut -d' ' -f1)"
+  bridge_stamp="$build_dir/.localbooru-flatpak-bridge-$bridge_patch_hash"
   if [[ ! -s "$build_dir/lib/libwebkit2gtk-4.1.so.0" ||
         ! -s "$build_dir/lib/libjavascriptcoregtk-4.1.so.0" ||
         ! -x "$build_dir/bin/WebKitWebProcess" ]]; then
@@ -129,6 +141,12 @@ prepare_webkit() {
       "$build_dir/lib/libwebkit2gtk-4.1.so.0"
     timeout --signal=TERM --kill-after=30s "$NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS" \
       cmake --build "$build_dir" --target WebKit WebKitWebProcess --parallel "$JOBS"
+    touch "$bridge_stamp"
+  elif [[ ! -f "$bridge_stamp" ]]; then
+    echo "==> Updating WebKitGTK Flatpak video bridge"
+    timeout --signal=TERM --kill-after=30s "$NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS" \
+      cmake --build "$build_dir" --target WebKit WebKitWebProcess --parallel "$JOBS"
+    touch "$bridge_stamp"
   else
     echo "==> Reusing completed patched WebKitGTK runtime"
   fi
@@ -387,6 +405,8 @@ package_source_offer() {
   mkdir -p "$source_stage"
   cp "$BUILD/downloads/webkitgtk-$WEBKIT_VERSION.tar.xz" "$source_stage/"
   cp "$ROOT/patches/webkitgtk/2.52.3-playbin-video-filter.patch" "$source_stage/"
+  cp "$ROOT/patches/webkitgtk/2.52.3-flatpak-video-bridge.patch" "$source_stage/"
+  cp "$ROOT/scripts/prepare-webkit-flatpak-bridge.py" "$source_stage/"
   git -C "$BUILD/vapoursynth-r75" archive --format=tar.gz \
     --output="$source_stage/vapoursynth-R75.tar.gz" "$VAPOURSYNTH_COMMIT"
   cp "$ROOT/Dockerfile.linux-release" "$source_stage/"

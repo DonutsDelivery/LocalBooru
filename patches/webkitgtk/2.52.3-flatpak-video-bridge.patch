@@ -1,0 +1,37 @@
+# DMC private video bridge access through WebKit nested Flatpak sandbox.
+# preimage 3461894cffa8a39217b19be1ff042e2b080c85348c1c9323f9c070bc8d9a7a13 a4c4338907992086a6acd3c845cde7cd2991ba099af1f07dcca7bd059dece463 Source/WebKit/UIProcess/Launcher/glib/FlatpakLauncher.cpp
+--- a/Source/WebKit/UIProcess/Launcher/glib/FlatpakLauncher.cpp
++++ b/Source/WebKit/UIProcess/Launcher/glib/FlatpakLauncher.cpp
+@@ -31,0 +32,4 @@
++#include <cstring>
++#include <cstdlib>
++#include <sys/stat.h>
++#include <unistd.h>
+@@ -38,0 +43,21 @@
++
++// Only DMC's private, per-process bridge may cross the nested Flatpak sandbox.
++// The UI process creates this before starting WebKit; /tmp is not shared here.
++static const char* localBooruFlatpakBridgeRoot()
++{
++    const char* root = g_getenv("LOCALBOORU_SVP_SNAPSHOT_ROOT");
++    if (!root || !g_path_is_absolute(root))
++        return nullptr;
++    GUniquePtr<gchar> canonical(realpath(root, nullptr));
++    if (!canonical || strcmp(canonical.get(), root))
++        return nullptr;
++    GUniquePtr<gchar> name(g_path_get_basename(root));
++    constexpr const char* prefix = "localbooru-svp-snapshots-";
++    if (!g_str_has_prefix(name.get(), prefix) || !name.get()[strlen(prefix)])
++        return nullptr;
++    struct stat metadata { };
++    if (lstat(root, &metadata) || !S_ISDIR(metadata.st_mode)
++        || metadata.st_uid != geteuid() || (metadata.st_mode & 0777) != 0700)
++        return nullptr;
++    return root;
++}
+@@ -65,0 +91,5 @@
++
++        if (const char* bridgeRoot = localBooruFlatpakBridgeRoot()) {
++            GUniquePtr<gchar> pathArg(g_strdup_printf("--sandbox-expose-path=%s", bridgeRoot));
++            flatpakArgs.append(pathArg.get());
++        }

@@ -22,6 +22,9 @@ pub struct ManagerGraphSnapshotStore {
 struct SnapshotStoreInner {
     root: PathBuf,
     state: Mutex<SnapshotState>,
+    // Flatpak's WebProcess has a different /tmp. Keep its shared, private
+    // directory alive until the last bridge/snapshot user releases it.
+    _directory: Option<tempfile::TempDir>,
 }
 
 #[derive(Default)]
@@ -31,11 +34,46 @@ struct SnapshotState {
 }
 
 impl ManagerGraphSnapshotStore {
+    pub fn for_process() -> io::Result<Self> {
+        #[cfg(target_os = "linux")]
+        if Path::new("/.flatpak-info").exists() {
+            return Self::in_flatpak_data(std::env::var_os("XDG_DATA_HOME").map(PathBuf::from));
+        }
+        Ok(Self::new(std::env::temp_dir().join(format!(
+            "localbooru-svp-snapshots-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ))))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn in_flatpak_data(data: Option<PathBuf>) -> io::Result<Self> {
+        let data = data.filter(|path| path.is_absolute()).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Flatpak requires an absolute XDG_DATA_HOME for video playback",
+            )
+        })?;
+        fs::create_dir_all(&data)?;
+        let data = fs::canonicalize(data)?;
+        let directory = tempfile::Builder::new()
+            .prefix("localbooru-svp-snapshots-")
+            .tempdir_in(data)?;
+        Ok(Self {
+            inner: Arc::new(SnapshotStoreInner {
+                root: directory.path().to_path_buf(),
+                state: Mutex::new(SnapshotState::default()),
+                _directory: Some(directory),
+            }),
+        })
+    }
+
     pub fn new(root: PathBuf) -> Self {
         Self {
             inner: Arc::new(SnapshotStoreInner {
                 root,
                 state: Mutex::new(SnapshotState::default()),
+                _directory: None,
             }),
         }
     }
@@ -162,6 +200,50 @@ fn write_private_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn flatpak_bridge_is_private_shared_and_lives_until_last_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = tempfile::tempdir().unwrap();
+        let data = fixture.path().join("container data æ");
+        let store = ManagerGraphSnapshotStore::in_flatpak_data(Some(data.clone())).unwrap();
+        let root = store.root().to_owned();
+        assert_eq!(root.parent(), Some(data.as_path()));
+        assert_eq!(
+            fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        let (snapshot, _) = store.publish_bytes(b"synthetic video graph").unwrap();
+        assert_eq!(
+            fs::read(snapshot.snapshot_path).unwrap(),
+            b"synthetic video graph"
+        );
+        let last_owner = store.clone();
+        drop(store);
+        assert!(root.is_dir());
+        drop(last_owner);
+        assert!(!root.exists());
+        assert!(data.is_dir());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn flatpak_bridge_never_falls_back_to_host_home_or_relative_data() {
+        for path in [
+            None,
+            Some(PathBuf::from("relative/data")),
+            Some(PathBuf::new()),
+        ] {
+            assert_eq!(
+                ManagerGraphSnapshotStore::in_flatpak_data(path)
+                    .err()
+                    .unwrap()
+                    .kind(),
+                io::ErrorKind::InvalidInput
+            );
+        }
+    }
 
     fn test_store(name: &str) -> ManagerGraphSnapshotStore {
         ManagerGraphSnapshotStore::new(std::env::temp_dir().join(format!(

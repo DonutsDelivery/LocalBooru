@@ -48,6 +48,10 @@ tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
 tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
   | grep '2.52.3-playbin-video-filter.patch' >/dev/null
 tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
+  | grep '2.52.3-flatpak-video-bridge.patch' >/dev/null
+tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
+  | grep 'prepare-webkit-flatpak-bridge.py' >/dev/null
+tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
   | grep 'vapoursynth-R75.tar.gz' >/dev/null
 
 if has_bundle deb; then

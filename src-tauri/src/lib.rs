@@ -261,12 +261,8 @@ pub fn run() {
         }
     }
 
-    let manager_graph_snapshots =
-        ManagerGraphSnapshotStore::new(std::env::temp_dir().join(format!(
-            "localbooru-svp-snapshots-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        )));
+    let manager_graph_snapshots = ManagerGraphSnapshotStore::for_process()
+        .expect("Failed to create the private video playback bridge directory");
     std::env::set_var(
         "LOCALBOORU_SVP_SNAPSHOT_ROOT",
         manager_graph_snapshots.root(),
