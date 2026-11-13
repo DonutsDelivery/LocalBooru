@@ -29,6 +29,11 @@ verify_runtime_tree() {
     require_file "$path"
   done
   file "$runtime/bin/mpv" | grep 'ELF 64-bit' >/dev/null
+  grep -aF 'localbooru-svp-snapshots-' "$runtime/lib/libwebkit2gtk-4.1.so.0" >/dev/null
+  if [[ -e "$root/AppRun.tauri" ]]; then
+    cmp "$root/usr/lib/libwebkit2gtk-4.1.so.0" "$runtime/lib/libwebkit2gtk-4.1.so.0"
+    cmp "$root/usr/lib/libjavascriptcoregtk-4.1.so.0" "$runtime/lib/libjavascriptcoregtk-4.1.so.0"
+  fi
   file "$runtime/gstreamer/libgstlocalbooruvs.so" | grep 'ELF 64-bit' >/dev/null
   readelf -d "$runtime/gstreamer/libgstlocalbooruvs.so" \
     | grep '\$ORIGIN/../python-home/lib/python3.12/site-packages/vapoursynth' >/dev/null

@@ -358,6 +358,7 @@ package_appimage() {
   (cd "$BUILD" && chmod +x "$base" && "$base" --appimage-extract >/dev/null)
   mv "$BUILD/squashfs-root" "$stage"
   install_runtime_tree "$stage"
+  bash "$ROOT/scripts/select-appimage-webkit.sh" "$stage"
   # Tauri discovers its tray library with dlopen, so linuxdeploy cannot infer
   # these dependencies. Bundle their SONAMEs for contained runtimes as well.
   mkdir -p "$stage/usr/lib"
@@ -407,6 +408,7 @@ package_source_offer() {
   cp "$ROOT/patches/webkitgtk/2.52.3-playbin-video-filter.patch" "$source_stage/"
   cp "$ROOT/patches/webkitgtk/2.52.3-flatpak-video-bridge.patch" "$source_stage/"
   cp "$ROOT/scripts/prepare-webkit-flatpak-bridge.py" "$source_stage/"
+  cp "$ROOT/scripts/select-appimage-webkit.sh" "$source_stage/"
   git -C "$BUILD/vapoursynth-r75" archive --format=tar.gz \
     --output="$source_stage/vapoursynth-R75.tar.gz" "$VAPOURSYNTH_COMMIT"
   cp "$ROOT/Dockerfile.linux-release" "$source_stage/"
