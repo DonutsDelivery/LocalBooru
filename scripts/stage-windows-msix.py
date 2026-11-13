@@ -143,7 +143,7 @@ def stage(zip_path, receipt_path, source, output, identity, publisher, display_n
     return output, receipt
 
 
-def package(stage_dir, package_path, makeappx, signtool=None, thumbprint=None, timestamp=None, run=subprocess.run):
+def package(stage_dir, package_path, makeappx, signtool=None, thumbprint=None, timestamp=None, run=subprocess.run, packager_kind='makeappx'):
     target = Path(package_path).absolute()
     if target.exists() or target.is_symlink() or target.suffix.lower() != '.msix':
         raise ValueError('MSIX output must be a new .msix file')
@@ -151,16 +151,25 @@ def package(stage_dir, package_path, makeappx, signtool=None, thumbprint=None, t
         raise ValueError('MSIX output must be outside its input stage and the checkout')
     if not makeappx or bool(signtool) != bool(thumbprint) or bool(thumbprint) != bool(timestamp):
         raise ValueError('Use MakeAppx; signing requires SignTool, certificate thumbprint and timestamp URL together')
+    if packager_kind not in ('makeappx', 'makemsix'):
+        raise ValueError('Unsupported MSIX packager kind')
     if thumbprint and (not re.fullmatch('[0-9A-Fa-f]{40}', thumbprint) or not timestamp.startswith('https://')):
         raise ValueError('Use a certificate SHA-1 thumbprint and HTTPS RFC3161 timestamp')
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
-        run([makeappx, 'pack', '/d', str(stage_dir), '/p', str(target), '/h', 'SHA256', '/no'], check=True)
+        pack = ([makeappx, 'pack', '/d', str(stage_dir), '/p', str(target), '/h', 'SHA256', '/no']
+                if packager_kind == 'makeappx' else [makeappx, 'pack', '-d', str(stage_dir), '-p', str(target)])
+        run(pack, check=True)
         if not target.is_file() or target.stat().st_size == 0:
             raise ValueError('MakeAppx did not produce an MSIX')
         with tempfile.TemporaryDirectory(prefix='dmc-msix-verify-') as temporary:
             unpacked = Path(temporary) / 'unpacked'
-            run([makeappx, 'unpack', '/p', str(target), '/d', str(unpacked), '/no'], check=True)
+            unpack = ([makeappx, 'unpack', '/p', str(target), '/d', str(unpacked), '/no']
+                      if packager_kind == 'makeappx' else [makeappx, 'unpack', '-p', str(target), '-d', str(unpacked), '-ss'])
+            # The freshly packed input is unsigned. Only signature enforcement
+            # is skipped by native SDK inspection; block-map/content validation
+            # remains active, and this is never reported as signature evidence.
+            run(unpack, check=True)
             for path in Path(stage_dir).rglob('*'):
                 if path.is_file() and digest(path) != digest(unpacked / path.relative_to(stage_dir)):
                     raise ValueError('SDK round-trip changed staged content')
@@ -170,7 +179,7 @@ def package(stage_dir, package_path, makeappx, signtool=None, thumbprint=None, t
     except BaseException:
         if target.is_file(): target.unlink()
         raise
-    return {'msix_sha256': digest(target), 'signed_and_verified': bool(signtool)}
+    return {'msix_sha256': digest(target), 'signed_and_verified': bool(signtool), 'packager_kind': packager_kind}
 
 
 def main():
@@ -179,6 +188,7 @@ def main():
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--package', help='Optional new .msix output; requires the real SDK MakeAppx tool')
     parser.add_argument('--makeappx', help='Executable path, or a wrapper invoking SDK MakeAppx under Wine')
+    parser.add_argument('--packager-kind', choices=['makeappx', 'makemsix'], default='makeappx')
     parser.add_argument('--signtool')
     parser.add_argument('--certificate-thumbprint')
     parser.add_argument('--timestamp-url')
@@ -191,7 +201,7 @@ def main():
                             args.publisher, args.publisher_display_name, args.version)
     if args.package:
         result = package(output, args.package, args.makeappx, args.signtool,
-                         args.certificate_thumbprint, args.timestamp_url)
+                         args.certificate_thumbprint, args.timestamp_url, packager_kind=args.packager_kind)
         result.update(source_commit=receipt['source_commit'], portable_sha256=receipt['portable_sha256'],
                       identity=args.identity, publisher=args.publisher, version=args.version)
         Path(str(args.package) + '.receipt.json').write_text(json.dumps(result, indent=2) + '\n')

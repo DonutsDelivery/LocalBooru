@@ -110,9 +110,11 @@ class PackagingTests(unittest.TestCase):
             commands.append(command)
             action = command[1]
             if action == fail: raise subprocess.CalledProcessError(23, command)
-            if action == 'pack': Path(command[command.index('/p') + 1]).write_bytes(b'MOCK: not an MSIX release artifact')
+            package_flag = '/p' if '/p' in command else '-p'
+            directory_flag = '/d' if '/d' in command else '-d'
+            if action == 'pack': Path(command[command.index(package_flag) + 1]).write_bytes(b'MOCK: not an MSIX release artifact')
             if action == 'unpack':
-                output = Path(command[command.index('/d') + 1]); shutil.copytree(stage, output)
+                output = Path(command[command.index(directory_flag) + 1]); shutil.copytree(stage, output)
                 if corrupt: (output / 'DonutMediaCenter.exe').write_bytes(b'changed')
         return run
 
@@ -135,6 +137,15 @@ class PackagingTests(unittest.TestCase):
                              run=self.runner(stage, [], fail=action))
             self.assertFalse(target.exists())
             self.assertTrue(stage.is_dir())
+
+    def test_native_sdk_skips_only_unsigned_signature_check_during_roundtrip(self):
+        stage = self.stage(); commands = []; target = self.root / 'native-mock.msix'
+        result = msix.package(stage, target, '/mock/makemsix', run=self.runner(stage, commands), packager_kind='makemsix')
+        self.assertEqual(commands[0], ['/mock/makemsix', 'pack', '-d', str(stage), '-p', str(target)])
+        self.assertIn('-ss', commands[1])
+        self.assertNotIn('-ss', commands[0])
+        self.assertFalse(result['signed_and_verified'])
+        self.assertEqual(result['packager_kind'], 'makemsix')
 
     def test_corrupt_roundtrip_and_missing_sdk_never_produce_a_package(self):
         stage = self.stage(); target = self.root / 'corrupt-mock.msix'

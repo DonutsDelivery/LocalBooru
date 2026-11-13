@@ -48,6 +48,28 @@ target, not a replacement build host. The script keeps SDK semantic validation
 enabled, unpacks the result with the SDK, and checks staged bytes round-trip.
 Missing tools or SDK failures are errors; no alternate ZIP fallback exists.
 
+The SDK 10.0.26100 MakeAppx probe in the existing Wine 9 image failed on an
+unimplemented Wine API. A native Linux alternative uses Microsoft's own
+[cross-platform MSIX SDK](https://github.com/microsoft/msix-packaging). Build it
+through the shared gate (Python 3.12+, CMake 3.29+, Clang and Ninja are required):
+
+```sh
+LOCALBOORU_MSIX_TOOLS_ROOT=/absolute/owned/tool-cache scripts/build-msix-tools-local.sh
+```
+
+The bootstrap pins upstream commit `25a65f5c1690930813bcc10cdf1d59fa865f2bb1`
+and archive SHA256 `a9c28df8f9bad329b811c0fae6ddf7870aa866327c3836a39c3966064d0a549b`.
+It enables packaging and XML schema validation, uses one compiler, refuses unknown
+nonempty caches and records the resulting tool hash. It is a release build tool;
+its dependencies are not shipped in DMC. No global software is installed.
+
+Use `--packager-kind makemsix --makeappx /absolute/path/printed/by/bootstrap`.
+Native packing keeps full validation. Round-trip inspection of the freshly packed
+unsigned file explicitly uses `unpack -ss`, skipping only signature enforcement;
+the receipt still says unsigned until explicit signing and verification succeed.
+The bootstrap and adapter have fixture checks; actual native tool compilation and
+package acceptance must be recorded separately.
+
 Optional signing requires all three explicit parameters: `--signtool`,
 `--certificate-thumbprint` and `--timestamp-url` (HTTPS RFC3161). The thumbprint
 selects a certificate already available to the signing environment. The script
