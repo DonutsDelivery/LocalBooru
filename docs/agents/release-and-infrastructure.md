@@ -313,10 +313,11 @@ The container builds:
 1. Node 22 frontend assets from both npm lockfiles.
 2. Tauri 2 / Rust release binary from `Cargo.lock`.
 3. WebKitGTK 2.52.3 from the pinned upstream tarball and SHA-256.
-4. The tracked LocalBooru WebKit patch, including:
+4. The tracked LocalBooru WebKit patches, including:
    - application-owned GStreamer `video-filter` insertion;
    - direct GStreamer GL-frame copies for video-backed WebGL textures;
-   - `LOCALBOORU_WEB_PROCESS_PATH` selection for the Manager-compatible helper.
+   - `LOCALBOORU_WEB_PROCESS_PATH` selection for the Manager-compatible helper;
+   - private Flatpak bridge exposure and a matching bundled Web/Network/GPU process set.
 5. VapourSynth R75 from a pinned Git commit.
 6. LocalBooru's GStreamer pass-through and VapourSynth bridge plugins.
 7. AppImage, Debian, RPM, portable ZIP, source-compliance archive, and checksums.

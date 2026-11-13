@@ -7,7 +7,8 @@ Third-party runtime components retain the licenses described below.
 
 The Linux release bundles modified WebKitGTK libraries for the
 application-selected GStreamer video-filter hook, WebProcess path override,
-and private video bridge access inside Flatpak's nested WebProcess sandbox.
+private video bridge access inside Flatpak's nested WebProcess sandbox,
+and discovery of matching bundled WebKit process helpers.
 The exact upstream source is WebKitGTK 2.52.3 from:
 
 https://webkitgtk.org/releases/webkitgtk-2.52.3.tar.xz
@@ -18,7 +19,8 @@ Upstream SHA-256:
 
 The complete LocalBooru patches are included in the source artifact and in the
 LocalBooru repository at `patches/webkitgtk/2.52.3-playbin-video-filter.patch`
-and `patches/webkitgtk/2.52.3-flatpak-video-bridge.patch`, applied in that order.
+`patches/webkitgtk/2.52.3-flatpak-video-bridge.patch`, and
+`patches/webkitgtk/2.52.3-bundled-process-directory.patch`, applied in that order.
 The source artifact also includes `prepare-webkit-flatpak-bridge.py`, which
 validates and applies the second patch before rebuilding the affected runtime.
 WebKitGTK carries LGPL-2.1-or-later and BSD-family component licenses; consult

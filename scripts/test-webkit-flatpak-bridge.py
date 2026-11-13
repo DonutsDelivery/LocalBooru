@@ -66,6 +66,13 @@ def main(source, compile_guard):
         target = program / RELATIVE
         target.parent.mkdir(parents=True)
         shutil.copyfile(source / RELATIVE, target)
+        process_relative = "Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp"
+        process_target = program / process_relative
+        process_target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source / process_relative, process_target)
+        process_patch = REPO / "patches/webkitgtk/2.52.3-bundled-process-directory.patch"
+        bridge.prepare(program, apply=True, patch=process_patch)
+        assert bridge.prepare(program, apply=True, patch=process_patch) == "already upgraded"
         bridge.prepare(program, apply=True)
         assert bridge.prepare(program, apply=True) == "already upgraded"
         patched = target.read_text()
@@ -82,7 +89,30 @@ def main(source, compile_guard):
         helper = "static const char* localBooruFlatpakBridgeRoot()" + patched.split(
             "static const char* localBooruFlatpakBridgeRoot()", 1)[1].split("GRefPtr<GSubprocess> flatpakSpawn", 1)[0]
         cpp = root / "fixture.cpp"
-        cpp.write_text(HEADER + helper + TEST)
+        process_helper = "static String findWebKitProcess(const char* processName)" + process_target.read_text().split(
+            "static String findWebKitProcess(const char* processName)", 1)[1].split("String executablePathOfWebProcess()", 1)[0]
+        process_types = r'''
+#define ENABLE(feature) 0
+#define PKGLIBEXECDIR "/system-webkit-helpers"
+using String = std::string;
+namespace FileSystem {
+static String stringFromFileSystemRepresentation(const char* path) { return path; }
+static String pathByAppendingComponent(const String& parent, const String& child) { return parent + "/" + child; }
+}
+namespace StringView { static String fromLatin1(const char* text) { return text; } }
+'''
+        process_test = r'''
+static void testProcessLookup() {
+    g_unsetenv("LOCALBOORU_WEBKIT_PROCESS_DIR");
+    assert(findWebKitProcess("WebKitNetworkProcess") == "/system-webkit-helpers/WebKitNetworkProcess");
+    g_setenv("LOCALBOORU_WEBKIT_PROCESS_DIR", "/owned fixture with spaces", true);
+    // A missing packaged helper must not silently use a different host version.
+    assert(findWebKitProcess("WebKitNetworkProcess") == "/owned fixture with spaces/WebKitNetworkProcess");
+    assert(findWebKitProcess("WebKitGPUProcess") == "/owned fixture with spaces/WebKitGPUProcess");
+    g_unsetenv("LOCALBOORU_WEBKIT_PROCESS_DIR");
+}
+'''
+        cpp.write_text(HEADER + helper + process_types + process_helper + process_test + TEST.replace("assert(argc == 2);", "testProcessLookup(); assert(argc == 2);"))
         flags = shlex.split(subprocess.check_output(["pkg-config", "--cflags", "--libs", "glib-2.0"], text=True))
         gate = os.environ.get("HOST_HEAVY_BUILD_HELPER", str(Path.home() / ".local/bin/host-heavy-build"))
         subprocess.run([gate, "run", "--project", "DonutMediaCenter", "--worktree", str(REPO), "--wait", "21600", "--",

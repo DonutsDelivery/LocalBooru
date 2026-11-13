@@ -78,8 +78,10 @@ GIT_COMMON_DIR="$(realpath "$(git -C "$ROOT" rev-parse --git-common-dir)")"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct "$SOURCE_COMMIT")}"
 WEBKIT_PATCH_PATH="patches/webkitgtk/2.52.3-playbin-video-filter.patch"
 WEBKIT_BRIDGE_PATCH_PATH="patches/webkitgtk/2.52.3-flatpak-video-bridge.patch"
+WEBKIT_PROCESS_PATCH_PATH="patches/webkitgtk/2.52.3-bundled-process-directory.patch"
 WEBKIT_BASE_PATCH_HASH="$(git -C "$ROOT" show "$SOURCE_COMMIT:$WEBKIT_PATCH_PATH" | sha256sum | cut -d' ' -f1)"
-WEBKIT_PATCH_HASH="$(git -C "$ROOT" show "$SOURCE_COMMIT:$WEBKIT_PATCH_PATH" "$SOURCE_COMMIT:$WEBKIT_BRIDGE_PATCH_PATH" | sha256sum | cut -d' ' -f1)"
+WEBKIT_PREVIOUS_PATCH_HASH="$(git -C "$ROOT" show "$SOURCE_COMMIT:$WEBKIT_PATCH_PATH" "$SOURCE_COMMIT:$WEBKIT_BRIDGE_PATCH_PATH" | sha256sum | cut -d' ' -f1)"
+WEBKIT_PATCH_HASH="$(git -C "$ROOT" show "$SOURCE_COMMIT:$WEBKIT_PATCH_PATH" "$SOURCE_COMMIT:$WEBKIT_BRIDGE_PATCH_PATH" "$SOURCE_COMMIT:$WEBKIT_PROCESS_PATCH_PATH" | sha256sum | cut -d' ' -f1)"
 VAPOURSYNTH_COMMIT="c05906995662bacd5bddf853d8e68f19286987db"
 CACHE_MARKER=".localbooru-build-cache"
 
@@ -176,6 +178,7 @@ if [[ ! -x "$BUILD_ROOT/webkit-build/bin/WebKitWebProcess" ]]; then
 fi
 # A recognized base cache can receive the bounded launcher upgrade in place.
 if [[ ! -f "$BUILD_ROOT/webkitgtk-2.52.3/.localbooru-patch-$WEBKIT_PATCH_HASH" &&
+      ! -f "$BUILD_ROOT/webkitgtk-2.52.3/.localbooru-patch-$WEBKIT_PREVIOUS_PATCH_HASH" &&
       ! -f "$BUILD_ROOT/webkitgtk-2.52.3/.localbooru-patch-$WEBKIT_BASE_PATCH_HASH" ]]; then
   native_runtime_cache_missing+=("webkitgtk-2.52.3/.localbooru-patch-$WEBKIT_PATCH_HASH")
 fi

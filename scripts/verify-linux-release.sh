@@ -19,6 +19,8 @@ verify_runtime_tree() {
   local runtime="$root/usr/lib/localbooru/native-svp"
   for path in \
     "$runtime/bin/mpv" \
+    "$runtime/bin/WebKitWebProcess" \
+    "$runtime/bin/WebKitNetworkProcess" \
     "$runtime/lib/libwebkit2gtk-4.1.so.0" \
     "$runtime/lib/libjavascriptcoregtk-4.1.so.0" \
     "$runtime/lib/libjxl.so.0.7" \
@@ -29,6 +31,12 @@ verify_runtime_tree() {
     require_file "$path"
   done
   file "$runtime/bin/mpv" | grep 'ELF 64-bit' >/dev/null
+  file "$runtime/bin/WebKitNetworkProcess" | grep 'ELF 64-bit' >/dev/null
+  grep -aF 'LOCALBOORU_WEBKIT_PROCESS_DIR' "$runtime/lib/libwebkit2gtk-4.1.so.0" >/dev/null
+  if grep -aF 'WebKitGPUProcess' "$runtime/lib/libwebkit2gtk-4.1.so.0" >/dev/null; then
+    require_file "$runtime/bin/WebKitGPUProcess"
+    file "$runtime/bin/WebKitGPUProcess" | grep 'ELF 64-bit' >/dev/null
+  fi
   grep -aF 'localbooru-svp-snapshots-' "$runtime/lib/libwebkit2gtk-4.1.so.0" >/dev/null
   if [[ -e "$root/AppRun.tauri" ]]; then
     cmp "$root/usr/lib/libwebkit2gtk-4.1.so.0" "$runtime/lib/libwebkit2gtk-4.1.so.0"
@@ -54,6 +62,8 @@ tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
   | grep '2.52.3-playbin-video-filter.patch' >/dev/null
 tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
   | grep '2.52.3-flatpak-video-bridge.patch' >/dev/null
+tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
+  | grep '2.52.3-bundled-process-directory.patch' >/dev/null
 tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
   | grep 'prepare-webkit-flatpak-bridge.py' >/dev/null
 tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \

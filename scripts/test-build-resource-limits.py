@@ -60,7 +60,7 @@ class BuildResourceTests(unittest.TestCase):
             output = tmp/'dist'; output.mkdir()
             (output/'SHA256SUMS-Windows').write_text('')
             # Synthetic cache sentinels prevent an implicit native bootstrap.
-            patch_hash = subprocess.check_output(['git', '-C', str(ROOT), 'show', 'HEAD:patches/webkitgtk/2.52.3-playbin-video-filter.patch', 'HEAD:patches/webkitgtk/2.52.3-flatpak-video-bridge.patch'])
+            patch_hash = subprocess.check_output(['git', '-C', str(ROOT), 'show', 'HEAD:patches/webkitgtk/2.52.3-playbin-video-filter.patch', 'HEAD:patches/webkitgtk/2.52.3-flatpak-video-bridge.patch', 'HEAD:patches/webkitgtk/2.52.3-bundled-process-directory.patch'])
             import hashlib
             files = ['webkit-build/.localbooru-config-ubuntu24-gtk3-ruby34-v3',
                      'webkit-build/lib/libwebkit2gtk-4.1.so.0', 'webkit-build/lib/libjavascriptcoregtk-4.1.so.0',

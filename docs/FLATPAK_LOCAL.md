@@ -41,3 +41,9 @@ and decoded-frame geometry must be readable/writable on both sides. This is
 transient bridge state, removed when its last application owner releases it;
 it is not library media or a persistent download. Native non-Flatpak storage
 keeps its existing layout. Do not disable WebKit's sandbox to repair playback.
+
+The AppImage conversion must retain a consistent WebKit process set. The
+linuxdeploy SONAMEs point at DMC's patched WebKit and JavaScriptCore. The native
+runtime includes matching Web, Network, and (when enabled) GPU process helpers;
+launchers set their private helper directory. A missing bundled helper fails
+within that directory rather than falling back to an unrelated host version.

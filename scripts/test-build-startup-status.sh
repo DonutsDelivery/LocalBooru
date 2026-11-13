@@ -157,7 +157,7 @@ fi
 [[ ! -e "$TEMP_DIR/linux-missing-state/localbooru/build-cache.owner" ]]
 
 linux_build="$TEMP_DIR/linux-build"
-patch_hash="$(cat "$ROOT/patches/webkitgtk/2.52.3-playbin-video-filter.patch" "$ROOT/patches/webkitgtk/2.52.3-flatpak-video-bridge.patch" | sha256sum | cut -d' ' -f1)"
+patch_hash="$(cat "$ROOT/patches/webkitgtk/2.52.3-playbin-video-filter.patch" "$ROOT/patches/webkitgtk/2.52.3-flatpak-video-bridge.patch" "$ROOT/patches/webkitgtk/2.52.3-bundled-process-directory.patch" | sha256sum | cut -d' ' -f1)"
 mkdir -p \
   "$linux_build/webkit-build/lib" \
   "$linux_build/webkit-build/bin" \

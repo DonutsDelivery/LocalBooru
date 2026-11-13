@@ -1,0 +1,9 @@
+# DMC matching packaged WebKit process set.
+# preimage 6e21e6a1fc537cb4b4707efd787aaad3befab2048f66004c3a03a38de49f8dbe eefc23981e16311886e0a8290d68f36950dd91c30f33d57b371149aadbaeb2bc Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp
+--- a/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp
++++ b/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp
+@@ -46,0 +47,4 @@
++    // Packaged builds carry a matching process set. Never substitute a host
++    // helper from a different WebKit revision when that set is selected.
++    if (const char* directory = g_getenv("LOCALBOORU_WEBKIT_PROCESS_DIR"); directory && *directory)
++        return FileSystem::pathByAppendingComponent(FileSystem::stringFromFileSystemRepresentation(directory), StringView::fromLatin1(processName));
