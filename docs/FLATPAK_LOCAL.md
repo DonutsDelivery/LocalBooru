@@ -18,6 +18,10 @@ and `org.freedesktop.Platform` runtimes at branch 25.08. It checks the input
 hash before extracting it, preserves the bundled patched WebKit and media
 runtime, and writes the build tree, a local OSTree repository, a `.flatpak`
 bundle, and the input hash. Building and testing this bundle does not publish it.
+The launcher preserves the runtime's automatically inherited `codecs-extra`
+library and GStreamer paths ahead of its base codec libraries. Freedesktop 25.08
+provides H.264 decoding in that extension; selecting the base libraries first
+breaks FFmpeg video thumbnails and transcoding even when WebView playback works.
 It is not a substitute for a source-based, reproducible Flathub package; the
 Flathub manifest and submission are maintained by Emil.
 

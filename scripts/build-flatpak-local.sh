@@ -40,6 +40,7 @@ cat > "$out/build/files/bin/donutmediacenter" <<'LAUNCHER'
 export APPDIR=/app/lib/donutmediacenter
 RUNTIME="$APPDIR/usr/lib/localbooru/native-svp"
 PLATFORM_LIB=/usr/lib/x86_64-linux-gnu
+CODECS_LIB="$PLATFORM_LIB/codecs-extra/lib"
 # Keep one matching GLib/GStreamer/driver cohort. AppImage hooks hide the
 # platform's GL plugin and load older Ubuntu core libraries into newer plugins.
 # The patched WebKit pair and private helpers remain supplied by DMC.
@@ -49,8 +50,10 @@ for name in libwebkit2gtk-4.1.so.0 libjavascriptcoregtk-4.1.so.0; do
     exit 1
   fi
 done
-export LD_LIBRARY_PATH="$PLATFORM_LIB:$RUNTIME/lib:$RUNTIME/python-home/lib:$APPDIR/usr/lib"
-export GST_PLUGIN_SYSTEM_PATH_1_0="$PLATFORM_LIB/gstreamer-1.0"
+# Freedesktop 25.08 supplies H.264 through its inherited codecs-extra extension.
+# Prefer those codec libraries to the base runtime's intentionally reduced set.
+export LD_LIBRARY_PATH="$CODECS_LIB:$PLATFORM_LIB:$RUNTIME/lib:$RUNTIME/python-home/lib:$APPDIR/usr/lib"
+export GST_PLUGIN_SYSTEM_PATH_1_0="$CODECS_LIB/gstreamer-1.0:/usr/lib/extensions/gstreamer-1.0:$PLATFORM_LIB/gstreamer-1.0"
 export GST_PLUGIN_PATH_1_0="$RUNTIME/gstreamer"
 export GST_PLUGIN_SCANNER_1_0="$PLATFORM_LIB/gstreamer-1.0/gst-plugin-scanner"
 export GST_PTP_HELPER_1_0="$PLATFORM_LIB/gstreamer-1.0/gst-ptp-helper"
