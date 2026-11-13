@@ -75,7 +75,8 @@ class BuildResourceTests(unittest.TestCase):
                 'sources': pins['sources'], 'toolchain': pins['toolchain'],
                 'recipe_sha256': hashlib.sha256(b''.join(source_file(name) for name in (
                     'scripts/build-windows-media.py', 'scripts/windows-media-sources.json',
-                    'scripts/build-macos-media.py', 'Dockerfile.windows-media', 'Dockerfile.windows-release'))).hexdigest(),
+                    'scripts/build-macos-media.py', 'Dockerfile.windows-media', 'Dockerfile.windows-release',
+                    'docs/WINDOWS_MEDIA_HELPERS.md', 'LICENSE', 'NOTICE', 'LICENSES/MIT-legacy.txt'))).hexdigest(),
             }))
             (output/'DonutMediaCenter-Windows-media-sources.tar.xz').write_bytes(b'Synthetic media source offer')
             archive = output/'DonutMediaCenter-Windows-source.tar.xz'

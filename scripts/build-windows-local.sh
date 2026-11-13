@@ -178,7 +178,8 @@ pins = json.loads(source_file('scripts/windows-media-sources.json'))
 assert media['sources'] == pins['sources'] and media['toolchain'] == pins['toolchain']
 assert media['recipe_sha256'] == hashlib.sha256(b''.join(source_file(p) for p in (
     'scripts/build-windows-media.py', 'scripts/windows-media-sources.json',
-    'scripts/build-macos-media.py', 'Dockerfile.windows-media', 'Dockerfile.windows-release'))).hexdigest()
+    'scripts/build-macos-media.py', 'Dockerfile.windows-media', 'Dockerfile.windows-release',
+    'docs/WINDOWS_MEDIA_HELPERS.md', 'LICENSE', 'NOTICE', 'LICENSES/MIT-legacy.txt'))).hexdigest()
 print('Windows source/recipe/artifact receipt verified')
 PY
 python3 "$ROOT/scripts/export-application-source.py" \

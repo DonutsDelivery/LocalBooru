@@ -143,9 +143,7 @@ def extract(path, pin, directory):
 
 
 def recipe_hash():
-    return hashlib.sha256(b''.join(p.read_bytes() for p in (
-        Path(__file__), PINS, BASE_HELPER, DOCKERFILE,
-        HERE.parent / 'Dockerfile.windows-release'))).hexdigest()
+    return hashlib.sha256(b''.join(p.read_bytes() for p in recipe_files().values())).hexdigest()
 
 
 def fresh_work_directory(cache, recipe):

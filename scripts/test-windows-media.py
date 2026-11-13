@@ -80,6 +80,20 @@ class MediaTests(unittest.TestCase):
         self.assertEqual(list(second.iterdir()), [])
         self.assertTrue((first / 'ffmpeg.o').is_file())
 
+    def test_recipe_cache_key_includes_archived_docs_and_licenses(self):
+        files = media.recipe_files()
+        documentation = self.root / 'documentation'; documentation.write_text('Synthetic docs')
+        license_file = self.root / 'license'; license_file.write_text('Synthetic license')
+        files['docs/WINDOWS_MEDIA_HELPERS.md'] = documentation
+        files['LICENSE'] = license_file
+        with patch.object(media, 'recipe_files', return_value=files):
+            original = media.recipe_hash()
+            documentation.write_text('Changed synthetic docs')
+            self.assertNotEqual(original, media.recipe_hash())
+            original = media.recipe_hash()
+            license_file.write_text('Changed synthetic license')
+            self.assertNotEqual(original, media.recipe_hash())
+
     def test_unsafe_archive_members_are_rejected(self):
         for name, link in [('../outside', None), ('/absolute', None),
                            ('source/link', '../../outside'), ('source/link', '..')]:
