@@ -32,7 +32,7 @@ afterEach(cleanup)
 test('reauthorization clears recovery without adding or removing library references', async () => {
   desktop.addDirectory.mockResolvedValue('/synthetic/Library æ')
   desktop.getFolderAccessStatus
-    .mockResolvedValueOnce({ required: true, failed: 1, storage_error: false })
+    .mockResolvedValueOnce({ required: true, failed: 1, storage_error: false, failed_grants: [{ id: 'fixture-old-grant', label: '/synthetic/Old library' }] })
     .mockResolvedValue({ required: true, failed: 0, storage_error: false })
   render(<DirectoriesPage />)
   fireEvent.click(await screen.findByRole('button', { name: 'Restore folder access' }))
@@ -40,6 +40,7 @@ test('reauthorization clears recovery without adding or removing library referen
   expect(notifications.success).toHaveBeenCalledWith('Folder access saved for future launches')
   expect(api.addDirectory).not.toHaveBeenCalled()
   expect(api.removeLibrary).not.toHaveBeenCalled()
+  expect(desktop.addDirectory).toHaveBeenCalledWith({ replacingGrant: 'fixture-old-grant' })
 })
 
 test('a failed grant save stays visible and leaves recovery available', async () => {

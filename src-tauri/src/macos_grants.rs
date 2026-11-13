@@ -89,6 +89,16 @@ impl<B: Backend> Grants<B> {
         self.failed.len()
     }
 
+    pub fn failed_ids(&self) -> Vec<String> {
+        let mut ids: Vec<_> = self.failed.iter().cloned().collect();
+        ids.sort();
+        ids
+    }
+
+    pub fn knows(&self, id: &str) -> bool {
+        self.active.contains_key(id) || self.failed.contains(id)
+    }
+
     fn path(&self, id: &str) -> Result<PathBuf, String> {
         if id.is_empty() || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
             return Err("Invalid grant identifier".into());
@@ -203,6 +213,27 @@ mod tests {
         assert_eq!(restored.failed_count(), 1);
         assert!(restored.restore().unwrap().is_empty());
         assert_eq!(restored.failed_count(), 0);
+    }
+
+    #[test]
+    fn moved_folder_replaces_failed_reference_instead_of_creating_an_orphan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let directory = tmp.path().join("grants");
+        let mut initial = Grants::new(directory.clone(), fake(false, false, false));
+        initial
+            .persist_and_activate("old-location", b"old bookmark")
+            .unwrap();
+        let mut restored = Grants::new(directory.clone(), fake(true, false, false));
+        restored.restore().unwrap();
+        assert_eq!(restored.failed_ids(), ["old-location"]);
+        restored.backend = fake(false, false, false);
+        restored
+            .persist_and_activate("old-location", b"moved folder bookmark")
+            .unwrap();
+        let mut next = Grants::new(directory.clone(), fake(false, false, false));
+        assert!(next.restore().unwrap().is_empty());
+        assert_eq!(fs::read_dir(directory).unwrap().count(), 1);
+        assert_eq!(next.failed_count(), 0);
     }
 
     #[test]

@@ -6,8 +6,10 @@ their existing folder picker and storage. Lite does not install a LaunchAgent.
 
 The lite native picker creates a security-scoped bookmark from its selection,
 resolves it, starts access, then atomically writes it under the lite application's
-`folder-grants` data directory before returning success. There is no command
-accepting a browser-provided path or bookmark. Bookmarks are not cached media and
+`folder-grants` data directory before returning success. Browser arguments cannot
+authorize a new path or bookmark. Recovery may identify an existing failed grant
+or its previous path; every new authorization still comes from the native picker.
+Bookmarks are not cached media and
 must survive cache eviction. The command retains active scopes for library
 watchers, HTTP media serving, and background library operations.
 
@@ -17,7 +19,9 @@ Stale bookmarks refresh while access is active. Failed resolution, refresh, or
 write preserves references and reports recovery in Watch Directories. Select the
 folder again using **Restore folder access**; the existing watcher refreshes.
 If the actual folder moved, use its existing Relocate action to update library
-paths. Scope replacement and shutdown balance every successful access start with
+paths. Recovery replaces the existing grant even when the selected folder moved.
+A successful selection retries the complete grant store before clearing a storage
+error. Scope replacement and shutdown balance every successful access start with
 a stop. No selected path is written to grant diagnostic logs.
 
 The adapter follows Apple's [bookmark creation API](https://developer.apple.com/documentation/corefoundation/cfurlcreatebookmarkdata(_:_:_:_:_:_:)),

@@ -65,7 +65,7 @@ const tauriAPI = {
   },
 
   // Open native folder picker dialog
-  addDirectory: async () => {
+  addDirectory: async ({ replacingGrant = null, previousPath = null } = {}) => {
     await tauriReady
     if (/Android/i.test(navigator.userAgent) && tauriInvoke) {
       try {
@@ -79,7 +79,7 @@ const tauriAPI = {
     if (/Macintosh|Mac OS X/i.test(navigator.userAgent)
       && window.__DMC_EDITION_CAPABILITIES__?.edition === 'store-lite' && tauriInvoke) {
       try {
-        return await tauriInvoke('pick_persistent_media_folder')
+        return await tauriInvoke('pick_persistent_media_folder', { replacingGrant, previousPath })
       } catch (error) {
         throw typeof error === 'string' ? new Error(error) : error
       }

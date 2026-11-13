@@ -52,9 +52,9 @@ function DirectoriesPage() {
     setFolderAccess(status || null)
   }
 
-  const restoreFolderAccess = async () => {
+  const restoreFolderAccess = async (replacingGrant = null) => {
     try {
-      const selected = await getDesktopAPI()?.addDirectory?.()
+      const selected = await getDesktopAPI()?.addDirectory?.({ replacingGrant })
       if (!selected) return
       await refreshFolderAccess()
       await refreshDirectories()
@@ -277,7 +277,7 @@ function DirectoriesPage() {
     const key = makeDirKey(dir)
     const api = getDesktopAPI()
     if (api?.addDirectory) {
-      const newPath = await api.addDirectory()
+      const newPath = await api.addDirectory({ previousPath: dir.path })
       if (newPath && newPath !== dir.path) {
         if (!confirm(`Update directory location?\n\nFrom: ${dir.path}\nTo: ${newPath}\n\nThis will update all file references.`)) {
           return
@@ -556,7 +556,14 @@ function DirectoriesPage() {
                 <p>Some folder permissions could not be restored. Your library references are preserved.
                   Reconnect unavailable drives, then select each folder again to restore access.
                   If a folder moved, use its Relocate action.</p>
-                <button onClick={restoreFolderAccess}>Restore folder access</button>
+                {folderAccess.failed_grants?.length > 0
+                  ? folderAccess.failed_grants.map(grant => (
+                    <div key={grant.id}>
+                      <span>{grant.label} </span>
+                      <button onClick={() => restoreFolderAccess(grant.id)}>Restore folder access</button>
+                    </div>
+                  ))
+                  : <button onClick={() => restoreFolderAccess()}>Restore folder access</button>}
               </div>
             )}
 

@@ -9,6 +9,20 @@ pub struct AccessStatus {
     pub required: bool,
     pub failed: usize,
     pub storage_error: bool,
+    pub failed_grants: Vec<FailedGrant>,
+}
+
+#[derive(serde::Serialize)]
+pub struct FailedGrant {
+    id: String,
+    label: String,
+}
+
+#[cfg(all(target_os = "macos", feature = "store-lite"))]
+fn grant_id(path: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    use std::os::unix::ffi::OsStrExt;
+    format!("{:x}", Sha256::digest(path.as_os_str().as_bytes()))
 }
 
 #[cfg(all(target_os = "macos", feature = "store-lite"))]
@@ -30,7 +44,10 @@ pub fn initialize(app: &tauri::AppHandle, data: &Path) {
 }
 
 #[tauri::command]
-pub fn folder_access_status(app: tauri::AppHandle) -> Result<AccessStatus, String> {
+pub fn folder_access_status(
+    app: tauri::AppHandle,
+    library: tauri::State<'_, crate::server::state::AppState>,
+) -> Result<AccessStatus, String> {
     #[cfg(all(target_os = "macos", feature = "store-lite"))]
     {
         use tauri::Manager;
@@ -38,19 +55,44 @@ pub fn folder_access_status(app: tauri::AppHandle) -> Result<AccessStatus, Strin
         let state = state
             .lock()
             .map_err(|_| "Folder access is busy; try again")?;
+        let mut labels = std::collections::HashMap::new();
+        for lib in library.library_manager().all_mounted() {
+            if let Ok(connection) = lib.main_pool.get() {
+                if let Ok(mut query) = connection.prepare("SELECT path FROM watch_directories") {
+                    if let Ok(paths) = query.query_map([], |row| row.get::<_, String>(0)) {
+                        for path in paths.flatten() {
+                            labels.insert(grant_id(Path::new(&path)), path);
+                        }
+                    }
+                }
+            }
+        }
+        let failed_grants = state
+            .grants
+            .failed_ids()
+            .into_iter()
+            .map(|id| FailedGrant {
+                label: labels
+                    .remove(&id)
+                    .unwrap_or_else(|| "Unavailable folder".into()),
+                id,
+            })
+            .collect();
         return Ok(AccessStatus {
             required: true,
             failed: state.grants.failed_count(),
             storage_error: state.storage_error,
+            failed_grants,
         });
     }
     #[cfg(not(all(target_os = "macos", feature = "store-lite")))]
     {
-        let _ = app;
+        let _ = (app, library);
         Ok(AccessStatus {
             required: false,
             failed: 0,
             storage_error: false,
+            failed_grants: vec![],
         })
     }
 }
@@ -60,11 +102,11 @@ pub fn folder_access_status(app: tauri::AppHandle) -> Result<AccessStatus, Strin
 pub async fn pick_persistent_media_folder(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::server::state::AppState>,
+    replacing_grant: Option<String>,
+    previous_path: Option<String>,
 ) -> Result<Option<String>, String> {
     #[cfg(all(target_os = "macos", feature = "store-lite"))]
     {
-        use sha2::{Digest, Sha256};
-        use std::os::unix::ffi::OsStrExt;
         use tauri::Manager;
         use tauri_plugin_dialog::{DialogExt, FilePath};
         let selected = app
@@ -78,15 +120,29 @@ pub async fn pick_persistent_media_folder(
             _ => return Err("Select a local folder".into()),
         };
         let bookmark = apple::bookmark_from_selection(&path)?;
-        let id = format!("{:x}", Sha256::digest(path.as_os_str().as_bytes()));
         {
             let grants = app.state::<std::sync::Mutex<NativeGrants>>();
             let mut grants = grants
                 .lock()
                 .map_err(|_| "Folder access is busy; try again")?;
+            let id = if let Some(id) = replacing_grant {
+                if !grants.grants.failed_ids().contains(&id) {
+                    return Err("Folder recovery changed. Refresh and try again.".into());
+                }
+                id
+            } else {
+                previous_path
+                    .as_deref()
+                    .map(Path::new)
+                    .map(grant_id)
+                    .filter(|id| grants.grants.knows(id))
+                    .unwrap_or_else(|| grant_id(&path))
+            };
             grants.grants.persist_and_activate(&id, &bookmark)
                 .map_err(|_| "Folder access could not be saved. Check available storage and select the folder again.")?;
-            grants.storage_error = false;
+            // A successful save says nothing about unread grants. Reconcile the
+            // complete store before clearing a startup enumeration error.
+            grants.storage_error = grants.grants.restore().is_err();
         }
         let path = path
             .to_str()
@@ -100,7 +156,7 @@ pub async fn pick_persistent_media_folder(
     }
     #[cfg(not(all(target_os = "macos", feature = "store-lite")))]
     {
-        let _ = (app, state);
+        let _ = (app, state, replacing_grant, previous_path);
         Err("Persistent folder grants are only used by macOS Lite".into())
     }
 }

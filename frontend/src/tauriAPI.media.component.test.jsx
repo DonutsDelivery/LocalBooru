@@ -64,7 +64,7 @@ test('Mac Lite authorizes folders through the native bookmark picker', async () 
   invoke.mockResolvedValue('/synthetic/Music/日本語 album')
   const { tauriAPI } = await import('./tauriAPI')
   expect(await tauriAPI.addDirectory()).toBe('/synthetic/Music/日本語 album')
-  expect(invoke).toHaveBeenCalledWith('pick_persistent_media_folder')
+  expect(invoke).toHaveBeenCalledWith('pick_persistent_media_folder', { replacingGrant: null, previousPath: null })
   expect(open).not.toHaveBeenCalled()
 })
 
