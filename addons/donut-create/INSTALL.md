@@ -78,6 +78,13 @@ cancellation is ongoing. These edits stay in the next draft and leave the
 captured run unchanged. Generate becomes available once the current submission
 settles; completion cannot replace newer draft edits.
 
+The whole-image style also goes to the enhancer. The enhancer writes it into the
+scene prompt and into every non-empty face prompt, so the image and each face
+refinement are conditioned on the same style. For that run only, the style box is
+left empty so the style is not applied twice; Edit runs leave the style alone.
+If the model leaves the style out, DMC puts it back in front. Wildcards in the
+style resolve with the image's execution seed, like the other briefs.
+
 Original editable briefs stay unchanged. Write explicit directions to invent,
 choose or vary details when desired; fixed facts and literal trigger tokens must
 remain intact. The resulting scene and face text conditions only that run and

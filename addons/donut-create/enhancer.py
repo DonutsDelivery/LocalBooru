@@ -24,6 +24,7 @@ CATALOG = json.loads((ROOT / "enhancer_models.json").read_text(encoding="utf-8")
 SYSTEM_PROMPT = (ROOT / "enhancer_prompt.txt").read_text(encoding="utf-8")
 MAX_BRIEF = 16000
 MAX_FACE = 8000
+MAX_STYLE = 4000
 FACE_POSITIONS = ("left", "center", "right")
 FACE_ORDINALS = ("1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th",
                  "9th", "10th", "11th", "12th", "13th", "14th", "15th", "16th")
@@ -38,9 +39,21 @@ def inference_seed(seed):
     return seed % 0xffffffff
 
 
-def messages(image_brief, face_brief):
+def messages(image_brief, face_brief, style_brief=""):
+    brief = {"image_brief": image_brief, "face_brief": face_brief}
+    if style_brief.strip():
+        brief["style_brief"] = style_brief
     return [{"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": json.dumps({"image_brief": image_brief, "face_brief": face_brief}, ensure_ascii=False)}]
+            {"role": "user", "content": json.dumps(brief, ensure_ascii=False)}]
+
+
+def carry_style(text, style):
+    # The style is a fixed fact of every prompt it conditions. Small models can
+    # drop literal wording, so restore it in front rather than lose it silently.
+    squash = lambda value: " ".join(value.split()).casefold()
+    if not style.strip() or not text.strip() or squash(style) in squash(text):
+        return text
+    return style.strip() + " " + text
 
 
 def _valid_relative_positions(plan):
@@ -73,7 +86,7 @@ def _valid_relative_positions(plan):
     return True
 
 
-def parse_result(text, finish_reason, supplied_face=False):
+def parse_result(text, finish_reason, supplied_face=False, style=""):
     if finish_reason != "stop" or not isinstance(text, str):
         raise ValueError("The model did not finish its response. Try again; your original prompts are unchanged.")
     # MiniCPM's ChatML template can return its complete reasoning before JSON.
@@ -126,6 +139,14 @@ def parse_result(text, finish_reason, supplied_face=False):
             raise ValueError("The model could not resolve the supplied facial descriptions. Specify which characters are left of or above others, or give left-to-right face order and retry; your original prompts are unchanged.")
     elif supplied_face and not result["face_prompt"].strip():
         raise ValueError("The model returned an incomplete or unsafe prompt pair. Try again; your original prompts are unchanged.")
+    if style.strip():
+        result = {**result, "main_prompt": carry_style(result["main_prompt"], style),
+                  "face_prompt": carry_style(result["face_prompt"], style)}
+        if "face_prompts" in result:
+            result["face_prompts"] = [{**row, "face_prompt": carry_style(row["face_prompt"], style)} for row in result["face_prompts"]]
+        if (len(result["main_prompt"]) > MAX_BRIEF or len(result["face_prompt"]) > MAX_FACE
+                or any(len(row["face_prompt"]) > MAX_FACE for row in result.get("face_prompts", []))):
+            raise ValueError("The prompts plus the style exceed the length limits. Shorten the style and retry; your original prompts are unchanged.")
     return result
 
 
@@ -193,15 +214,16 @@ class Enhancer(VerifiedDownloads):
             result["job"] = copy.deepcopy(self.jobs[owner])
         return result
 
-    def start(self, owner, kind, model, image_brief="", face_brief="", seed=0):
+    def start(self, owner, kind, model, image_brief="", face_brief="", seed=0, style_brief=""):
         if self.closing or self.task is not None and not self.task.done():
             raise RuntimeError("The enhancer is busy. Wait for the current operation to finish.")
         if model not in CATALOG["models"] or kind not in {"install", "enhance"}:
             raise ValueError("Choose an available enhancer model and action.")
         if not self.runtime:
             raise ValueError("A managed enhancer runtime is not available for this platform.")
-        if not isinstance(image_brief, str) or not isinstance(face_brief, str) or len(image_brief) > MAX_BRIEF or len(face_brief) > MAX_FACE:
-            raise ValueError("The main brief must fit 16,000 characters and the face brief 8,000 characters.")
+        if (not isinstance(image_brief, str) or not isinstance(face_brief, str) or not isinstance(style_brief, str)
+                or len(image_brief) > MAX_BRIEF or len(face_brief) > MAX_FACE or len(style_brief) > MAX_STYLE):
+            raise ValueError("The main brief must fit 16,000 characters, the face brief 8,000 and the style 4,000.")
         sampling_seed = inference_seed(seed)
         if kind == "enhance" and (not image_brief.strip() or not self.ready(model)):
             raise ValueError("Write an image brief and install the selected model first.")
@@ -214,16 +236,16 @@ class Enhancer(VerifiedDownloads):
         self.current = (owner, job)
         self._cancel.clear()
         self._status = {}
-        self.task = asyncio.create_task(self._run(job, model, image_brief, face_brief, seed))
+        self.task = asyncio.create_task(self._run(job, model, image_brief, face_brief, seed, style_brief))
         return copy.deepcopy(job)
 
-    async def _run(self, job, model, image_brief, face_brief, seed):
+    async def _run(self, job, model, image_brief, face_brief, seed, style_brief=""):
         try:
             if job["kind"] == "install":
                 await self.stop_process()
                 await asyncio.to_thread(self.install, model)
             else:
-                job["result"] = await self.infer(model, image_brief, face_brief, seed)
+                job["result"] = await self.infer(model, image_brief, face_brief, seed, style_brief)
             job["state"] = "complete"
         except (asyncio.CancelledError, SetupCancelled):
             job["state"] = "cancelled"
@@ -432,7 +454,7 @@ class Enhancer(VerifiedDownloads):
             raise asyncio.CancelledError
         self._port, self._api_key = port, key
 
-    async def infer(self, model, image_brief, face_brief, seed=0):
+    async def infer(self, model, image_brief, face_brief, seed=0, style_brief=""):
         sampling_seed = inference_seed(seed)
         # Keep only this add-on's healthy CPU helper. Requests carry fresh briefs
         # and seeds; no shared model server, GPU unload, cache file, or text logs.
@@ -455,7 +477,7 @@ class Enhancer(VerifiedDownloads):
                     await asyncio.sleep(0.2)
                 else:
                     raise ValueError("The managed enhancer model took too long to load. Try again.")
-                conversation = messages(image_brief, face_brief)
+                conversation = messages(image_brief, face_brief, style_brief)
                 # Measure the actual templated input; never let a long brief silently lose facts.
                 template = await client.post('/apply-template', json={"messages": conversation,
                     "chat_template_kwargs": {"enable_thinking": False}})
@@ -484,7 +506,7 @@ class Enhancer(VerifiedDownloads):
                 if not response.is_success:
                     raise ValueError("The local model could not process this brief. Try a shorter brief or retry; nothing has been applied.")
                 choice = response.json()["choices"][0]
-                return parse_result(choice["message"].get("content"), choice.get("finish_reason"), bool(face_brief.strip()))
+                return parse_result(choice["message"].get("content"), choice.get("finish_reason"), bool(face_brief.strip()), style_brief)
         except BaseException:
             await self.stop_process()
             raise

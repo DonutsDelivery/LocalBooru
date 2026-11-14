@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import CreatePromptEnhancer from './CreatePromptEnhancer'
 import useCreatePanelSizes from './useCreatePanelSizes'
+import { adjustPromptWeight, loraMatches, weightArrowDelta } from './promptWeightEdit'
 
 const LABELS = {
   prompt: 'Describe your image', stylePrompt: 'Style prompt', negativePrompt: 'Negative prompt',
@@ -17,6 +18,7 @@ const LABELS = {
   upscale1SeedVrSteps: 'Upscale steps', upscale2SeedVrSteps: 'Upscale steps', postUpscaleSteps: 'Upscale steps',
   upscale1SeedVrDenoise: 'Upscale denoise', upscale2SeedVrDenoise: 'Upscale denoise', postUpscaleColorCorrection: 'Color correction',
   faceDenoise: 'Face denoise', maxFaces: 'Maximum faces', facePrompt: 'Describe only the face',
+  promptWeightStrength: 'Weight strength',
   geometryMode: 'Reference layout', outputCanvas: 'Output canvas',
   groundingPx: 'Reference guidance (px)', groundingSchedule: 'Guidance schedule', groundingStartPx: 'Start guidance (px)', groundingEndPx: 'End guidance (px)',
   editLora: 'Editing LoRA', editLoraStrength: 'Editing strength', maskBMode: 'Reference B subject mask', maskBModel: 'Subject mask model',
@@ -25,15 +27,67 @@ const LABELS = {
 }
 const EMPTY_FIELDS = {}
 const SLIDER_FIELDS = new Set([
-  'modelBlend', 'guidance', 'megapixels', 'tapStrength', 'decensorWeight', 'nagStrength', 'sdaStrength', 'toneStrength',
+  'modelBlend', 'guidance', 'megapixels', 'tapStrength', 'decensorWeight', 'nagStrength', 'sdaStrength', 'toneStrength', 'promptWeightStrength',
   'editLoraStrength', 'maskBThreshold', 'cropAX', 'cropAY', 'cropBX', 'cropBY',
   'upscale1Scale', 'upscale2Scale', 'postUpscaleScale', 'upscale1Denoise', 'upscale2Denoise', 'postUpscaleDenoise',
   'upscale1SeedVrDenoise', 'upscale2SeedVrDenoise', 'faceDenoise',
 ])
 const SLIDER_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'])
+const WEIGHTED_PROMPTS = new Set(['prompt', 'editPrompt', 'stylePrompt'])
 
 function modelLabel(value) {
   return String(value).split(/[\\/]/).pop().replace(/\.(safetensors|ckpt|gguf|pth)$/i, '').replace(/_/g, ' ')
+}
+
+function LoRAPicker({ label, value, choices, disabled, onChange }) {
+  const listId = useId()
+  const listed = value && !choices.includes(value) ? [value, ...choices] : choices
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  const matches = listed.filter(choice => loraMatches(choice, open ? query : ''))
+  function openList() {
+    setOpen(true)
+    setQuery('')
+    const index = Math.max(0, listed.indexOf(value))
+    setActive(index)
+  }
+  function pick(choice) {
+    setOpen(false)
+    setQuery('')
+    if (choice != null && choice !== value) onChange(choice)
+  }
+  return <label className="create-field create-lora-name">{label}
+    <input role="combobox" aria-expanded={open && !disabled} aria-autocomplete="list" disabled={disabled}
+      aria-controls={open && !disabled ? listId : undefined}
+      aria-activedescendant={open && !disabled && matches[active] != null ? `${listId}-${active}` : undefined}
+      value={open ? query : modelLabel(value || '')} placeholder={open ? 'Search any part of the filename' : undefined}
+      onFocus={() => { if (!open) openList() }}
+      onChange={event => { setOpen(true); setQuery(event.target.value); setActive(0) }}
+      onBlur={() => { setOpen(false); setQuery('') }}
+      onKeyDown={event => {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault()
+          if (!open) openList()
+          else setActive(index => Math.min(Math.max(matches.length - 1, 0), index + 1))
+        } else if (event.key === 'ArrowUp') {
+          event.preventDefault()
+          setActive(index => Math.max(0, index - 1))
+        } else if (event.key === 'Enter') {
+          event.preventDefault()
+          if (open && matches[active] != null) pick(matches[active])
+        } else if (event.key === 'Escape') {
+          setOpen(false)
+          setQuery('')
+        }
+      }} />
+    {open && !disabled && <ul id={listId} className="create-lora-matches" role="listbox">
+      {matches.length === 0 ? <li className="create-lora-empty">No filename match</li> : matches.map((choice, index) => <li key={choice}>
+        <button id={`${listId}-${index}`} type="button" role="option" tabIndex={-1} aria-selected={index === active}
+          onMouseDown={event => event.preventDefault()} onClick={() => pick(choice)}>{modelLabel(choice)}</button>
+      </li>)}
+    </ul>}
+  </label>
 }
 
 function displayNumber(value) {
@@ -179,6 +233,8 @@ export default function SimpleCreateControls({
   const submission = useRef(false)
   const rememberedStrength = useRef({})
   const uploadId = useId()
+  const weightSelection = useRef(null)
+  const stageRef = useRef(null)
   const fields = snapshot?.fields || EMPTY_FIELDS
   const available = key => !!fields[key] && fields[key].available !== false
   const value = key => {
@@ -221,6 +277,12 @@ export default function SimpleCreateControls({
     notifyDrafts(draftRef.current)
   }, [notifyDrafts])
   useEffect(() => { draftReporter.current = onDraftChange }, [onDraftChange])
+  useLayoutEffect(() => {
+    const pending = weightSelection.current
+    if (!pending?.element) return
+    weightSelection.current = null
+    pending.element.setSelectionRange(pending.start, pending.end)
+  })
   useEffect(() => {
     controlsAlive.current = true
     const interactions = sliderInteractions.current
@@ -256,6 +318,36 @@ export default function SimpleCreateControls({
     notifyDrafts(next)
     setInputError('')
   }
+  stageRef.current = stage
+
+  function applyPromptWeight(node, start, end, delta) {
+    const next = adjustPromptWeight(node.value, start, end, delta)
+    if (!next) {
+      if (Number.isFinite(start) && Number.isFinite(end)) node.setSelectionRange(start, end)
+      return
+    }
+    weightSelection.current = { element: node, start: next.start, end: next.end }
+    stageRef.current?.(node.dataset.promptWeight, next.text)
+    node.value = next.text
+    node.setSelectionRange(next.start, next.end)
+  }
+
+  function onPromptWeightKey(event) {
+    const node = event.target
+    const delta = weightArrowDelta(event)
+    if (!delta || !node?.dataset?.promptWeight || node.disabled) return
+    const start = node.selectionStart
+    const end = node.selectionEnd
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    applyPromptWeight(node, start, end, delta)
+  }
+
+  useEffect(() => {
+    // Claim only Shift+Up/Down; other selection keys retain native behavior.
+    window.addEventListener('keydown', onPromptWeightKey, true)
+    return () => window.removeEventListener('keydown', onPromptWeightKey, true)
+  }, [])
 
   const commit = useCallback(async (patch, expected, submitDraft = false) => {
     // Next-run changes stay local until the captured run (including cancellation) settles.
@@ -390,7 +482,7 @@ export default function SimpleCreateControls({
   function textField(key, label = LABELS[key], placeholder, rows = 3) {
     if (!available(key)) return null
     return <label className="create-field" key={key}>{label}
-      <textarea rows={rows} value={value(key)} placeholder={placeholder} disabled={draftLocked}
+      <textarea data-prompt-weight={WEIGHTED_PROMPTS.has(key) ? key : undefined} rows={rows} value={value(key)} placeholder={placeholder} disabled={draftLocked}
         onChange={event => stage(key, event.target.value)} onBlur={() => commitField(key)} />
     </label>
   }
@@ -492,10 +584,7 @@ export default function SimpleCreateControls({
       {rows.length === 0 && <p className="create-control-note">No LoRAs selected. Add one from the backend’s installed models.</p>}
       <div className="create-lora-rows">{rows.map((row, index) => <div className={`create-lora-row${row.enabled === false ? ' is-disabled' : ''}`} key={row.id || index}>
         <label className="create-lora-enabled"><input type="checkbox" checked={row.enabled !== false} disabled={draftLocked} aria-label={`Enable LoRA ${index + 1}`} onChange={event => update(index, 'enabled', event.target.checked)} /></label>
-        <label className="create-field create-lora-name">LoRA<select value={row.lora_name || ''} disabled={draftLocked || row.enabled === false || !choices.length} onChange={event => update(index, 'lora_name', event.target.value)}>
-          {!choices.includes(row.lora_name) && <option value={row.lora_name || ''}>{row.lora_name ? modelLabel(row.lora_name) : 'Choose an installed LoRA'}</option>}
-          {choices.map(choice => <option value={choice} key={choice}>{modelLabel(choice)}</option>)}
-        </select></label>
+        <LoRAPicker label="LoRA" value={row.lora_name || ''} choices={choices} disabled={draftLocked || row.enabled === false || !choices.length} onChange={next => update(index, 'lora_name', next)} />
         {row.enabled !== false && ['model_weight', 'clip_weight'].map((key, strengthIndex) => <SliderNumberField key={key}
           className={`create-lora-strength create-lora-${strengthIndex === 0 ? 'model' : 'text'}-strength`} label={strengthIndex === 0 ? 'Model strength' : 'Text strength'} context={`LoRA ${index + 1}`}
           value={row[key] ?? 1} bounds={{ min: bounds.min ?? -1000, max: bounds.max ?? 1000, step: bounds.step ?? 0.01 }} sliderBounds={[-2, 2]} sliderStep={0.05} disabled={draftLocked}
@@ -561,6 +650,8 @@ export default function SimpleCreateControls({
           {(available('stylePrompt') || showNegativePrompt) && <details className="create-prompt-options"><summary>Style & exclusions <span>Optional</span></summary>
             {textField('stylePrompt', 'Style prompt', 'Lighting, colors, artistic style…')}{showNegativePrompt && textField('negativePrompt', 'Avoid in the image', 'Things you want to leave out…')}
           </details>}
+          {strengthFeature('promptWeightStrength', 'Prompt weights', null,
+            'Select a phrase, then Shift+Up or Shift+Down changes its weight by 0.05 from 1.00. Use (smile:1.5) to emphasize or (fog:-1) to suppress. Text-only Krea2 generation with Guidance 1. Scene weights stay separate from Face detail.')}
           {activeTab === 'create' && <>
             {available('referenceGuidance') && <section className="create-reference-section">{switchField('referenceGuidance', 'Reference guidance')}
               {value('referenceGuidance') === true && <><p className="create-control-note">Guide the look or subject with images. This stays separate from editing.</p>
@@ -627,7 +718,7 @@ export default function SimpleCreateControls({
             {merging && <>{selectField('secondaryModel')}{numberField('modelBlend')}<p className="create-control-note">Changing this blend applies one balance across the model. Advanced block weights stay intact until you change it.</p></>}
           </section>}{loraRows()}
           {activeTab === 'edit' && available('editLora') && <section className="create-model-recipe"><h3>Editing LoRA</h3>
-            {selectField('editLora')}{value('editLora') && value('editLora') !== 'None' && numberField('editLoraStrength')}
+            <LoRAPicker label="Editing LoRA" value={value('editLora') || ''} choices={options('editLora')} disabled={draftLocked} onChange={next => choose('editLora', next)} />{value('editLora') && value('editLora') !== 'None' && numberField('editLoraStrength')}
           </section>}
         </div>
         <div className="create-effects-workspace" hidden={!panels.desktop && mobilePane !== 'effects'}>

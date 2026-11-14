@@ -124,6 +124,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
       const face = nodeAt(current,1178)?.widgets_values?.[0] || '';
       const scene = nodeAt(current,1126)?.widgets_values?.[0] || '';
       const negative = nodeAt(current,1127)?.widgets_values?.[0] || '';
+      const style = nodeAt(current,1125)?.widgets_values?.[0] || '';
       const primary = nodeAt(current,1122)?.widgets_values?.[0];
       const output = {
         'text:face':{class_type:'DF_Text_Box',inputs:{Text:face}},
@@ -134,6 +135,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
         'condition':{class_type:'DonutPromptConditioning',inputs:{face:['expanded:face',0],scene:['expanded:scene',0],negative:['text:negative',0]}},
         'sample':{class_type:'DonutSampler',inputs:{positive:['condition',3],negative:['condition',5],seed:nodeAt(current,1137)?.widgets_values?.[0] ?? 42}},
       };
+      if (nodeAt(current,1125)) { output['text:style']={class_type:'DF_Text_Box',inputs:{Text:style}}; output.condition.inputs.style=['text:style',0]; }
       if (primary) output.model={class_type:'UNETLoader',inputs:{unet_name:primary}};
       return {output,workflow:copy(current)};
     },
@@ -187,6 +189,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
   return {app,api,loaded,queued,fetched,models,store,context,events,boot,settle,editPrompt,
     editSeed:value=>{nodeAt(current,1137).widgets_values[0]=value;},
     editFace:value=>{nodeAt(current,1178).widgets_values[0]=value;},
+    editStyle:value=>{nodeAt(current,1125).widgets_values[0]=value;},
     editFaceDetail:value=>{nodeAt(current,984).mode=value?0:4;},
     editMode:value=>{nodeAt(current,881).widgets_values[0]=value;nodeAt(current,881).widgets_values[1]=value?'donutref:'+'a'.repeat(64):'';},
     current:()=>copy(current),notice:()=>elements.get('donut-create-status')?.querySelector('.message')?.textContent};
@@ -809,6 +812,24 @@ test('cancellation, concurrent calls and edits during enhancement cannot queue s
   }
 });
 
+test('connection snapshots answer while an enhanced generate waits for the enhancer',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  env.app.queuePrompt=async ()=>env.api.queuePrompt(0,await env.app.graphToPrompt());
+  let release;env.onEnhance=()=>new Promise(resolve=>{release=resolve;});
+  const {replies,parent}=outputParent(env);
+  const send=(requestId,action)=>env.events.get('message')({source:parent,origin:'http://parent.test',
+    data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId,action}});
+  const reply=requestId=>replies.find(value=>value.requestId===requestId);
+  send('generate','generate');await env.settle();
+  assert.equal(typeof release,'function');
+  send('poll','snapshot');await env.settle();
+  assert.equal(reply('poll')?.ok,true);
+  assert.equal(reply('poll').snapshot.ready,true);
+  assert.equal(reply('generate'),undefined);
+  release();await env.settle();
+  assert.equal(reply('generate')?.ok,true);
+  assert.equal(env.queued.length,1);
+});
 
 // AC: @create-managed-prompt-enhancer ac-per-run-seed
 test('pinned beforeQueued/afterQueued seed timing and SeedPlan links use the executed seed on every run',async()=>{
@@ -1539,6 +1560,46 @@ test('wildcards resolve before the LLM with the executed seed, preserving origin
     assert.equal(nodeAt(env.queued.at(-1)[1].workflow,1126).widgets_values[0],scene);
   }
   env.editSeed(nodeAt(before,1137).widgets_values[0]);assert.deepEqual(env.current(),before);
+});
+
+// AC: @create-managed-prompt-enhancer ac-style-in-prompts
+test('the whole-image style goes to the LLM resolved, is blanked for the compile and restored afterwards',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  const style='{Ink wash|Oil paint}, muted light.';
+  env.editPrompt('A boat on a lake');env.editFace('');env.editStyle(style);
+  env.onExpand=async ({text})=>({ok:true,json:async()=>({text:text===style?'Ink wash, muted light.':text})});
+  const before=env.current();
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.requests[0].style_brief,'Ink wash, muted light.');
+  assert.equal(env.requests[0].image_brief,'A boat on a lake');
+  const compiled=env.queued[0][1];
+  assert.equal(compiled.output['text:style'].inputs.Text,'');
+  assert.equal(compiled.output['text:scene'].inputs.Text,'Scene for '+env.requests[0].seed);
+  assert.equal(nodeAt(compiled.workflow,1125).widgets_values[0],style);
+  assert.deepEqual(env.current(),before);
+});
+
+// AC: @create-managed-prompt-enhancer ac-style-in-prompts
+test('no style, or an Edit run, sends no style and leaves the graph style alone',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  env.editPrompt('A boat on a lake');env.editFace('');
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(Object.hasOwn(env.requests[0],'style_brief'),false);
+  env.editStyle('Ink wash.');env.editMode(true);
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(Object.hasOwn(env.requests[1],'style_brief'),false);
+  assert.equal(env.queued[1][1].output['text:style'].inputs.Text,'Ink wash.');
+});
+
+// AC: @create-managed-prompt-enhancer ac-style-in-prompts
+test('a reused enhancement follows the style: changing it enhances again',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen',timing:'changed'});
+  env.editPrompt('A boat on a lake');env.editFace('');
+  for(const style of ['Ink wash.','Ink wash.','Oil paint.']) {
+    env.editStyle(style);
+    await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  }
+  assert.deepEqual(env.requests.map(request=>request.style_brief),['Ink wash.','Oil paint.']);
 });
 
 // AC: @create-managed-prompt-enhancer ac-wildcards-before-enhancement

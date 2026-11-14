@@ -323,7 +323,7 @@ class Controller:
                 if self.config["mode"] == "managed":
                     result["ready"] = result["ready"] and self.installer.ready()
                 if not result["owned"]:
-                    result["error"] = "The configured port is occupied by a backend this controller does not own."
+                    result["error"] = f"The configured ComfyUI endpoint {self.config['backend_url']} is occupied by a backend this controller does not own."
             if not required:
                 result["error"] = "The bundled v5 workflow is unavailable. Reinstall Donut Create."
             elif not result["ready"] and not result["error"]:
@@ -434,7 +434,7 @@ class Controller:
         if (await self.readiness())["running"]:
             if self.backend_owned():
                 return
-            raise HTTPException(409, "The configured port is occupied by a backend this controller does not own.")
+            raise HTTPException(409, f"The configured ComfyUI endpoint {self.config['backend_url']} is occupied by a backend this controller does not own.")
         command = [str(python), str(root / "main.py"), "--listen", "127.0.0.1", "--port", "18010"]
         profile = self.config.get("launch_profile") if self.config["mode"] == "local" else None
         if profile:
@@ -1334,19 +1334,19 @@ async def studio_local(controller: Controller, session: dict[str, Any], route: s
             return JSONResponse(controller.enhancer.status(owner), headers={"Cache-Control": "no-store"})
         try:
             data = json.loads(await limited_body(request, 100000))
-            allowed = {"id"} if route.endswith("/cancel") else {"kind", "model", "image_brief", "face_brief", "seed"}
+            allowed = {"id"} if route.endswith("/cancel") else {"kind", "model", "image_brief", "face_brief", "style_brief", "seed"}
             if not isinstance(data, dict) or set(data) - allowed:
                 raise ValueError("Invalid enhancer request.")
             if route.endswith("/cancel"):
                 await controller.enhancer.cancel(owner, data.get("id"))
             else:
-                controller.enhancer.start(owner, data.get("kind"), data.get("model"), data.get("image_brief", ""), data.get("face_brief", ""), data.get("seed", 0))
+                controller.enhancer.start(owner, data.get("kind"), data.get("model"), data.get("image_brief", ""), data.get("face_brief", ""), data.get("seed", 0), data.get("style_brief", ""))
         except PermissionError:
             raise HTTPException(404, "Enhancer operation not found in this studio.") from None
         except RuntimeError as error:
             raise HTTPException(409, str(error)) from None
         except (ValueError, TypeError):
-            raise HTTPException(400, "Invalid enhancer request. Choose a model, supply a main brief of at most 16,000 characters and a face brief of at most 8,000 characters, and use a nonnegative JavaScript-safe integer seed.") from None
+            raise HTTPException(400, "Invalid enhancer request. Choose a model, supply a main brief of at most 16,000 characters and a face brief of at most 8,000 characters, a style of at most 4,000 characters, and use a nonnegative JavaScript-safe integer seed.") from None
         return JSONResponse(controller.enhancer.status(owner), headers={"Cache-Control": "no-store"})
     if route == "dmc/workflow" and request.method in {"GET", "HEAD"}:
         if set(request.query_params) - {"revision_only"}:

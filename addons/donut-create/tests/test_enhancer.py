@@ -133,6 +133,31 @@ class OutputTests(unittest.TestCase):
         result = {"main_prompt": "A clockwork owl looks left, eyes open.", "face_prompt": "The owl looks left, eyes open."}
         self.assertEqual(parse_result(json.dumps(result), "stop", True), result)
 
+    # AC: @create-managed-prompt-enhancer ac-style-in-prompts
+    def test_style_is_sent_only_when_set_and_every_non_empty_prompt_carries_it(self):
+        self.assertNotIn("style_brief", json.loads(messages("An owl.", "", "  ")[1]["content"]))
+        self.assertEqual(json.loads(messages("An owl.", "", "Ink wash.")[1]["content"])["style_brief"], "Ink wash.")
+        style = "Ink wash, muted light. "
+        kept = {"main_prompt": "Ink wash, muted light. An owl.", "face_prompt": "ink  wash, muted light.  The owl's face."}
+        self.assertEqual(parse_result(json.dumps(kept), "stop", True, style), kept)
+        dropped = {"main_prompt": "An owl.", "face_prompt": "The owl's face."}
+        self.assertEqual(parse_result(json.dumps(dropped), "stop", True, style),
+                         {"main_prompt": "Ink wash, muted light. An owl.", "face_prompt": "Ink wash, muted light. The owl's face."})
+        self.assertEqual(parse_result(json.dumps(dropped), "stop", True), dropped)
+        # No visible face stays empty; a spatial plan carries the style on each character.
+        faceless = {"main_prompt": "A cabin.", "face_prompt": ""}
+        self.assertEqual(parse_result(json.dumps(faceless), "stop", False, style),
+                         {"main_prompt": "Ink wash, muted light. A cabin.", "face_prompt": ""})
+        plan = {"main_prompt": "Two owls.", "face_prompt": "", "face_prompts": [
+            {"character": "Alice", "position": "left", "face_prompt": "Alice smiles."},
+            {"character": "Bob", "position": "right", "face_prompt": "Ink wash, muted light. Bob frowns."}]}
+        carried = parse_result(json.dumps(plan), "stop", False, style)
+        self.assertEqual([row["face_prompt"] for row in carried["face_prompts"]],
+                         ["Ink wash, muted light. Alice smiles.", "Ink wash, muted light. Bob frowns."])
+        crowded = {**plan, "face_prompts": [{**plan["face_prompts"][0], "face_prompt": "x" * 7990}, plan["face_prompts"][1]]}
+        with self.assertRaises(ValueError):
+            parse_result(json.dumps(crowded), "stop", False, style)
+
     # AC: @create-managed-prompt-enhancer ac-enhance-preview
     def test_expanded_scene_and_identity_only_face_are_not_shortened_or_combined(self):
         result = {
@@ -168,13 +193,45 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             for seed in (0, 12, 0xffffffff, 2**53 - 1):
                 job = self.enhancer.start('owner', 'enhance', 'qwen', 'Synthetic owl.', '', seed=seed)
                 await self.enhancer.task
-                infer.assert_awaited_with('qwen', 'Synthetic owl.', '', seed)
+                infer.assert_awaited_with('qwen', 'Synthetic owl.', '', seed, '')
                 self.assertEqual(job['seed'], seed)
                 self.assertEqual(job['inference_seed'], seed % 0xffffffff)
                 self.assertEqual(self.enhancer.status('owner')['job']['seed'], seed)
             self.enhancer.start('owner', 'enhance', 'qwen', 'Synthetic owl.', '')
             await self.enhancer.task
-            infer.assert_awaited_with('qwen', 'Synthetic owl.', '', 0)
+            infer.assert_awaited_with('qwen', 'Synthetic owl.', '', 0, '')
+
+    # AC: @create-managed-prompt-enhancer ac-style-in-prompts
+    async def test_style_survives_templating_and_owned_inference_transport(self):
+        style = 'Ink wash, muted light.'
+        expected = {'image_brief': 'A synthetic owl.', 'face_brief': '', 'style_brief': style}
+        paths = []
+        client_type = httpx.AsyncClient
+        process = unittest.mock.Mock(returncode=None)
+        process.wait = AsyncMock(return_value=0)
+        self.enhancer.process = process
+        self.enhancer._loaded_model = 'qwen'
+        self.enhancer._port, self.enhancer._api_key = 18021, 'synthetic-key'
+        def respond(request):
+            paths.append(request.url.path)
+            data = {} if request.method == 'GET' else json.loads(request.content)
+            if request.url.path == '/health':
+                return httpx.Response(200, json={})
+            if request.url.path == '/tokenize':
+                return httpx.Response(200, json={'tokens': [1] * 20})
+            self.assertEqual(json.loads(data['messages'][1]['content']), expected)
+            if request.url.path == '/apply-template':
+                return httpx.Response(200, json={'prompt': 'synthetic formatted chat'})
+            self.assertEqual(request.url.path, '/v1/chat/completions')
+            self.assertEqual(data['seed'], 41)
+            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {
+                'content': json.dumps({'main_prompt': 'A synthetic owl.', 'face_prompt': ''})}}]})
+        def client(**options):
+            return client_type(**{**options, 'transport': httpx.MockTransport(respond)})
+        with patch.object(module.httpx, 'AsyncClient', side_effect=client):
+            result = await self.enhancer.infer('qwen', 'A synthetic owl.', '', 41, style)
+        self.assertEqual(result, {'main_prompt': style + ' A synthetic owl.', 'face_prompt': ''})
+        self.assertEqual(paths, ['/health', '/apply-template', '/tokenize', '/v1/chat/completions'])
 
     # AC: @create-managed-prompt-enhancer ac-per-run-seed
     async def test_invalid_seed_is_rejected_before_creating_job(self):
@@ -565,7 +622,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.headers['cache-control'], 'no-store')
             self.assertEqual(response.json()['job']['seed'], 2**53 - 1)
             await self.enhancer.task
-            infer.assert_awaited_with('qwen', 'Synthetic owl.', '', 2**53 - 1)
+            infer.assert_awaited_with('qwen', 'Synthetic owl.', '', 2**53 - 1, '')
             for seed in (True, -1, 1.5, 1.0, 2**53, None):
                 with self.subTest(seed=seed):
                     response = await self.http.post('/dmc/enhancer', json={**brief, 'seed': seed})

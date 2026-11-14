@@ -1590,7 +1590,11 @@
       || !scene.widget.value.trim() || scene.widget.value.length > 16000 || face.widget.value.length > 8000) {
       throw new Error('Enhance every run needs bound scene and face prompt controls and a main brief.');
     }
-    const imageBrief = scene.widget.value, faceBrief = face.widget.value, seed = executionSeed(compiled.output);
+    // The whole-image style conditions the image and every face pass. The enhancer writes it
+    // into both prompts, so it is blanked for this compile rather than prefixed a second time.
+    const style = !current.editing?.widget.value && current.stylePrompt, styleBinding = style && typeof style.widget.value === 'string'
+      && style.widget !== scene.widget && style.widget !== face.widget && style.widget.value.trim() ? style : null;
+    const imageBrief = scene.widget.value, faceBrief = face.widget.value, styleBrief = styleBinding ? styleBinding.widget.value : '', seed = executionSeed(compiled.output);
     const graph = app.rootGraph || app.graph, authored = recipe(graph.serialize()), graphRevision = enhancementGraphRevision;
     let reject;
     const cancelled = new Promise((_, fail) => { reject = fail; });
@@ -1635,7 +1639,9 @@
       // LLM to rewrite. Keep authored choice lists in the widgets and recipe.
       const resolvedImageBrief = await expandBrief(imageBrief, 16000);
       const resolvedFaceBrief = await expandBrief(faceBrief, 8000, true);
-      const reuseKey = canonical({imageBrief, faceBrief, resolvedImageBrief, resolvedFaceBrief, model: settings.model});
+      const resolvedStyleBrief = await expandBrief(styleBrief, 4000, true);
+      const reuseKey = canonical({imageBrief, faceBrief, resolvedImageBrief, resolvedFaceBrief, model: settings.model,
+        ...(styleBinding ? {styleBrief, resolvedStyleBrief} : {})});
       const cached = settings.timing === 'changed' && reusableEnhancement?.graph === graph
         && reusableEnhancement.graphRevision === graphRevision && reusableEnhancement.key === reuseKey ? reusableEnhancement : null;
       // One owner-local successful result, never a history of earlier briefs.
@@ -1646,7 +1652,8 @@
         const availability = await request(); valid();
         if (!availability.models?.some(model => model.id === settings.model && model.ready) || availability.busy) throw new Error('The selected prompt enhancer is not ready or is busy. Install it or wait before running.');
         let status = await request({method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({kind: 'enhance', model: settings.model, image_brief: resolvedImageBrief, face_brief: resolvedFaceBrief, seed})}, true);
+          body: JSON.stringify({kind: 'enhance', model: settings.model, image_brief: resolvedImageBrief, face_brief: resolvedFaceBrief,
+            ...(resolvedStyleBrief.trim() ? {style_brief: resolvedStyleBrief} : {}), seed})}, true);
         while (true) {
           valid();
           const job = status.job;
@@ -1663,7 +1670,8 @@
         || typeof result.face_prompt !== 'string' || result.face_prompt.length > 8000
         || !validFacePrompts(result.face_prompts, result.face_prompt)) throw new Error('The enhancer returned incomplete or ambiguous face prompts. Retry this image run.');
       if (result.face_prompts?.length === 0 && !result.face_prompt.trim() && resolvedFaceBrief.trim()) throw new Error('The supplied face instructions could not be matched unambiguously. Clarify their character positions before running.');
-      const updates = [{binding: scene, source: imageBrief, generated: result.main_prompt}, {binding: face, source: faceBrief, generated: result.face_prompt}];
+      const updates = [{binding: scene, source: imageBrief, generated: result.main_prompt}, {binding: face, source: faceBrief, generated: result.face_prompt},
+        ...(resolvedStyleBrief.trim() ? [{binding: styleBinding, source: styleBrief, generated: ''}] : [])];
       let enhanced;
       compilingEnhancement = true;
       try {
@@ -2126,6 +2134,9 @@
     const reply = value => event.source.postMessage({channel, sessionId: config.sessionId, requestId: message.requestId, ...value}, event.origin);
     // Stop must bypass the bridge queue while generate awaits enhancement.
     if (message.action === 'cancel-generation') { cancelGeneration(); reply({ok: true, snapshot: snapshot()}); return; }
+    // A generate can wait minutes for the prompt enhancer. Connection snapshots
+    // must not time out behind it; the queued path skips run checks then anyway.
+    if (message.action === 'snapshot' && queueAttempt) { reply({ok: true, snapshot: snapshot()}); return; }
     bridgeQueue = bridgeQueue.then(async () => {
       try {
         if (['snapshot', 'generate'].includes(message.action) && message.payload?.outputDestination !== undefined) {
