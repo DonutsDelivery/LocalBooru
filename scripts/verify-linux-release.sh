@@ -17,6 +17,7 @@ require_file() {
 verify_runtime_tree() {
   local root="$1"
   local runtime="$root/usr/lib/localbooru/native-svp"
+  python3 "$SCRIPT_ROOT/scripts/collect-linux-distro-notices.py" "$root" --verify
   for path in \
     "$runtime/bin/mpv" \
     "$runtime/injected-bundle/libwebkit2gtkinjectedbundle.so" \
@@ -100,6 +101,8 @@ if has_bundle rpm; then
   rpm -qpl "$DIST/DonutMediaCenter-Linux.rpm" | grep '/usr/bin/donutmediacenter' >/dev/null
   rpm -qpl "$DIST/DonutMediaCenter-Linux.rpm" \
     | grep '/usr/lib/localbooru/native-svp/bin/mpv' >/dev/null
+  rpm -qpl "$DIST/DonutMediaCenter-Linux.rpm" \
+    | grep '/usr/share/doc/localbooru/distro-packages/manifest.json' >/dev/null
   rpm -qpR "$DIST/DonutMediaCenter-Linux.rpm" | grep '^gtk3$' >/dev/null
   rpm -qpR "$DIST/DonutMediaCenter-Linux.rpm" | grep '^webkit2gtk4\.1$' >/dev/null
 fi
