@@ -51,7 +51,7 @@ def carry_style(text, style):
     # The style is a fixed fact of every prompt it conditions. Small models can
     # drop literal wording, so restore it in front rather than lose it silently.
     squash = lambda value: " ".join(value.split()).casefold()
-    if not style.strip() or not text.strip() or squash(style) in squash(text):
+    if not style.strip() or not text.strip() or squash(text).startswith(squash(style)):
         return text
     return style.strip() + " " + text
 

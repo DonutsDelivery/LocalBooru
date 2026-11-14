@@ -144,6 +144,9 @@ class OutputTests(unittest.TestCase):
         self.assertEqual(parse_result(json.dumps(dropped), "stop", True, style),
                          {"main_prompt": "Ink wash, muted light. An owl.", "face_prompt": "Ink wash, muted light. The owl's face."})
         self.assertEqual(parse_result(json.dumps(dropped), "stop", True), dropped)
+        ending = {"main_prompt": "An owl. Ink wash, muted light.", "face_prompt": "The owl's face. Ink wash, muted light."}
+        self.assertEqual(parse_result(json.dumps(ending), "stop", True, style),
+                         {key: style.strip() + " " + value for key, value in ending.items()})
         # No visible face stays empty; a spatial plan carries the style on each character.
         faceless = {"main_prompt": "A cabin.", "face_prompt": ""}
         self.assertEqual(parse_result(json.dumps(faceless), "stop", False, style),
