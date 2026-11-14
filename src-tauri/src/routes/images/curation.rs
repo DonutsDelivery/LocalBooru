@@ -190,42 +190,40 @@ fn restore_moves(
     moves: &[TrackedMove],
     mut mover: impl FnMut(&Path, &Path) -> Result<(), AppError>,
 ) -> Result<usize, AppError> {
-    // Inspect the entire batch before moving the first file. Interrupted
-    // discards/restores may already have the original in its final location.
-    let mut pending = Vec::new();
-    for (index, (_, dumped, original)) in moves.iter().enumerate() {
-        let dumped_exists = dumped.try_exists()?;
-        let original_exists = original.try_exists()?;
-        if original_exists && (!dumped_exists || dumped == original) {
-            continue;
-        }
-        if original_exists {
-            return Err(AppError::BadRequest(format!(
-                "Cannot restore because both discarded and original files exist: {} and {}",
-                dumped.display(),
-                original.display()
-            )));
-        }
-        if !dumped_exists {
-            return Err(AppError::NotFound(format!(
-                "Discarded file is missing: {}",
-                dumped.display()
-            )));
-        }
-        pending.push(index);
-    }
     let mut completed = Vec::new();
-    for index in pending {
-        let (_, dumped, original) = &moves[index];
-        if let Err(error) = mover(dumped, original) {
-            return Err(rollback_restore_moves(
-                conn, moves, &completed, &mut mover, error,
-            ));
-        }
-        completed.push(index);
-    }
     let update = (|| -> Result<(), AppError> {
-        let tx = conn.transaction()?;
+        // Keep watcher imports from creating another reference at the restored
+        // location before this transaction publishes its original row there.
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        // Inspect the entire batch before moving the first file. Interrupted
+        // discards/restores may already have the original in its final location.
+        let mut pending = Vec::new();
+        for (index, (_, dumped, original)) in moves.iter().enumerate() {
+            let dumped_exists = dumped.try_exists()?;
+            let original_exists = original.try_exists()?;
+            if original_exists && (!dumped_exists || dumped == original) {
+                continue;
+            }
+            if original_exists {
+                return Err(AppError::BadRequest(format!(
+                    "Cannot restore because both discarded and original files exist: {} and {}",
+                    dumped.display(),
+                    original.display()
+                )));
+            }
+            if !dumped_exists {
+                return Err(AppError::NotFound(format!(
+                    "Discarded file is missing: {}",
+                    dumped.display()
+                )));
+            }
+            pending.push(index);
+        }
+        for index in pending {
+            let (_, dumped, original) = &moves[index];
+            mover(dumped, original)?;
+            completed.push(index);
+        }
         for (id, _, original) in moves {
             if tx.execute(
                 "UPDATE image_files SET original_path = ?1, curation_original_path = NULL,
@@ -471,6 +469,31 @@ mod tests {
                 moves.push((index as i64, source, dumped));
             }
             Self { root, moves }
+        }
+
+        fn library(&self) -> (crate::db::library::LibraryContext, PathBuf) {
+            let lib =
+                crate::db::library::LibraryContext::create(&self.root.join("library"), "Synthetic")
+                    .unwrap();
+            let pool = lib.directory_db.get_pool(1).unwrap();
+            let conn = pool.get().unwrap();
+            conn.execute(
+                "INSERT INTO images(id, filename, file_hash) VALUES (1, 'synthetic.png', ?1)",
+                params!["0123456789abcdef0123456789abcdef"],
+            )
+            .unwrap();
+            for (id, original, _) in &self.moves {
+                conn.execute(
+                    "INSERT INTO image_files(id, image_id, original_path) VALUES (?1, 1, ?2)",
+                    params![id, original.to_string_lossy()],
+                )
+                .unwrap();
+            }
+            let thumb = lib.thumbnails_dir().join("0123456789abcdef.webp");
+            std::fs::write(&thumb, b"synthetic-thumbnail").unwrap();
+            drop(conn);
+            drop(pool);
+            (lib, thumb)
         }
 
         fn connection(&self) -> rusqlite::Connection {
@@ -728,24 +751,9 @@ mod tests {
     #[test]
     fn curation_watcher_preserves_undo_and_thumbnail_then_handles_real_deletion() {
         let fixture = Fixture::new(1);
-        let lib =
-            crate::db::library::LibraryContext::create(&fixture.root.join("library"), "Synthetic")
-                .unwrap();
+        let (lib, thumb) = fixture.library();
         let pool = lib.directory_db.get_pool(1).unwrap();
         let mut conn = pool.get().unwrap();
-        let hash = "0123456789abcdef0123456789abcdef";
-        conn.execute(
-            "INSERT INTO images(id, filename, file_hash) VALUES (1, 'synthetic.png', ?1)",
-            params![hash],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO image_files(id, image_id, original_path) VALUES (1, 1, ?1)",
-            params![fixture.moves[0].1.to_string_lossy()],
-        )
-        .unwrap();
-        let thumb = lib.thumbnails_dir().join("0123456789abcdef.webp");
-        std::fs::write(&thumb, b"synthetic-thumbnail").unwrap();
         discard_moves(&mut conn, &fixture.moves, |from, to| {
             move_file(from, to)?;
             crate::services::file_tracker::mark_file_missing(&lib, from.to_str().unwrap(), 1)?;
@@ -778,6 +786,91 @@ mod tests {
             1,
         )
         .unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM images", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert!(!thumb.exists());
+    }
+
+    // AC: @curation-game ac-5
+    #[test]
+    fn curation_restore_serializes_watcher_import_before_publishing_original_path() {
+        let fixture = Fixture::new(1);
+        let mut conn = fixture.connection();
+        discard_moves(&mut conn, &fixture.moves, move_file).unwrap();
+        let plan = fixture.restore_plan(&conn);
+        restore_moves(&mut conn, &plan, |from, to| {
+            move_file(from, to)?;
+            let competitor = fixture.connection();
+            competitor.busy_timeout(std::time::Duration::ZERO).unwrap();
+            let error = competitor
+                .execute(
+                    "INSERT INTO image_files(id, original_path) VALUES (99, ?1)",
+                    params![to.to_string_lossy()],
+                )
+                .unwrap_err();
+            assert!(matches!(error, rusqlite::Error::SqliteFailure(code, _)
+                if code.code == rusqlite::ErrorCode::DatabaseBusy));
+            Ok(())
+        })
+        .unwrap();
+        fixture.assert_originals(&conn);
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM image_files", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+    }
+
+    // AC: @curation-game ac-4, ac-5, ac-10
+    #[test]
+    fn curation_verification_retains_interrupted_undo_and_deletes_real_missing_files() {
+        let fixture = Fixture::new(2);
+        let (lib, thumb) = fixture.library();
+        let pool = lib.directory_db.get_pool(1).unwrap();
+        let mut conn = pool.get().unwrap();
+        for (id, source, dumped) in &fixture.moves {
+            conn.execute(
+                "UPDATE image_files SET original_path=?1,
+                curation_original_path=?2, curation_discarded_at='interrupted' WHERE id=?3",
+                params![dumped.to_string_lossy(), source.to_string_lossy(), id],
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            crate::services::file_tracker::clean_deleted_files(&lib, 1).unwrap(),
+            0
+        );
+        assert_eq!(
+            crate::services::file_tracker::verify_directory_files(&lib, 1)
+                .unwrap()
+                .deleted,
+            0
+        );
+        assert!(thumb.exists());
+        let plan = fixture.restore_plan(&conn);
+        assert_eq!(plan.len(), 2);
+        restore_moves(&mut conn, &plan, |_, _| {
+            panic!("Originals must remain intact")
+        })
+        .unwrap();
+        fixture.assert_originals(&conn);
+        std::fs::remove_file(&fixture.moves[0].1).unwrap();
+        assert_eq!(
+            crate::services::file_tracker::verify_directory_files(&lib, 1)
+                .unwrap()
+                .deleted,
+            1
+        );
+        assert!(thumb.exists());
+        std::fs::remove_file(&fixture.moves[1].1).unwrap();
+        assert_eq!(
+            crate::services::file_tracker::clean_deleted_files(&lib, 1).unwrap(),
+            1
+        );
         assert_eq!(
             conn.query_row("SELECT COUNT(*) FROM images", [], |r| r.get::<_, i64>(0))
                 .unwrap(),

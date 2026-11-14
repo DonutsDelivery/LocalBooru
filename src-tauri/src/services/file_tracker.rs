@@ -262,44 +262,17 @@ pub fn clean_deleted_files(lib: &LibraryContext, directory_id: i64) -> Result<i6
     let conn = dir_pool.get()?;
     let mut removed: i64 = 0;
 
-    // Get all file references
-    let mut stmt = conn.prepare("SELECT id, image_id, original_path FROM image_files")?;
-
-    let files: Vec<(i64, i64, String)> = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    for (file_id, image_id, original_path) in files {
-        if Path::new(&original_path).exists() {
-            continue;
-        }
-
-        // Check if this is the only file for this image
-        let file_count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM image_files WHERE image_id = ?1",
-                params![image_id],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-
-        if file_count <= 1 {
-            // Last file — delete the image and thumbnail
-            if let Ok(hash) = conn.query_row(
-                "SELECT file_hash FROM images WHERE id = ?1",
-                params![image_id],
-                |row| row.get::<_, String>(0),
-            ) {
-                let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
-                let thumb_path = lib.thumbnails_dir().join(&thumb_name);
-                let _ = std::fs::remove_file(&thumb_path);
-            }
-            conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
-        }
-
-        conn.execute("DELETE FROM image_files WHERE id = ?1", params![file_id])?;
-        removed += 1;
+    let files: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT original_path FROM image_files WHERE curation_discarded_at IS NULL",
+        )?;
+        let paths = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        paths
+    };
+    for original_path in files {
+        removed += i64::from(remove_missing_file(lib, &original_path, directory_id)?);
     }
 
     Ok(removed)
@@ -323,15 +296,15 @@ pub fn verify_directory_files(
     let conn = dir_pool.get()?;
 
     let mut stmt = conn.prepare(
-        "SELECT id, image_id, original_path FROM image_files WHERE file_status != 'drive_offline'",
+        "SELECT id, original_path FROM image_files
+         WHERE file_status != 'drive_offline' AND curation_discarded_at IS NULL",
     )?;
 
-    let files: Vec<(i64, i64, String)> = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-        .filter_map(|r| r.ok())
-        .collect();
+    let files: Vec<(i64, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
 
-    for (file_id, image_id, original_path) in files {
+    for (file_id, original_path) in files {
         match check_file_availability(&original_path) {
             FileStatus::Available => {
                 conn.execute(
@@ -349,32 +322,9 @@ pub fn verify_directory_files(
                 stats.drive_offline += 1;
             }
             FileStatus::Missing => {
-                // Check for other file references
-                let other_count: i64 = conn
-                    .query_row(
-                        "SELECT COUNT(*) FROM image_files WHERE image_id = ?1 AND id != ?2",
-                        params![image_id, file_id],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(0);
-
-                conn.execute("DELETE FROM image_files WHERE id = ?1", params![file_id])?;
-
-                if other_count == 0 {
-                    // Delete the image and thumbnail
-                    if let Ok(hash) = conn.query_row(
-                        "SELECT file_hash FROM images WHERE id = ?1",
-                        params![image_id],
-                        |row| row.get::<_, String>(0),
-                    ) {
-                        let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
-                        let thumb_path = lib.thumbnails_dir().join(&thumb_name);
-                        let _ = std::fs::remove_file(&thumb_path);
-                    }
-                    conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
+                if remove_missing_file(lib, &original_path, directory_id)? {
+                    stats.deleted += 1;
                 }
-
-                stats.deleted += 1;
             }
         }
     }
@@ -390,10 +340,18 @@ pub fn mark_file_missing(
     file_path: &str,
     directory_id: i64,
 ) -> Result<(), AppError> {
+    remove_missing_file(lib, file_path, directory_id).map(|_| ())
+}
+
+fn remove_missing_file(
+    lib: &LibraryContext,
+    file_path: &str,
+    directory_id: i64,
+) -> Result<bool, AppError> {
     // Removal notifications can arrive after curation has already restored the
     // file. Never turn a stale notification (or an access error) into deletion.
     if Path::new(file_path).try_exists()? {
-        return Ok(());
+        return Ok(false);
     }
     let dir_pool = lib.directory_db.get_pool(directory_id)?;
     let mut conn = dir_pool.get()?;
@@ -401,7 +359,7 @@ pub fn mark_file_missing(
     // The file may have been restored while this notification waited for the
     // curation transaction's write lock.
     if Path::new(file_path).try_exists()? {
-        return Ok(());
+        return Ok(false);
     }
 
     // Serialize lookup/deletion with the curation publication transaction.
@@ -416,7 +374,7 @@ pub fn mark_file_missing(
 
     let (file_id, image_id) = match file_info {
         Some(info) => info,
-        None => return Ok(()), // File not tracked
+        None => return Ok(false), // File not tracked
     };
     let deleted = tx.execute(
         "DELETE FROM image_files WHERE id = ?1 AND original_path = ?2
@@ -424,7 +382,7 @@ pub fn mark_file_missing(
         params![file_id, file_path],
     )?;
     if deleted == 0 {
-        return Ok(());
+        return Ok(false);
     }
 
     let other_count: i64 = tx.query_row(
@@ -451,5 +409,5 @@ pub fn mark_file_missing(
         let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
         let _ = std::fs::remove_file(lib.thumbnails_dir().join(thumb_name));
     }
-    Ok(())
+    Ok(true)
 }
