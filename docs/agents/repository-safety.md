@@ -98,6 +98,10 @@ profile. Do not launch a sandboxed Mac candidate until its owned data-directory
 access has been verified; sandbox denial is not permission to fall back to the
 normal app profile or disable the sandbox.
 
+On macOS and Windows, isolated launches disable the SVP Manager control
+listener, which otherwise uses the normal MPV socket or Windows named pipe.
+These isolated runs do not validate external SVP Manager integration.
+
 For a prebuilt sandboxed Mac Lite candidate, set both
 `LOCALBOORU_TEST_MACOS_APP` to the verified `.app` and
 `LOCALBOORU_TEST_MACOS_CONTAINER_PARENT` to its Foundation-resolved container
