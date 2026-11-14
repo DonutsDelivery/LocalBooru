@@ -852,6 +852,30 @@ mod tests {
         );
     }
 
+    // AC: @curation-game ac-4, ac-5
+    #[test]
+    fn curation_undo_cannot_interleave_with_an_unfinished_discard() {
+        let fixture = Fixture::new(1);
+        let mut conn = fixture.connection();
+        discard_moves(&mut conn, &fixture.moves, |from, to| {
+            // A second client can see the published undo row before the file
+            // moves. It must not mistake a live discard for interrupted work.
+            let mut competing = fixture.connection();
+            let plan = fixture.restore_plan(&competing);
+            assert_eq!(plan.len(), 1);
+            assert!(matches!(
+                restore_moves(&mut competing, &plan, move_file),
+                Err(AppError::TooManyRequests(_))
+            ));
+            move_file(from, to)
+        })
+        .unwrap();
+        let plan = fixture.restore_plan(&conn);
+        assert_eq!(plan.len(), 1);
+        restore_moves(&mut conn, &plan, move_file).unwrap();
+        fixture.assert_originals(&conn);
+    }
+
     // AC: @curation-game ac-4, ac-5, ac-10
     #[test]
     fn curation_verification_retains_interrupted_undo_and_deletes_real_missing_files() {
