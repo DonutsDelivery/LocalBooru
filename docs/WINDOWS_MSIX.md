@@ -113,4 +113,7 @@ Use the privacy and Windows acceptance procedure in
 [release infrastructure](agents/release-and-infrastructure.md). Record SDK structural
 validation, actual installed-package behavior and certification separately. The
 [Windows App Certification Kit](https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/windows-app-certification-kit)
-requires an active user session; SSH Session 0 is not that graphical test session.
+documents automation without an interactive session. Its `appcert.exe` command-line
+procedure separately requires an active user session and excludes Session 0.
+Record the kit version, automation mode, tests run and skipped tests. SSH access
+alone does not establish graphical application behavior.
