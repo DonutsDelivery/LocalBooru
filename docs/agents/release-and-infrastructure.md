@@ -152,7 +152,12 @@ Candidates with native runtime-port discovery use `LOCALBOORU_PORT` for both
 the backend and frontend. Older artifacts without that fix require their baked
 port `8790`; do not use them for isolated acceptance if that port is occupied.
 Do not displace an existing listener. Set `LOCALBOORU_PORTABLE_DATA` and
-`LOCALBOORU_DISABLE_SINGLE_INSTANCE=1` for a disposable run, but leave Windows
+`LOCALBOORU_DISABLE_SINGLE_INSTANCE=1` for a disposable run, plus a fresh
+`LOCALBOORU_ISOLATED_INSTANCE_ID` nonce and `LOCALBOORU_ISOLATED_TEMP_DIR`
+pointing at an existing owned temporary directory inside the fixture. Check the
+health response's nonce before making requests. The isolation marker also
+disables normal window-state/autostart persistence and selects an ephemeral
+WebView store; portable data alone is not that boundary. Leave Windows
 known-folder variables (`USERPROFILE`, `APPDATA`, `LOCALAPPDATA`) intact: spoofing
 them can make Tauri plug-in initialization fail before the server starts.
 PowerShell through SSH can inspect packages, install, and test headless commands.
