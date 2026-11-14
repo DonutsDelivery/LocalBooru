@@ -364,6 +364,17 @@ LocalBooru bridge components. They do **not** bundle SVP Manager, SVPflow, GPU
 drivers, models, or credentials. A legitimate host installation supplies SVP
 Manager/SVPflow at runtime.
 
+Staged distro library notices are retained by
+`scripts/collect-linux-distro-notices.py` under
+`usr/share/doc/localbooru/distro-packages/`. Package candidates come from the
+build image's installed dpkg file lists, including flattened SONAME aliases;
+all ambiguous owners retain their notices. The deterministic manifest records
+binary/source versions and notice hashes. Public doc/common-license symlinks
+become regular files; missing or redirected notices fail packaging. Extracted
+DEB/AppImage verification checks those hashes. This is notice retention, not
+substitute evidence for exact binary/source correspondence. Run its synthetic
+regressions with `python3 scripts/test-collect-linux-distro-notices.py`.
+
 The package launcher selects the bundled patched WebKit before the dynamic
 loader starts LocalBooru. `LOCALBOORU_ENABLE_NATIVE_SVP=0` remains an explicit
 runtime opt-out; ordinary WebKit/GStreamer playback remains available.

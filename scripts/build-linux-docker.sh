@@ -323,6 +323,7 @@ package_deb() {
   cc -O2 -Wall -Wextra -Werror "$ROOT/release/linux/localbooru-launcher.c" \
     -o "$stage/usr/bin/donutmediacenter"
   ln -sfn donutmediacenter "$stage/usr/bin/localbooru"
+  python3 "$ROOT/scripts/collect-linux-distro-notices.py" "$stage"
   installed_size="$(du -sk "$stage/usr" | cut -f1)"
   python3 -c 'import pathlib,sys,re; p=pathlib.Path(sys.argv[1]); s=p.read_text(); p.write_text(re.sub(r"(?m)^Installed-Size:.*$", "Installed-Size: " + sys.argv[2], s))' \
     "$stage/DEBIAN/control" "$installed_size"
@@ -356,6 +357,7 @@ package_rpm() {
     cc -O2 -Wall -Wextra -Werror "$ROOT/release/linux/localbooru-launcher.c" \
       -o "$stage/usr/bin/donutmediacenter"
     ln -sfn donutmediacenter "$stage/usr/bin/localbooru"
+    python3 "$ROOT/scripts/collect-linux-distro-notices.py" "$stage"
   fi
 
   fpm -s dir -t rpm -C "$stage" \
@@ -401,6 +403,7 @@ package_appimage() {
   cp "$stage/usr/share/applications/com.localbooru.app.desktop" "$stage/"
   cp "$ROOT/assets/icon.png" "$stage/com.localbooru.app.png"
   ln -sfn com.localbooru.app.png "$stage/.DirIcon"
+  python3 "$ROOT/scripts/collect-linux-distro-notices.py" "$stage"
   mv "$stage/AppRun" "$stage/AppRun.tauri"
   install -m 0755 "$ROOT/release/linux/AppRun" "$stage/AppRun"
 

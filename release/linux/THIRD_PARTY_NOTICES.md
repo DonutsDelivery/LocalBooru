@@ -5,6 +5,15 @@ Retain `NOTICE` and `LICENSES/MIT-legacy.txt` for code previously distributed
 under MIT. Branding is addressed separately in `TRADEMARKS.md`.
 Third-party runtime components retain the licenses described below.
 
+The staged distribution libraries also carry package copyright notices under
+`usr/share/doc/localbooru/distro-packages/`, including referenced common license
+texts. Its `manifest.json` records candidate package names, exact binary/source
+versions, staged file names and notice hashes. Ambiguous basename owners retain
+all candidate notices. This manifest records notice retention; the separate
+source correspondence audit establishes binary origins. The application source
+includes `scripts/collect-linux-distro-notices.py` to reproduce this step inside
+the build image. Existing custom-runtime notices below remain separate.
+
 The Linux release bundles modified WebKitGTK libraries for the
 application-selected GStreamer video-filter hook, WebProcess path override,
 private video bridge access inside Flatpak's nested WebProcess sandbox,
