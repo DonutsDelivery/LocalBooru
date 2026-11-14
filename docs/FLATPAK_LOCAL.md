@@ -13,6 +13,29 @@ The output directory must be an absolute path that does not already exist:
 scripts/build-flatpak-local.sh /absolute/path/DonutMediaCenter-Linux.AppImage SHA256 /absolute/new/output-directory
 ```
 
+To opt into the experimental selected-folder profile instead:
+
+```sh
+scripts/build-flatpak-local.sh /absolute/path/DonutMediaCenter-Linux.AppImage SHA256 /absolute/new/output-directory selected-folder
+```
+
+The optional fourth argument is `host` or `selected-folder`; omission selects
+`host` for compatibility. The output's `permission-profile.txt` records the
+choice. Both profiles retain network, IPC, display, audio, GPU and the D-Bus
+name below. Only `host` grants `--filesystem=host`; selected-folder adds no
+filesystem mount and requests GTK's native chooser portal via `GTK_USE_PORTAL=1`.
+Flatpak's app-owned XDG data remains available. Contained Linux uses the app
+ data directory rather than the legacy `~/.localbooru` directory; existing host
+libraries are not automatically migrated or granted access. If a stored library
+path is inaccessible, use the folder chooser to select it again and check the
+result before relying on it; selection may return a different portal path, so
+reconnecting or reconfiguring the library may be necessary. Do not delete the
+original library as a recovery step.
+
+These packaging checks cannot establish persistent portal grants. Acceptance on
+an actual installed package must exercise the real chooser, restart, revoked
+access and reacquisition, and library/helper behavior with synthetic data.
+
 The script requires Flatpak, unsquashfs, and the x86-64 `org.freedesktop.Sdk`
 and `org.freedesktop.Platform` runtimes at branch 25.08. It checks the input
 hash before extracting it, preserves the bundled patched WebKit and media
@@ -25,7 +48,7 @@ breaks FFmpeg video thumbnails and transcoding even when WebView playback works.
 It is not a substitute for a source-based, reproducible Flathub package; the
 Flathub manifest and submission are maintained by Emil.
 
-The candidate requests full host filesystem access because existing DMC libraries
+The legacy host profile requests full host filesystem access because existing DMC libraries
 can reside outside the home directory, along with network, display, audio and GPU
 access. It also permits DMC to own its existing `com.localbooru.app` D-Bus
 name. This broad filesystem permission allows access to the user's files; review and narrow

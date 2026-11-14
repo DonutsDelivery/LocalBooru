@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Build a local, non-Flathub Flatpak from an already verified DMC AppImage.
 set -euo pipefail
-if [[ $# != 3 ]]; then
-  echo "Usage: $0 /absolute/path/to/DonutMediaCenter-Linux.AppImage SHA256 /absolute/output/directory" >&2
+if [[ $# != 3 && $# != 4 ]]; then
+  echo "Usage: $0 /absolute/path/to/DonutMediaCenter-Linux.AppImage SHA256 /absolute/output/directory [host|selected-folder]" >&2
   exit 2
 fi
-image=$1 expected=$2 out=$3
+image=$1 expected=$2 out=$3 profile=${4:-host}
+[[ "$profile" == host || "$profile" == selected-folder ]] || { echo "Invalid permission profile: $profile" >&2; exit 2; }
 [[ "$image" = /* && "$out" = /* && "$expected" =~ ^[[:xdigit:]]{64}$ ]] || { echo 'Use absolute paths and a SHA-256 digest.' >&2; exit 2; }
 [[ -f "$image" && ! -L "$image" && ! -e "$out" ]] || { echo 'Input must be a regular AppImage; output must not exist.' >&2; exit 2; }
 for tool in flatpak unsquashfs sha256sum; do command -v "$tool" >/dev/null || { echo "Missing required tool: $tool" >&2; exit 1; }; done
@@ -38,6 +39,8 @@ sed -i 's/^Exec="donutmediacenter"/Exec=donutmediacenter/' "$out/build/files/lib
 cat > "$out/build/files/bin/donutmediacenter" <<'LAUNCHER'
 #!/bin/sh
 export APPDIR=/app/lib/donutmediacenter
+# GTK native file chooser requests access through the desktop portal.
+export GTK_USE_PORTAL=1
 RUNTIME="$APPDIR/usr/lib/localbooru/native-svp"
 PLATFORM_LIB=/usr/lib/x86_64-linux-gnu
 CODECS_LIB="$PLATFORM_LIB/codecs-extra/lib"
@@ -77,11 +80,14 @@ LAUNCHER
 chmod 755 "$out/build/files/bin/donutmediacenter"
 sed -e "s/^Icon=.*/Icon=$id/" "$root/src-tauri/linux/com.localbooru.app.desktop" > "$out/build/files/share/applications/$id.desktop"
 install -m 644 "$root/assets/icon.png" "$out/build/files/share/icons/hicolor/512x512/apps/$id.png"
-# The app manages arbitrary user-selected libraries, LAN sharing and GPU playback.
+filesystem=()
+[[ "$profile" != host ]] || filesystem+=(--filesystem=host)
+# Selected-folder relies on the native chooser portal; app-owned XDG data is implicit.
 flatpak build-finish --command=donutmediacenter --share=network --share=ipc \
   --socket=wayland --socket=fallback-x11 --socket=pulseaudio \
-  --device=dri --filesystem=host --own-name=com.localbooru.app "$out/build"
+  --device=dri "${filesystem[@]}" --own-name=com.localbooru.app "$out/build"
 flatpak build-export "$out/repo" "$out/build" stable
 flatpak build-bundle "$out/repo" "$out/DonutMediaCenter-local.flatpak" "$id" stable
+printf '%s\n' "$profile" > "$out/permission-profile.txt"
 printf '%s  %s\n' "$actual" "$(basename "$image")" > "$out/source-sha256.txt"
 printf 'Local bundle: %s\n' "$out/DonutMediaCenter-local.flatpak"

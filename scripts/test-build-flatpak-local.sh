@@ -34,6 +34,7 @@ cat > "$tmp/bin/flatpak" <<'TOOL'
 #!/bin/bash
 set -eu
 if [[ "$1" == build-init ]]; then mkdir -p "$3/files"; fi
+if [[ "$1" == build-finish ]]; then printf "%s\n" "$@" > "$FAKE_FINISH"; fi
 TOOL
 cat > "$tmp/fake.AppImage" <<'TOOL'
 #!/bin/sh
@@ -41,7 +42,17 @@ printf '123\n'
 TOOL
 chmod +x "$tmp/bin/unsquashfs" "$tmp/bin/flatpak" "$tmp/fake.AppImage"
 digest=$(sha256sum "$tmp/fake.AppImage" | cut -d' ' -f1)
-PATH="$tmp/bin:$PATH" "$root/scripts/build-flatpak-local.sh" "$tmp/fake.AppImage" "$digest" "$tmp/built" > "$tmp/build.log"
+FAKE_FINISH="$tmp/host-args" PATH="$tmp/bin:$PATH" "$root/scripts/build-flatpak-local.sh" "$tmp/fake.AppImage" "$digest" "$tmp/built" > "$tmp/build.log"
+FAKE_FINISH="$tmp/selected-args" PATH="$tmp/bin:$PATH" "$root/scripts/build-flatpak-local.sh" "$tmp/fake.AppImage" "$digest" "$tmp/selected" selected-folder > "$tmp/build-selected.log"
+if FAKE_FINISH="$tmp/invalid-args" PATH="$tmp/bin:$PATH" "$root/scripts/build-flatpak-local.sh" "$tmp/fake.AppImage" "$digest" "$tmp/no-parent/output" invalid > "$tmp/invalid.log" 2>&1; then
+  echo 'Invalid profile unexpectedly accepted' >&2; exit 1
+fi
+[[ ! -e "$tmp/no-parent" && ! -e "$tmp/invalid-args" ]]
+rg -qx -- '--filesystem=host' "$tmp/host-args"
+! rg -q -- '^--filesystem=' "$tmp/selected-args"
+rg -qx 'host' "$tmp/built/permission-profile.txt"
+rg -qx 'selected-folder' "$tmp/selected/permission-profile.txt"
+rg -qx 'export GTK_USE_PORTAL=1' "$tmp/selected/build/files/bin/donutmediacenter"
 launcher="$tmp/built/build/files/bin/donutmediacenter"
 desktop="$tmp/built/build/files/lib/donutmediacenter/com.localbooru.app.desktop"
 rg -q '^export APPDIR=/app/lib/donutmediacenter$' "$launcher"
