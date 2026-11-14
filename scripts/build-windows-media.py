@@ -36,10 +36,13 @@ REQUIRED = (
     'MJPEG_ENCODER', 'FLAC_DECODER', 'HLS_MUXER', 'MPEGTS_MUXER',
 )
 SYSTEM_DLLS = {
-    'advapi32.dll', 'avrt.dll', 'bcrypt.dll', 'crypt32.dll', 'd3d11.dll',
+    # Windows Video for Windows and CNG APIs are supplied by the OS:
+    # https://learn.microsoft.com/windows/win32/api/vfw/nf-vfw-capcreatecapturewindowa
+    # https://learn.microsoft.com/windows/win32/api/ncrypt/nf-ncrypt-ncryptopenstorageprovider
+    'advapi32.dll', 'avicap32.dll', 'avrt.dll', 'bcrypt.dll', 'crypt32.dll', 'd3d11.dll',
     'd3d12.dll', 'dcomp.dll', 'dnsapi.dll', 'dwmapi.dll', 'dxgi.dll',
     'dxva2.dll', 'gdi32.dll', 'imm32.dll', 'kernel32.dll', 'mf.dll',
-    'mfplat.dll', 'mfreadwrite.dll', 'msvcrt.dll', 'ntdll.dll',
+    'mfplat.dll', 'mfreadwrite.dll', 'msvcrt.dll', 'ncrypt.dll', 'ntdll.dll',
     'ole32.dll', 'oleaut32.dll', 'psapi.dll', 'secur32.dll', 'setupapi.dll',
     'shell32.dll', 'shlwapi.dll', 'ucrtbase.dll', 'user32.dll', 'userenv.dll',
     'vfw32.dll', 'version.dll', 'winmm.dll', 'ws2_32.dll',
