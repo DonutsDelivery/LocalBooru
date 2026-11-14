@@ -3,13 +3,13 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
 const api = vi.hoisted(() => ({
-  fetchCollections: vi.fn(), createCollection: vi.fn(), deleteCollection: vi.fn(),
+  getConnectedHubs: vi.fn(), fetchCollections: vi.fn(), createCollection: vi.fn(), deleteCollection: vi.fn(),
   fetchDirectories: vi.fn(), getSavedSearches: vi.fn(),
   fetchLibraries: vi.fn(), fetchMusicFacets: vi.fn(), fetchMusicCollections: vi.fn(),
   fetchMusicAlbums: vi.fn(), fetchMusicTracks: vi.fn(),
 }))
 const music = vi.hoisted(() => ({
-  useMusicPlayer: vi.fn(),
+  useMusicPlayer: vi.fn(), useMusicBrowser: vi.fn(),
 }))
 vi.mock('../api', () => ({
   ...api,
@@ -47,6 +47,7 @@ beforeEach(() => {
   } })
   sessionStorage.clear()
   vi.clearAllMocks()
+  api.getConnectedHubs.mockResolvedValue({ hubs: [] })
   api.fetchCollections.mockImplementation(async type => ({ collections: [{ id: type === 'video' ? 2 : 1, name: `${type} set`, item_count: 1 }] }))
   api.createCollection.mockImplementation(async (name, description, mediaType) => ({ id: 4, name, media_type: mediaType, item_count: 0 }))
   api.fetchDirectories.mockResolvedValue({ directories: [] })
@@ -56,14 +57,16 @@ beforeEach(() => {
   api.fetchMusicCollections.mockResolvedValue({ collections: [{ id: 3, name: 'Music set', item_count: 1 }] })
   api.fetchMusicAlbums.mockResolvedValue({ albums: [], total: 0 })
   api.fetchMusicTracks.mockResolvedValue({ tracks: [], total: 0 })
-  music.useMusicPlayer.mockReturnValue({
+  const musicContext = {
     browse: { mode: 'albums', byMode: { albums: {
       query: '', artist: '', album: '', genre: '', year: '', favorites: false,
       folder: '', collection: '', library: '', scroll: 0, page: 1,
     } } },
     setBrowse: vi.fn(), updateBrowse: vi.fn(), startSong: vi.fn(), openAlbum: vi.fn(),
     queueTrack: vi.fn(), session: null,
-  })
+  }
+  music.useMusicPlayer.mockReturnValue(musicContext)
+  music.useMusicBrowser.mockReturnValue(musicContext)
 })
 afterEach(() => cleanup())
 
@@ -79,7 +82,7 @@ test('the library switcher lives in the sidebar and restores galleries, not coll
   expect(within(nav).queryByRole('link', { name: 'Collections' })).toBeNull()
   expect(within(nav).getByRole('link', { name: 'Videos' }).getAttribute('aria-current')).toBe('page')
   expect(within(nav).getByRole('link', { name: 'Videos' }).getAttribute('href')).toBe('/videos?sort=oldest')
-  expect(screen.getByRole('link', { name: 'View all' }).getAttribute('href')).toBe('/collections?media_type=video')
+  expect(screen.getByRole('link', { name: 'All Collections' }).getAttribute('href')).toBe('/collections?media_type=video')
   await waitFor(() => expect(screen.getByRole('link', { name: /video set/ }).getAttribute('href')).toBe('/collections/2?media_type=video'))
   fireEvent.click(within(nav).getByRole('link', { name: 'Videos' }))
   expect(screen.getByTestId('route').textContent).toBe('/videos?sort=oldest')
@@ -89,28 +92,37 @@ test('the library switcher lives in the sidebar and restores galleries, not coll
   expect(api.fetchCollections).toHaveBeenCalledWith('video')
 })
 
-test('image collections are only reached from the image gallery sidebar', async () => {
-  render(<MemoryRouter initialEntries={['/']}><Sidebar mediaType="image" /></MemoryRouter>)
+test('image collections are reached from the image gallery sidebar and load after navigation', async () => {
+  render(<MemoryRouter initialEntries={['/']}><Sidebar mediaType="image" /><LocationProbe /></MemoryRouter>)
   const nav = screen.getByRole('navigation', { name: 'Navigation' })
   expect(within(nav).queryByRole('link', { name: 'Collections' })).toBeNull()
-  expect(screen.getByRole('link', { name: 'View all' }).getAttribute('href')).toBe('/collections?media_type=image')
+  const collections = screen.getByRole('link', { name: 'Collections', exact:true })
+  expect(collections.getAttribute('href')).toBe('/collections?media_type=image')
+  expect(api.fetchCollections).not.toHaveBeenCalled()
+  fireEvent.click(collections)
+  expect(screen.getByTestId('route').textContent).toBe('/collections?media_type=image')
   await waitFor(() => expect(screen.getByRole('link', { name: /image set/ }).getAttribute('href')).toBe('/collections/1?media_type=image'))
   expect(api.fetchCollections).toHaveBeenCalledWith('image')
 })
 
 test('music keeps its own collections and the same switcher in its sidebar, not above the grid', async () => {
+  const browser = music.useMusicBrowser()
+  browser.browse = { ...browser.browse, collectionGallery:{ view:'index', scroll:0 } }
   render(<MemoryRouter initialEntries={['/music']}><MusicPage /></MemoryRouter>)
   const aside = document.querySelector('.music-sidebar')
   const main = document.querySelector('.music-main')
-  const nav = within(aside).getByRole('navigation', { name: 'Media libraries' })
-  expect(within(nav).getAllByRole('link')).toHaveLength(3)
+  const nav = within(aside).getByRole('navigation', { name: 'Navigation' })
+  expect(within(nav).getAllByRole('link')).toHaveLength(5)
   expect(within(nav).getByRole('link', { name: 'Music' }).getAttribute('aria-current')).toBe('page')
   expect(main.querySelector('nav')).toBeNull()
   await waitFor(() => expect(within(aside).getByRole('button', { name: /Music set/ })).toBeTruthy())
   expect(api.fetchMusicCollections).toHaveBeenCalledWith(undefined)
   expect(api.fetchCollections).not.toHaveBeenCalled()
   fireEvent.click(within(aside).getByRole('button', { name: /Music set/ }))
-  expect(music.useMusicPlayer().updateBrowse).toHaveBeenCalledWith('albums', { collection: '3', scroll: 0, page: 1 })
+  expect(browser.setBrowse).toHaveBeenCalled()
+  const next = browser.setBrowse.mock.calls.at(-1)[0](browser.browse)
+  expect(next.byMode.albums.collection).toBe('3')
+  expect(next.collectionGallery.view).toBe('detail')
 })
 
 test('video collections page only displays and creates video collections', async () => {
