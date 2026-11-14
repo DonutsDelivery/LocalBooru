@@ -71,6 +71,184 @@ fn move_file(source: &Path, destination: &Path) -> Result<(), AppError> {
     }
 }
 
+type TrackedMove = (i64, PathBuf, PathBuf);
+
+fn discard_moves(
+    conn: &mut rusqlite::Connection,
+    moves: &[TrackedMove],
+    mut mover: impl FnMut(&Path, &Path) -> Result<(), AppError>,
+) -> Result<usize, AppError> {
+    // Reject missing inputs and collisions before changing any file or row.
+    let mut destinations = std::collections::HashSet::new();
+    for (_, source, destination) in moves {
+        if !source.try_exists()? {
+            return Err(AppError::NotFound(format!(
+                "Media is missing: {}",
+                source.display()
+            )));
+        }
+        if destination.try_exists()? || !destinations.insert(destination.clone()) {
+            return Err(AppError::BadRequest(format!(
+                "Discard destination already exists: {}",
+                destination.display()
+            )));
+        }
+    }
+
+    // Publish undo information before a removal notification can reach the
+    // watcher. A stale selection must not move files whose rows disappeared.
+    let tx = conn.transaction()?;
+    for (id, source, destination) in moves {
+        let changed = tx.execute(
+            "UPDATE image_files SET original_path = ?1, curation_original_path = ?2,
+             curation_discarded_at = datetime('now')
+             WHERE id = ?3 AND original_path = ?2 AND curation_discarded_at IS NULL",
+            params![destination.to_string_lossy(), source.to_string_lossy(), id],
+        )?;
+        if changed != 1 {
+            return Err(AppError::NotFound(
+                "Curation file changed before discard".into(),
+            ));
+        }
+    }
+    tx.commit()?;
+
+    let mut completed: Vec<usize> = Vec::new();
+    for (index, (_, source, destination)) in moves.iter().enumerate() {
+        if let Err(error) = mover(source, destination) {
+            let mut rollback_failed = std::collections::HashSet::new();
+            let mut failures = Vec::new();
+            for &done in completed.iter().rev() {
+                let (id, original, dumped) = &moves[done];
+                if let Err(rollback_error) = mover(dumped, original) {
+                    rollback_failed.insert(*id);
+                    failures.push(rollback_error.to_string());
+                }
+            }
+            let rollback = conn.transaction()?;
+            for (id, original, _) in moves {
+                // Never clear the recovery marker for a file still in the
+                // dumpster. Untouched/successfully rolled-back files are live.
+                if !rollback_failed.contains(id) && original.try_exists()? {
+                    rollback.execute(
+                        "UPDATE image_files SET original_path = ?1,
+                         curation_original_path = NULL, curation_discarded_at = NULL WHERE id = ?2",
+                        params![original.to_string_lossy(), id],
+                    )?;
+                }
+            }
+            rollback.commit()?;
+            if !failures.is_empty() {
+                return Err(AppError::Internal(format!(
+                    "{error}; discard rollback incomplete; retained files can be restored: {}",
+                    failures.join("; ")
+                )));
+            }
+            return Err(error);
+        }
+        completed.push(index);
+    }
+    Ok(moves.len())
+}
+
+fn rollback_restore_moves(
+    conn: &rusqlite::Connection,
+    moves: &[TrackedMove],
+    completed: &[usize],
+    mover: &mut impl FnMut(&Path, &Path) -> Result<(), AppError>,
+    error: AppError,
+) -> AppError {
+    let mut failures = Vec::new();
+    for &index in completed.iter().rev() {
+        let (id, dumped, original) = &moves[index];
+        if let Err(rollback_error) = mover(original, dumped) {
+            failures.push(rollback_error.to_string());
+            if original.try_exists().unwrap_or(false) && !dumped.try_exists().unwrap_or(true) {
+                // Serve the surviving original while retaining its undo marker.
+                // A later restore recognizes this already-restored row.
+                if let Err(db_error) = conn.execute(
+                    "UPDATE image_files SET original_path = ?1 WHERE id = ?2",
+                    params![original.to_string_lossy(), id],
+                ) {
+                    failures.push(db_error.to_string());
+                }
+            }
+        }
+    }
+    if failures.is_empty() {
+        error
+    } else {
+        AppError::Internal(format!(
+            "{error}; restore rollback incomplete: {}",
+            failures.join("; ")
+        ))
+    }
+}
+
+fn restore_moves(
+    conn: &mut rusqlite::Connection,
+    moves: &[TrackedMove],
+    mut mover: impl FnMut(&Path, &Path) -> Result<(), AppError>,
+) -> Result<usize, AppError> {
+    // Inspect the entire batch before moving the first file. Interrupted
+    // discards/restores may already have the original in its final location.
+    let mut pending = Vec::new();
+    for (index, (_, dumped, original)) in moves.iter().enumerate() {
+        let dumped_exists = dumped.try_exists()?;
+        let original_exists = original.try_exists()?;
+        if original_exists && (!dumped_exists || dumped == original) {
+            continue;
+        }
+        if original_exists {
+            return Err(AppError::BadRequest(format!(
+                "Cannot restore because both discarded and original files exist: {} and {}",
+                dumped.display(),
+                original.display()
+            )));
+        }
+        if !dumped_exists {
+            return Err(AppError::NotFound(format!(
+                "Discarded file is missing: {}",
+                dumped.display()
+            )));
+        }
+        pending.push(index);
+    }
+    let mut completed = Vec::new();
+    for index in pending {
+        let (_, dumped, original) = &moves[index];
+        if let Err(error) = mover(dumped, original) {
+            return Err(rollback_restore_moves(
+                conn, moves, &completed, &mut mover, error,
+            ));
+        }
+        completed.push(index);
+    }
+    let update = (|| -> Result<(), AppError> {
+        let tx = conn.transaction()?;
+        for (id, _, original) in moves {
+            if tx.execute(
+                "UPDATE image_files SET original_path = ?1, curation_original_path = NULL,
+                 curation_discarded_at = NULL WHERE id = ?2 AND curation_discarded_at IS NOT NULL",
+                params![original.to_string_lossy(), id],
+            )? != 1
+            {
+                return Err(AppError::NotFound(
+                    "Curation file changed before restore".into(),
+                ));
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    })();
+    if let Err(error) = update {
+        return Err(rollback_restore_moves(
+            conn, moves, &completed, &mut mover, error,
+        ));
+    }
+    Ok(moves.len())
+}
+
 fn set_favorite_value(
     state: &AppState,
     locator: &ImageLocator,
@@ -188,38 +366,7 @@ pub async fn discard(
             })
             .collect::<Result<Vec<_>, AppError>>()?;
 
-        let mut completed: Vec<(PathBuf, PathBuf)> = Vec::new();
-        for (_, source, destination) in &moves {
-            if let Err(error) = move_file(source, destination) {
-                for (original, dumped) in completed.iter().rev() {
-                    let _ = move_file(dumped, original);
-                }
-                return Err(error);
-            }
-            completed.push((source.clone(), destination.clone()));
-        }
-
-        let tx = conn.transaction()?;
-        for (file_id, source, destination) in &moves {
-            tx.execute(
-                "UPDATE image_files
-                 SET original_path = ?1, curation_original_path = ?2,
-                     curation_discarded_at = datetime('now')
-                 WHERE id = ?3",
-                params![
-                    destination.to_string_lossy(),
-                    source.to_string_lossy(),
-                    file_id
-                ],
-            )?;
-        }
-        if let Err(error) = tx.commit() {
-            for (original, dumped) in completed.iter().rev() {
-                let _ = move_file(dumped, original);
-            }
-            return Err(error.into());
-        }
-        Ok(moves.len())
+        discard_moves(&mut conn, &moves, move_file)
     })
     .await??;
 
@@ -258,41 +405,7 @@ pub async fn restore(
             .into_iter()
             .map(|(id, dumped, original)| (id, PathBuf::from(dumped), PathBuf::from(original)))
             .collect();
-        if let Some((_, _, path)) = moves.iter().find(|(_, _, original)| original.exists()) {
-            return Err(AppError::BadRequest(format!(
-                "Cannot restore because the original path already exists: {}",
-                path.display()
-            )));
-        }
-
-        let mut completed: Vec<(PathBuf, PathBuf)> = Vec::new();
-        for (_, dumped, original) in &moves {
-            if let Err(error) = move_file(dumped, original) {
-                for (dumped_path, original_path) in completed.iter().rev() {
-                    let _ = move_file(original_path, dumped_path);
-                }
-                return Err(error);
-            }
-            completed.push((dumped.clone(), original.clone()));
-        }
-
-        let tx = conn.transaction()?;
-        for (file_id, _, original) in &moves {
-            tx.execute(
-                "UPDATE image_files
-                 SET original_path = ?1, curation_original_path = NULL,
-                     curation_discarded_at = NULL
-                 WHERE id = ?2",
-                params![original.to_string_lossy(), file_id],
-            )?;
-        }
-        if let Err(error) = tx.commit() {
-            for (dumped, original) in completed.iter().rev() {
-                let _ = move_file(original, dumped);
-            }
-            return Err(error.into());
-        }
-        Ok(moves.len())
+        restore_moves(&mut conn, &moves, move_file)
     })
     .await??;
 
@@ -327,6 +440,351 @@ pub async fn unfavorite_many(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Fixture {
+        root: PathBuf,
+        moves: Vec<TrackedMove>,
+    }
+
+    impl Fixture {
+        fn new(count: usize) -> Self {
+            let root =
+                std::env::temp_dir().join(format!("curation-regression-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&root).unwrap();
+            let conn = rusqlite::Connection::open(root.join("metadata.sqlite")).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE image_files (
+                id INTEGER PRIMARY KEY, original_path TEXT NOT NULL UNIQUE,
+                curation_original_path TEXT, curation_discarded_at TEXT)",
+            )
+            .unwrap();
+            let mut moves = Vec::new();
+            for index in 1..=count {
+                let source = root.join(format!("source-{index}.png"));
+                let dumped = root.join("dumpster").join(format!("source-{index}.png"));
+                std::fs::write(&source, format!("synthetic-media-{index}")).unwrap();
+                conn.execute(
+                    "INSERT INTO image_files(id, original_path) VALUES (?1, ?2)",
+                    params![index as i64, source.to_string_lossy()],
+                )
+                .unwrap();
+                moves.push((index as i64, source, dumped));
+            }
+            Self { root, moves }
+        }
+
+        fn connection(&self) -> rusqlite::Connection {
+            rusqlite::Connection::open(self.root.join("metadata.sqlite")).unwrap()
+        }
+
+        fn restore_plan(&self, conn: &rusqlite::Connection) -> Vec<TrackedMove> {
+            let mut statement = conn
+                .prepare(
+                    "SELECT id, original_path, curation_original_path
+                FROM image_files WHERE curation_discarded_at IS NOT NULL ORDER BY id",
+                )
+                .unwrap();
+            let rows = statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get(0)?,
+                        PathBuf::from(row.get::<_, String>(1)?),
+                        PathBuf::from(row.get::<_, String>(2)?),
+                    ))
+                })
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            rows
+        }
+
+        fn assert_originals(&self, conn: &rusqlite::Connection) {
+            for (id, original, _) in &self.moves {
+                assert_eq!(
+                    std::fs::read(original).unwrap(),
+                    format!("synthetic-media-{id}").as_bytes()
+                );
+                let row: (String, bool) = conn.query_row(
+                    "SELECT original_path, curation_discarded_at IS NOT NULL FROM image_files WHERE id=?1",
+                    params![id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+                assert_eq!(row, (original.to_string_lossy().into_owned(), false));
+            }
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            if let Err(error) = std::fs::remove_dir_all(&self.root) {
+                if !std::thread::panicking() {
+                    panic!("Synthetic fixture cleanup failed: {error}");
+                }
+            }
+        }
+    }
+
+    fn forced_failure() -> AppError {
+        AppError::Internal("injected move failure".into())
+    }
+
+    // AC: @curation-game ac-4, ac-5
+    #[test]
+    fn curation_discard_and_undo_persist_real_files_and_rows() {
+        let fixture = Fixture::new(2);
+        let mut conn = fixture.connection();
+        assert_eq!(
+            discard_moves(&mut conn, &fixture.moves, move_file).unwrap(),
+            2
+        );
+        drop(conn);
+        let mut conn = fixture.connection();
+        let plan = fixture.restore_plan(&conn);
+        assert_eq!(plan.len(), 2);
+        for (_, original, dumped) in &fixture.moves {
+            assert!(!original.exists());
+            assert!(dumped.exists());
+        }
+        assert_eq!(restore_moves(&mut conn, &plan, move_file).unwrap(), 2);
+        fixture.assert_originals(&conn);
+    }
+
+    // AC: @curation-game ac-4, ac-5
+    #[test]
+    fn curation_failed_discard_rolls_back_all_successful_moves() {
+        let fixture = Fixture::new(2);
+        let mut conn = fixture.connection();
+        let mut calls = 0;
+        assert!(discard_moves(&mut conn, &fixture.moves, |from, to| {
+            calls += 1;
+            if calls == 2 {
+                Err(forced_failure())
+            } else {
+                move_file(from, to)
+            }
+        })
+        .is_err());
+        assert_eq!(calls, 3);
+        fixture.assert_originals(&conn);
+        assert!(fixture.moves.iter().all(|(_, _, dumped)| !dumped.exists()));
+    }
+
+    // AC: @curation-game ac-4, ac-5
+    #[test]
+    fn curation_failed_discard_rollback_keeps_the_surviving_copy_restorable() {
+        let fixture = Fixture::new(2);
+        let mut conn = fixture.connection();
+        let mut calls = 0;
+        assert!(discard_moves(&mut conn, &fixture.moves, |from, to| {
+            calls += 1;
+            if calls >= 2 {
+                Err(forced_failure())
+            } else {
+                move_file(from, to)
+            }
+        })
+        .is_err());
+        assert!(!fixture.moves[0].1.exists());
+        assert_eq!(
+            std::fs::read(&fixture.moves[0].2).unwrap(),
+            b"synthetic-media-1"
+        );
+        let plan = fixture.restore_plan(&conn);
+        assert_eq!(
+            plan,
+            vec![(1, fixture.moves[0].2.clone(), fixture.moves[0].1.clone())]
+        );
+        restore_moves(&mut conn, &plan, move_file).unwrap();
+        fixture.assert_originals(&conn);
+    }
+
+    // AC: @curation-game ac-5
+    #[test]
+    fn curation_restore_preflights_a_missing_later_file_before_any_moves() {
+        let fixture = Fixture::new(2);
+        let mut conn = fixture.connection();
+        discard_moves(&mut conn, &fixture.moves, move_file).unwrap();
+        std::fs::remove_file(&fixture.moves[1].2).unwrap();
+        let plan = fixture.restore_plan(&conn);
+        let mut calls = 0;
+        assert!(restore_moves(&mut conn, &plan, |from, to| {
+            calls += 1;
+            move_file(from, to)
+        })
+        .is_err());
+        assert_eq!(calls, 0);
+        assert!(fixture.moves[0].2.exists());
+        assert!(!fixture.moves[0].1.exists());
+        assert_eq!(fixture.restore_plan(&conn).len(), 2);
+    }
+
+    // AC: @curation-game ac-5
+    #[test]
+    fn curation_restore_reconciles_publication_interrupted_before_file_moves() {
+        let fixture = Fixture::new(2);
+        let conn = fixture.connection();
+        for (id, source, dumped) in &fixture.moves {
+            conn.execute(
+                "UPDATE image_files SET original_path=?1, curation_original_path=?2,
+                curation_discarded_at='interrupted' WHERE id=?3",
+                params![dumped.to_string_lossy(), source.to_string_lossy(), id],
+            )
+            .unwrap();
+        }
+        drop(conn);
+        let mut conn = fixture.connection();
+        let plan = fixture.restore_plan(&conn);
+        restore_moves(&mut conn, &plan, |_, _| {
+            panic!("Already-present originals must not move")
+        })
+        .unwrap();
+        fixture.assert_originals(&conn);
+    }
+
+    // AC: @curation-game ac-5
+    #[test]
+    fn curation_restore_failed_rollback_records_actual_path_and_can_retry() {
+        let fixture = Fixture::new(2);
+        let mut conn = fixture.connection();
+        discard_moves(&mut conn, &fixture.moves, move_file).unwrap();
+        let plan = fixture.restore_plan(&conn);
+        let mut calls = 0;
+        assert!(restore_moves(&mut conn, &plan, |from, to| {
+            calls += 1;
+            if calls >= 2 {
+                Err(forced_failure())
+            } else {
+                move_file(from, to)
+            }
+        })
+        .is_err());
+        let retry = fixture.restore_plan(&conn);
+        assert_eq!(
+            retry[0],
+            (1, fixture.moves[0].1.clone(), fixture.moves[0].1.clone())
+        );
+        assert!(fixture.moves[0].1.exists());
+        assert!(fixture.moves[1].2.exists());
+        restore_moves(&mut conn, &retry, move_file).unwrap();
+        fixture.assert_originals(&conn);
+    }
+
+    // AC: @curation-game ac-5
+    #[test]
+    fn curation_restore_database_failure_rolls_files_back_without_losing_undo() {
+        let fixture = Fixture::new(2);
+        let mut conn = fixture.connection();
+        discard_moves(&mut conn, &fixture.moves, move_file).unwrap();
+        conn.execute_batch("CREATE TRIGGER reject_restore BEFORE UPDATE ON image_files
+            WHEN NEW.curation_discarded_at IS NULL BEGIN SELECT RAISE(ABORT, 'injected DB failure'); END;").unwrap();
+        let plan = fixture.restore_plan(&conn);
+        assert!(restore_moves(&mut conn, &plan, move_file).is_err());
+        assert!(fixture
+            .moves
+            .iter()
+            .all(|(_, original, dumped)| !original.exists() && dumped.exists()));
+        assert_eq!(fixture.restore_plan(&conn).len(), 2);
+        conn.execute_batch("DROP TRIGGER reject_restore").unwrap();
+        restore_moves(&mut conn, &plan, move_file).unwrap();
+        fixture.assert_originals(&conn);
+    }
+
+    // AC: @curation-game ac-4, ac-5
+    #[test]
+    fn curation_collision_and_stale_rows_fail_before_physical_changes() {
+        let fixture = Fixture::new(2);
+        let mut conn = fixture.connection();
+        std::fs::create_dir_all(fixture.moves[1].2.parent().unwrap()).unwrap();
+        std::fs::write(&fixture.moves[1].2, b"existing-destination").unwrap();
+        assert!(discard_moves(&mut conn, &fixture.moves, |_, _| panic!(
+            "Collision must be preflighted"
+        ))
+        .is_err());
+        fixture.assert_originals(&conn);
+        assert_eq!(
+            std::fs::read(&fixture.moves[1].2).unwrap(),
+            b"existing-destination"
+        );
+        std::fs::remove_file(&fixture.moves[1].2).unwrap();
+        conn.execute("DELETE FROM image_files WHERE id=2", [])
+            .unwrap();
+        assert!(discard_moves(&mut conn, &fixture.moves, |_, _| panic!(
+            "Stale rows must not move files"
+        ))
+        .is_err());
+        let flags: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM image_files WHERE curation_discarded_at IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(flags, 0);
+        assert!(fixture
+            .moves
+            .iter()
+            .all(|(_, original, dumped)| original.exists() && !dumped.exists()));
+    }
+
+    // AC: @curation-game ac-4, ac-5
+    #[test]
+    fn curation_watcher_preserves_undo_and_thumbnail_then_handles_real_deletion() {
+        let fixture = Fixture::new(1);
+        let lib =
+            crate::db::library::LibraryContext::create(&fixture.root.join("library"), "Synthetic")
+                .unwrap();
+        let pool = lib.directory_db.get_pool(1).unwrap();
+        let mut conn = pool.get().unwrap();
+        let hash = "0123456789abcdef0123456789abcdef";
+        conn.execute(
+            "INSERT INTO images(id, filename, file_hash) VALUES (1, 'synthetic.png', ?1)",
+            params![hash],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_files(id, image_id, original_path) VALUES (1, 1, ?1)",
+            params![fixture.moves[0].1.to_string_lossy()],
+        )
+        .unwrap();
+        let thumb = lib.thumbnails_dir().join("0123456789abcdef.webp");
+        std::fs::write(&thumb, b"synthetic-thumbnail").unwrap();
+        discard_moves(&mut conn, &fixture.moves, |from, to| {
+            move_file(from, to)?;
+            crate::services::file_tracker::mark_file_missing(&lib, from.to_str().unwrap(), 1)?;
+            let held = fixture.root.join("held.png");
+            move_file(to, &held)?;
+            crate::services::file_tracker::mark_file_missing(&lib, to.to_str().unwrap(), 1)?;
+            move_file(&held, to)
+        })
+        .unwrap();
+        assert!(thumb.exists());
+        let plan = fixture.restore_plan(&conn);
+        assert_eq!(plan.len(), 1);
+        restore_moves(&mut conn, &plan, move_file).unwrap();
+        crate::services::file_tracker::mark_file_missing(
+            &lib,
+            fixture.moves[0].1.to_str().unwrap(),
+            1,
+        )
+        .unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM images", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert!(thumb.exists());
+        std::fs::remove_file(&fixture.moves[0].1).unwrap();
+        crate::services::file_tracker::mark_file_missing(
+            &lib,
+            fixture.moves[0].1.to_str().unwrap(),
+            1,
+        )
+        .unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM images", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert!(!thumb.exists());
+    }
 
     // AC: @curation-game ac-4, ac-5
     #[test]
