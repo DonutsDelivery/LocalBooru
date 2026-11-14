@@ -95,6 +95,23 @@ test('weight editing uses the current multiline selection after an earlier marke
   expect(box.value).toBe('A (cat in fog.\nSoft light.:1.05)')
 })
 
+test('weight shortcuts update only the workspace that owns the textarea', async () => {
+  const firstPatch = vi.fn().mockResolvedValue(undefined)
+  const secondPatch = vi.fn().mockResolvedValue(undefined)
+  const props = text => ({ activeTab:'create', connected:true, onGenerate:vi.fn(),
+    snapshot:{fields:{prompt:{kind:'text',value:text}}} })
+  render(<><SimpleCreateControls {...props('First owl.')} onPatch={firstPatch} />
+    <SimpleCreateControls {...props('Second owl.')} onPatch={secondPatch} /></>)
+  const [first, second] = screen.getAllByLabelText('Describe your image')
+  second.setSelectionRange(0, 6)
+  fireEvent.keyDown(second, { key:'ArrowUp', shiftKey:true })
+  fireEvent.blur(second)
+  expect(first.value).toBe('First owl.')
+  expect(second.value).toBe('(Second:1.05) owl.')
+  await waitFor(() => expect(secondPatch).toHaveBeenCalledWith({prompt:'(Second:1.05) owl.'}))
+  expect(firstPatch).not.toHaveBeenCalled()
+})
+
 // AC: @create-krea-prompt-weights ac-control
 test('weights are absent when a custom workflow has no supported control', () => {
   render(<SimpleCreateControls activeTab="create" connected snapshot={{fields:{}}} onPatch={vi.fn()} onGenerate={vi.fn()} />)

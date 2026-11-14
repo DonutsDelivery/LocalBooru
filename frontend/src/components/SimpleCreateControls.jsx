@@ -335,7 +335,7 @@ export default function SimpleCreateControls({
   function onPromptWeightKey(event) {
     const node = event.target
     const delta = weightArrowDelta(event)
-    if (!delta || !node?.dataset?.promptWeight || node.disabled) return
+    if (!delta || !node?.dataset?.promptWeight || node.disabled || !panels.workspace.current?.contains(node)) return
     const start = node.selectionStart
     const end = node.selectionEnd
     event.preventDefault()
