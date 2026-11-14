@@ -5,7 +5,7 @@ if [[ $# != 3 && $# != 4 ]]; then
   echo "Usage: $0 /absolute/path/to/DonutMediaCenter-Linux.AppImage SHA256 /absolute/output/directory [host|selected-folder]" >&2
   exit 2
 fi
-image=$1 expected=$2 out=$3 profile=${4:-host}
+image=$1 expected=$2 out=$3 profile=${4-host}
 [[ "$profile" == host || "$profile" == selected-folder ]] || { echo "Invalid permission profile: $profile" >&2; exit 2; }
 [[ "$image" = /* && "$out" = /* && "$expected" =~ ^[[:xdigit:]]{64}$ ]] || { echo 'Use absolute paths and a SHA-256 digest.' >&2; exit 2; }
 [[ -f "$image" && ! -L "$image" && ! -e "$out" ]] || { echo 'Input must be a regular AppImage; output must not exist.' >&2; exit 2; }
@@ -39,8 +39,6 @@ sed -i 's/^Exec="donutmediacenter"/Exec=donutmediacenter/' "$out/build/files/lib
 cat > "$out/build/files/bin/donutmediacenter" <<'LAUNCHER'
 #!/bin/sh
 export APPDIR=/app/lib/donutmediacenter
-# GTK native file chooser requests access through the desktop portal.
-export GTK_USE_PORTAL=1
 RUNTIME="$APPDIR/usr/lib/localbooru/native-svp"
 PLATFORM_LIB=/usr/lib/x86_64-linux-gnu
 CODECS_LIB="$PLATFORM_LIB/codecs-extra/lib"
@@ -77,6 +75,9 @@ export PATH="$APPDIR/usr/bin:$PATH"
 # Avoid linuxdeploy's AppImage-only environment hooks reordering these paths.
 exec "$APPDIR/usr/bin/donutmediacenter" "$@"
 LAUNCHER
+if [[ "$profile" == selected-folder ]]; then
+  sed -i '/^export APPDIR=/a export GTK_USE_PORTAL=1' "$out/build/files/bin/donutmediacenter"
+fi
 chmod 755 "$out/build/files/bin/donutmediacenter"
 sed -e "s/^Icon=.*/Icon=$id/" "$root/src-tauri/linux/com.localbooru.app.desktop" > "$out/build/files/share/applications/$id.desktop"
 install -m 644 "$root/assets/icon.png" "$out/build/files/share/icons/hicolor/512x512/apps/$id.png"

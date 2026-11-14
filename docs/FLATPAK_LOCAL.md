@@ -25,7 +25,7 @@ choice. Both profiles retain network, IPC, display, audio, GPU and the D-Bus
 name below. Only `host` grants `--filesystem=host`; selected-folder adds no
 filesystem mount and requests GTK's native chooser portal via `GTK_USE_PORTAL=1`.
 Flatpak's app-owned XDG data remains available. Contained Linux uses the app
- data directory rather than the legacy `~/.localbooru` directory; existing host
+data directory rather than the legacy `~/.localbooru` directory; existing host
 libraries are not automatically migrated or granted access. If a stored library
 path is inaccessible, use the folder chooser to select it again and check the
 result before relying on it; selection may return a different portal path, so
