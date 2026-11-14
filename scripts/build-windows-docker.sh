@@ -85,6 +85,14 @@ else
   rmdir "$MEDIA_PENDING"
 fi
 python3 -B scripts/build-windows-media.py --output "$MEDIA_OUTPUT" --stage-into "$WORKTREE"
+# Keep full runtime sources as a companion download; only small notices and
+# their exact source pointer enter portable/NSIS/derived MSIX resources.
+RUNTIME_PENDING="$(mktemp -d "$BUILD_ROOT/windows-runtime-offer.XXXXXX")"
+RUNTIME_OUTPUT="$RUNTIME_PENDING/payload"
+python3 -B scripts/export-windows-runtime-sources.py \
+  --media-receipt "$MEDIA_OUTPUT/media-build-receipt.json" \
+  --downloads "$BUILD_ROOT/windows-media-cache/downloads" --output "$RUNTIME_OUTPUT" \
+  --stage-into "$WORKTREE/LICENSES/ffmpeg/runtime"
 python3 - src-tauri/tauri.windows.conf.json "$BUILD_ROOT/tauri.windows.bundle.conf.json" <<'PY'
 import json, sys
 config = json.load(open(sys.argv[1]))
@@ -94,6 +102,8 @@ PY
 rm -rf "$DIST_DIR"/*
 cp "$MEDIA_OUTPUT/DonutMediaCenter-Windows-media-sources.tar.xz" \
   "$MEDIA_OUTPUT/media-build-receipt.json" "$DIST_DIR/"
+cp "$RUNTIME_OUTPUT/DonutMediaCenter-Windows-runtime-sources.tar.xz" \
+  "$RUNTIME_OUTPUT/runtime-source-receipt.json" "$DIST_DIR/"
 GIT_DIR=/git GIT_WORK_TREE="$SOURCE_DIR" python3 scripts/export-application-source.py \
   --repo "$SOURCE_DIR" --commit "$RESOLVED_SOURCE_REVISION" \
   --output "$DIST_DIR/DonutMediaCenter-Windows-source.tar.xz" \
@@ -201,12 +211,16 @@ for helper in ffmpeg.exe ffprobe.exe; do
 done
 python3 -B scripts/build-windows-media.py --output "$MEDIA_OUTPUT" \
   --portable "$STAGE" --installed "$INSTALLER_PAYLOAD"
+python3 -B scripts/export-windows-runtime-sources.py \
+  --media-receipt "$MEDIA_OUTPUT/media-build-receipt.json" --output "$RUNTIME_OUTPUT" \
+  --portable "$STAGE" --installed "$INSTALLER_PAYLOAD"
 
 (
   cd "$DIST_DIR"
   sha256sum DonutMediaCenter-Windows-Setup.exe DonutMediaCenter-Windows.zip \
     DonutMediaCenter-Windows-source.tar.xz application-source-receipt.json \
-    DonutMediaCenter-Windows-media-sources.tar.xz media-build-receipt.json > SHA256SUMS-Windows
+    DonutMediaCenter-Windows-media-sources.tar.xz media-build-receipt.json \
+    DonutMediaCenter-Windows-runtime-sources.tar.xz runtime-source-receipt.json > SHA256SUMS-Windows
   sha256sum -c SHA256SUMS-Windows
 )
 
@@ -227,10 +241,13 @@ receipt = {
     'recipe_sha256': digest(pathlib.Path('scripts/build-windows-docker.sh')),
     'media_receipt_sha256': digest(dist / 'media-build-receipt.json'),
     'media_source_archive_sha256': digest(dist / 'DonutMediaCenter-Windows-media-sources.tar.xz'),
+    'runtime_source_receipt_sha256': digest(dist / 'runtime-source-receipt.json'),
+    'runtime_source_archive_sha256': digest(dist / 'DonutMediaCenter-Windows-runtime-sources.tar.xz'),
     'application_source_archive_sha256': digest(dist / 'DonutMediaCenter-Windows-source.tar.xz'),
 }
 (dist / 'Windows-build-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
 PY
+rm -rf "$RUNTIME_PENDING"
 
 printf 'Windows Authenticode state (unsigned is expected for local builds):\n'
 file "$STAGE/DonutMediaCenter.exe" "$DIST_DIR/DonutMediaCenter-Windows-Setup.exe"

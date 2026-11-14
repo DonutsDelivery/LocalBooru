@@ -168,6 +168,8 @@ for key, name in [('portable_sha256', 'DonutMediaCenter-Windows.zip'),
                   ('installer_sha256', 'DonutMediaCenter-Windows-Setup.exe'),
                   ('media_receipt_sha256', 'media-build-receipt.json'),
                   ('media_source_archive_sha256', 'DonutMediaCenter-Windows-media-sources.tar.xz'),
+                  ('runtime_source_receipt_sha256', 'runtime-source-receipt.json'),
+                  ('runtime_source_archive_sha256', 'DonutMediaCenter-Windows-runtime-sources.tar.xz'),
                   ('application_source_archive_sha256', 'DonutMediaCenter-Windows-source.tar.xz')]:
     with (dist / name).open('rb') as stream:
         assert receipt[key] == hashlib.file_digest(stream, 'sha256').hexdigest()
@@ -182,6 +184,8 @@ assert media['recipe_sha256'] == hashlib.sha256(b''.join(source_file(p) for p in
     'docs/WINDOWS_MEDIA_HELPERS.md', 'LICENSE', 'NOTICE', 'LICENSES/MIT-legacy.txt'))).hexdigest()
 print('Windows source/recipe/artifact receipt verified')
 PY
+python3 "$ROOT/scripts/export-windows-runtime-sources.py" \
+  --media-receipt "$DIST_PATH/media-build-receipt.json" --output "$DIST_PATH" --verify-export
 python3 "$ROOT/scripts/export-application-source.py" \
   --verify-receipt "$DIST_PATH/application-source-receipt.json" --commit "$SOURCE_COMMIT"
 

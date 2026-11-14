@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "toolchain_sha256": "919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926",
+  "association": "Runtime source revisions associated with the published llvm-mingw 20261104 release recipe and successful push workflow; not an independent vendor rebuild or signature attestation.",
+  "sources": {
+    "llvm-project": {
+      "url": "https://codeload.github.com/llvm/llvm-project/tar.gz/392dfff97d29b59d77e5cac6d4b6ef2585fe7117",
+      "filename": "llvm-project-392dfff97d29b59d77e5cac6d4b6ef2585fe7117.tar.gz",
+      "root": "llvm-project-392dfff97d29b59d77e5cac6d4b6ef2585fe7117",
+      "commit": "392dfff97d29b59d77e5cac6d4b6ef2585fe7117",
+      "sha256": "d6dd769a5c981bc0ec5d877e55ca141e826aca1bca5c5e7d6128e70341dd3ae0",
+      "licenses": ["llvm/LICENSE.TXT", "libcxx/LICENSE.TXT", "libcxxabi/LICENSE.TXT", "libunwind/LICENSE.TXT", "compiler-rt/LICENSE.TXT"]
+    },
+    "mingw-w64": {
+      "url": "https://codeload.github.com/mingw-w64/mingw-w64/tar.gz/ee9bd87644156c41072a11ad957d1e11831a72df",
+      "filename": "mingw-w64-ee9bd87644156c41072a11ad957d1e11831a72df.tar.gz",
+      "root": "mingw-w64-ee9bd87644156c41072a11ad957d1e11831a72df",
+      "commit": "ee9bd87644156c41072a11ad957d1e11831a72df",
+      "sha256": "6a346a2e3eafa0e5ec8e30df89b16a05add8b50cb4cece8c47593799ca19e43b",
+      "licenses": ["COPYING", "COPYING.MinGW-w64/COPYING.MinGW-w64.txt", "COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt"]
+    },
+    "llvm-mingw": {
+      "url": "https://codeload.github.com/mstorsjo/llvm-mingw/tar.gz/70bc9a60eec2410124a9e3fe1611929705cb6574",
+      "filename": "llvm-mingw-70bc9a60eec2410124a9e3fe1611929705cb6574.tar.gz",
+      "root": "llvm-mingw-70bc9a60eec2410124a9e3fe1611929705cb6574",
+      "commit": "70bc9a60eec2410124a9e3fe1611929705cb6574",
+      "sha256": "27eeaca0b07a0a3b7fb487e8e09209cc113391b20f4701b5a2541cbcdcf033cd",
+      "licenses": ["LICENSE.txt"]
+    }
+  }
+}
