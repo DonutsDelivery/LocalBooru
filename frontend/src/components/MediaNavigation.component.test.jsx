@@ -78,7 +78,7 @@ test('the library switcher lives in the sidebar and restores galleries, not coll
     <Sidebar mediaType="video" /><LocationProbe />
   </MemoryRouter>)
   const nav = screen.getByRole('navigation', { name: 'Navigation' })
-  expect(within(nav).getAllByRole('link')).toHaveLength(5)
+  expect(within(nav).getAllByRole('link')).toHaveLength(4)
   expect(within(nav).queryByRole('link', { name: 'Collections' })).toBeNull()
   expect(within(nav).getByRole('link', { name: 'Videos' }).getAttribute('aria-current')).toBe('page')
   expect(within(nav).getByRole('link', { name: 'Videos' }).getAttribute('href')).toBe('/videos?sort=oldest')
@@ -112,7 +112,7 @@ test('music keeps its own collections and the same switcher in its sidebar, not 
   const aside = document.querySelector('.music-sidebar')
   const main = document.querySelector('.music-main')
   const nav = within(aside).getByRole('navigation', { name: 'Navigation' })
-  expect(within(nav).getAllByRole('link')).toHaveLength(5)
+  expect(within(nav).getAllByRole('link')).toHaveLength(4)
   expect(within(nav).getByRole('link', { name: 'Music' }).getAttribute('aria-current')).toBe('page')
   expect(main.querySelector('nav')).toBeNull()
   await waitFor(() => expect(within(aside).getByRole('button', { name: /Music set/ })).toBeTruthy())
