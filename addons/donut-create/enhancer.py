@@ -140,6 +140,8 @@ def parse_result(text, finish_reason, supplied_face=False, style=""):
     elif supplied_face and not result["face_prompt"].strip():
         raise ValueError("The model returned an incomplete or unsafe prompt pair. Try again; your original prompts are unchanged.")
     if style.strip():
+        if not valid_text(style, MAX_STYLE):
+            raise ValueError("The style is oversized or contains unsafe file macros. Edit it and retry; your original prompts are unchanged.")
         result = {**result, "main_prompt": carry_style(result["main_prompt"], style),
                   "face_prompt": carry_style(result["face_prompt"], style)}
         if "face_prompts" in result:

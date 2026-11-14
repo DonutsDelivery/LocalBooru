@@ -161,6 +161,13 @@ class OutputTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_result(json.dumps(crowded), "stop", False, style)
 
+    # AC: @create-managed-prompt-enhancer ac-owned-private
+    def test_style_fallback_cannot_add_unsafe_file_macros_to_validated_output(self):
+        result = {"main_prompt": "A synthetic owl.", "face_prompt": "The owl's face."}
+        for style in ("%load:/synthetic/style%", "%FiLe :/synthetic/style%", "x" * 4001):
+            with self.subTest(style=style), self.assertRaisesRegex(ValueError, "style"):
+                parse_result(json.dumps(result), "stop", True, style)
+
     # AC: @create-managed-prompt-enhancer ac-enhance-preview
     def test_expanded_scene_and_identity_only_face_are_not_shortened_or_combined(self):
         result = {
