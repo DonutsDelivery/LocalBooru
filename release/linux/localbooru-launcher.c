@@ -57,6 +57,10 @@ int main(int argc, char **argv) {
     snprintf(path, sizeof(path), "%s/bin/mpv", runtime);
     if (setenv("LOCALBOORU_WEB_PROCESS_PATH", path, 1) != 0)
         goto env_error;
+    /* Helpers and the injected bundle must match the bundled WebKit. */
+    snprintf(path, sizeof(path), "%s/bin", runtime);
+    if (setenv("LOCALBOORU_WEBKIT_EXEC_DIR", path, 1) != 0)
+        goto env_error;
     if (!getenv("LOCALBOORU_ENABLE_NATIVE_SVP") &&
         setenv("LOCALBOORU_ENABLE_NATIVE_SVP", "1", 1) != 0)
         goto env_error;

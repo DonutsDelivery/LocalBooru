@@ -22,6 +22,8 @@ export LOCALBOORU_GSTREAMER_SVP_DIR="$RUNTIME/gstreamer"
 export LOCALBOORU_WEB_PROCESS_PATH="$RUNTIME/bin/mpv"
 export WEBKIT_INJECTED_BUNDLE_PATH="$RUNTIME/injected-bundle"
 export LOCALBOORU_WEBKIT_PROCESS_DIR="$RUNTIME/bin"
+# Compatibility with the older helper locator; both select this bundled cohort.
+export LOCALBOORU_WEBKIT_EXEC_DIR="$RUNTIME/bin"
 export LOCALBOORU_ENABLE_NATIVE_SVP="${LOCALBOORU_ENABLE_NATIVE_SVP:-1}"
 
 exec "$APPDIR/AppRun.tauri" "$@"

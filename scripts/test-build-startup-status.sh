@@ -204,8 +204,11 @@ touch "$linux_build/webkitgtk-2.52.3/.localbooru-patch-$patch_hash"
 touch "$linux_build/vapoursynth-stage/.localbooru-vapoursynth-c05906995662bacd5bddf853d8e68f19286987db"
 printf 'webkit runtime\n' >"$linux_build/webkit-build/lib/libwebkit2gtk-4.1.so.0"
 printf 'javascript runtime\n' >"$linux_build/webkit-build/lib/libjavascriptcoregtk-4.1.so.0"
-printf '#!/usr/bin/env bash\nexit 0\n' >"$linux_build/webkit-build/bin/WebKitWebProcess"
-chmod +x "$linux_build/webkit-build/bin/WebKitWebProcess"
+for helper in WebKitWebProcess WebKitNetworkProcess WebKitGPUProcess; do
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$linux_build/webkit-build/bin/$helper"
+  chmod +x "$linux_build/webkit-build/bin/$helper"
+done
+printf 'bundle\n' >"$linux_build/webkit-build/lib/libwebkit2gtkinjectedbundle.so"
 
 linux_output="$TEMP_DIR/linux-started.log"
 LOCALBOORU_SOURCE_REVISION=HEAD \

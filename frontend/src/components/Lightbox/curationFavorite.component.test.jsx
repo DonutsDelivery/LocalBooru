@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 const mocks = vi.hoisted(() => {
   const noop = () => {}
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => {
       updateSvpManagerPlayback: vi.fn(async () => {}),
       subscribeToSvpManager: vi.fn(async listeners => { mocks.listeners = listeners; return noop }),
     },
-    toast: { error: vi.fn(), success: vi.fn() },
+    toast: { error: vi.fn(), success: vi.fn() }, favorite: vi.fn(),
     handleEncodedQuality: vi.fn(async () => {}),
     sourceResolution: vi.fn(), dimensions: vi.fn(), gain: vi.fn(),
     ui: { showUI: true, isFullscreen: false, resetHideTimer: noop, handleMouseMove: noop,
@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => {
     zoom: { zoom: { scale: 1 }, getZoomTransform: () => ({}), resetZoom: noop,
       touchMoved: { current: false }, touchHandled: { current: false } },
     playback: { duration: 120, durationRef: { current: 120 }, currentTimeRef: { current: 0 },
-      isPlaying: true, volume: 1, videoDisplayMode: 'fit', playbackSpeed: 1,
+      toggleVideoPlay: vi.fn(), isPlaying: true, volume: 1, videoDisplayMode: 'fit', playbackSpeed: 1,
       resetPlaybackState: noop, handleLoadedMetadata: noop, handleVideoPlay: noop,
       handleVideoPause: noop, handleTimeUpdate: noop, applyResumeState: noop },
     subtitles: { stopSubtitlesStream: noop, autoGenerate: noop, subtitles: [] },
@@ -34,7 +34,7 @@ vi.mock('../../api', () => ({
   getPlaybackPosition: async () => ({}), fetchCollections: async () => ({ collections: [] }),
   getSVPConfig: async () => ({ enabled: mocks.initialSvp }),
   updateSVPConfig: async config => config,
-  toggleFavorite: vi.fn(), deleteImage: vi.fn(),
+  setFavorite: (...args) => mocks.favorite(...args), toggleFavorite: vi.fn(), deleteImage: vi.fn(),
   addToCollection: mocks.noop, createCollection: mocks.noop, getShareNetworkInfo: mocks.noop, uploadImage: mocks.noop,
 }))
 vi.mock('../../tauriAPI', () => ({ getDesktopAPI: () => mocks.bridge }))
@@ -84,6 +84,7 @@ const image = { id: 1, directory_id: 1, library_id: 'synthetic', filename: 'synt
 const favorited = { ...image, is_favorite: true }
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.favorite.mockReset()
   localStorage.clear()
   mocks.dimensions.mockResolvedValue({ width: 1920, height: 1080, fps: 24 })
   mocks.gain.mockResolvedValue({ gain_db: 0 })
@@ -136,4 +137,58 @@ test('the favorite display follows the current item when it changes', () => {
   rerender(<Lightbox images={[image]} currentIndex={0} total={1} onClose={mocks.noop}
     onNav={mocks.noop} curationMode={curationMode} />)
   expect(screen.queryByRole('status')).toBeNull()
+})
+
+function gallery(item, onImageUpdate, onNav) {
+  return <Lightbox images={[item]} currentIndex={0} total={1} onClose={mocks.noop}
+    onNav={onNav} onImageUpdate={onImageUpdate} />
+}
+
+test('gallery favorite survives a stale refresh and toggles off with one click without navigating', async () => {
+  mocks.favorite.mockImplementation(async (_item, next) => ({ is_favorite: next }))
+  const update = vi.fn(), navigate = vi.fn()
+  const view = render(gallery(image, update, navigate))
+  fireEvent.click(screen.getByRole('button', { name: 'Add to favorites' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Remove from favorites' }).disabled).toBe(false))
+  expect(update).toHaveBeenCalledOnce()
+  view.rerender(gallery({ ...image, is_favorite: false }, update, navigate))
+  expect(screen.getByRole('button', { name: 'Remove from favorites' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Remove from favorites' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add to favorites' }).disabled).toBe(false))
+  expect(mocks.favorite.mock.calls.map(call => call[1])).toEqual([true, false])
+  expect(navigate).not.toHaveBeenCalled()
+})
+
+test.each([true, false])('late favorite completion (%s) cannot change another library with the same image id', async success => {
+  let resolve, reject
+  mocks.favorite.mockReturnValueOnce(new Promise((yes, no) => { resolve = yes; reject = no }))
+  const update = vi.fn(), navigate = vi.fn()
+  const view = render(gallery(image, update, navigate))
+  fireEvent.click(screen.getByRole('button', { name: 'Add to favorites' }))
+  await waitFor(() => expect(mocks.favorite).toHaveBeenCalledOnce())
+  const other = { ...image, library_id: 'other-synthetic', directory_id: 2, url: '/other-synthetic.jpg', is_favorite: false }
+  view.rerender(gallery(other, update, navigate))
+  await act(async () => success ? resolve({ is_favorite: true }) : reject(new Error('synthetic favorite failure')))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add to favorites' }).disabled).toBe(false))
+  expect(screen.queryByRole('button', { name: 'Remove from favorites' })).toBeNull()
+  if (success) {
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ libraryId: 'synthetic', directoryId: 1, imageId: 1 }), { is_favorite: true })
+  } else expect(update).not.toHaveBeenCalled()
+})
+
+test('curation toolbar, central favorite and keyboard all use the queue handler', () => {
+  const { curationMode } = mount(favorited)
+  fireEvent.click(screen.getByRole('button', { name: 'Remove from favorites' }))
+  fireEvent.click(screen.getByRole('button', { name: /Favorited$/ }))
+  fireEvent.keyDown(window, { key: 'f' })
+  expect(curationMode.onKeep).toHaveBeenCalledTimes(3)
+  expect(mocks.favorite).not.toHaveBeenCalled()
+})
+
+test('curation video Space toggles playback without favoriting', () => {
+  const { curationMode } = mount({ ...image, filename: 'synthetic.mp4', original_filename: 'synthetic.mp4' })
+  fireEvent.keyDown(window, { key: ' ' })
+  expect(mocks.playback.toggleVideoPlay).toHaveBeenCalledOnce()
+  expect(curationMode.onKeep).not.toHaveBeenCalled()
+  expect(mocks.favorite).not.toHaveBeenCalled()
 })

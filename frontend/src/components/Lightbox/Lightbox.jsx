@@ -187,6 +187,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const image = images[currentIndex]
   // In curation the queue item is the source of truth, so going back and forth never shows a stale state.
   const favoriteActive = curationMode ? Boolean(image?.is_favorite) : isFavorited
+  const favoriteIdentity = JSON.stringify([image?.library_id ?? null, image?.directory_id ?? null, image?.id ?? null])
+  const favoriteIdentityRef = useRef(favoriteIdentity)
+  favoriteIdentityRef.current = favoriteIdentity
   const isRemote = image?._remote === true
   const currentImageKey = image?.url ?? image?.file_path ?? image?.id
   const embeddedVideoBackend = isUsingLocalServer()
@@ -800,12 +803,17 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
   }, [image?.id, subtitles.whisperConfig?.auto_generate])
 
-  // Track favorite state for current image
+  const favoriteLock = useRef(null)
+
+  // Curation follows its queue. Ordinary gallery clicks retain their optimistic
+  // value through stale list refreshes, qualified by the complete media identity.
   useEffect(() => {
-    if (image) {
-      setIsFavorited(image.is_favorite || false)
-    }
-  }, [image?.id, image?.is_favorite])
+    if (!image) return
+    if (curationMode) favoriteLock.current = null
+    if (favoriteLock.current?.key !== favoriteIdentity) favoriteLock.current = null
+    setIsFavorited(favoriteLock.current?.key === favoriteIdentity
+      ? favoriteLock.current.value : !!image.is_favorite)
+  }, [favoriteIdentity, image?.is_favorite, curationMode])
 
   // Double-click handler: zoom to fill or reset (images), toggle fullscreen (videos)
   const handleDoubleClick = useCallback((e) => {
@@ -854,29 +862,40 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [zoomPan, resetHideTimer, image?.original_filename, handleToggleFullscreen, curationMode])
 
   // Toggle favorite
-  const handleToggleFavorite = useCallback(async () => {
+  const handleToggleFavorite = useCallback(async (event) => {
+    event?.stopPropagation?.()
     if (processing || !image || image._remote) return
+    if (curationMode) return curationMode.onKeep()
+    const next = !favoriteActive
     setProcessing(true)
-
-    const wasActive = favoriteActive
-    setIsFavorited(!wasActive)
+    setIsFavorited(next)
+    favoriteLock.current = { key: favoriteIdentity, value: next }
 
     try {
       const locator = adjustmentLocator(image)
-      const { toggleFavorite } = await import('../../api')
-      const result = await toggleFavorite(locator.imageId, locator.directoryId, locator.libraryId)
-      setIsFavorited(result.is_favorite)
-      // Update parent state so the change persists when navigating
-      if (onImageUpdate) {
-        onImageUpdate(locator, { is_favorite: result.is_favorite })
+      const { setFavorite } = await import('../../api')
+      const result = await setFavorite({
+        ...image,
+        id: locator.imageId,
+        directory_id: locator.directoryId,
+        library_id: locator.libraryId,
+      }, next)
+      const value = !!result?.is_favorite
+      if (favoriteIdentityRef.current === favoriteIdentity) {
+        favoriteLock.current = { key: favoriteIdentity, value }
+        setIsFavorited(value)
       }
+      if (onImageUpdate) onImageUpdate(locator, { is_favorite: value })
     } catch (err) {
       console.error('Failed to toggle favorite:', err)
-      setIsFavorited(wasActive)
+      if (favoriteIdentityRef.current === favoriteIdentity) {
+        favoriteLock.current = { key: favoriteIdentity, value: !next }
+        setIsFavorited(!next)
+      }
     }
 
     setProcessing(false)
-  }, [image, favoriteActive, processing, onImageUpdate])
+  }, [image, favoriteActive, favoriteIdentity, processing, onImageUpdate, curationMode])
 
   // Delete image with filesystem deletion
   const handleDelete = useCallback(async () => {
@@ -1886,6 +1905,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         </button>
         {!isRemote && <>
         <button
+          type="button"
           className={`lightbox-btn lightbox-favorite ${favoriteActive ? 'active' : ''}`}
           onClick={handleToggleFavorite}
           disabled={processing}
@@ -2983,9 +3003,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           title="Left or Back: revisit the previous item. Right or D: discard. Favorite toggles. Next keeps a favorited item."
         >
           <button
-            className={`curation-action keep ${favoriteActive ? 'is-favorited' : ''}`}
+            type="button"
+            className={`curation-action keep ${favoriteActive ? 'is-favorited is-approved' : ''}`}
             onClick={curationMode.onKeep}
-            disabled={curationMode.busy}
+            disabled={curationMode.busy || processing}
             aria-pressed={favoriteActive}
             title={favoriteActive
               ? `Remove favorite and stay on this item (${isVideoFile ? 'F or K' : 'Space, F or K'})`
@@ -3016,6 +3037,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
       {/* Mobile favorite button - bottom center like camera shutter */}
       <button
+        type="button"
         className={`lightbox-mobile-favorite ${favoriteActive ? 'active' : ''}`}
         onClick={handleToggleFavorite}
         disabled={processing}

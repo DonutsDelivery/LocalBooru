@@ -2776,6 +2776,7 @@ video::cue {
 .curation-controls button:disabled { opacity: .45; cursor: wait; }
 .curation-action { min-width: 150px; min-height: 64px; gap: 8px; border-radius: 18px; font-size: 1.12rem; line-height: 1; }
 .curation-action.keep { background: rgba(21,120,67,.14); border-color: rgba(112,239,168,.8); color: #70efa8; }
+.curation-action.keep.is-approved { background: #157043; color: #fff; }
 .curation-action.keep span { font-size: 2rem; }
 .curation-controls button.curation-action.keep.is-favorited {
   background: linear-gradient(180deg, #ffd45a, #f2a900);
