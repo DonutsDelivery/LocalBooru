@@ -127,6 +127,14 @@ class MediaTests(unittest.TestCase):
         with patch.object(media, 'run', return_value=valid.replace('COFF-x86-64', 'COFF-i386')):
             with self.assertRaises(ValueError): media.validate_pe(Path('synthetic.exe'), 'synthetic-readobj')
 
+    def test_video_capture_and_cng_system_imports_are_accepted(self):
+        # The first source-built FFmpeg helpers imported these documented
+        # Windows DLLs and were incorrectly rejected as external dependencies.
+        imports = ['AVICAP32.dll', 'KERNEL32.dll', 'NCrypt.dll']
+        inventory = 'Format: COFF-x86-64\n' + ''.join(' Name: ' + name + '\n' for name in imports)
+        with patch.object(media, 'run', return_value=inventory):
+            self.assertEqual(media.validate_pe(Path('synthetic.exe'), 'synthetic-readobj'), imports)
+
     def output_fixture(self):
         archive, pin = self.archive()
         pins = {'sources': {'fixture': pin}, 'toolchain': {'sha256': '0' * 64}}

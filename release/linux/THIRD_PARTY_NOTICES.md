@@ -34,8 +34,8 @@ VapourSynth is distributed under LGPL-2.1; its `COPYING.LESSER` is included in
 the source artifact.
 
 Python 3.12 runtime components are redistributed under the Python Software
-Foundation License Version 2. The license text is included in the runtime
-source/notices artifact.
+Foundation License Version 2. The package notice and license text are included as
+`licenses/Python-copyright` in the bundled runtime.
 
 The patched WebKit runtime also carries its Ubuntu 24.04 JPEG XL dependency
 closure: JPEG XL, Highway, Brotli, and Little CMS 2. Their package copyright
@@ -45,8 +45,11 @@ directory.
 The AppImage includes Ubuntu gstreamer1.0-gl; its package copyright and
 license notice accompanies the bundled plugin.
 
-The `libgstlocalboorupass.so` and `libgstlocalbooruvs.so` bridge plugins are
-DonutMediaCenter components covered by the repository GPL-3.0-only license.
+The `libgstlocalboorupass.so` and `libgstlocalbooruvs.so` bridge plugins and
+`liblocalbooru-webkit-gst-hook.so` filter hook are DonutMediaCenter components
+covered by the repository GPL-3.0-only license. Their source is in
+`gstreamer-svp/src/` in the exact application-source archive. Retain the
+bundled historical MIT notice for previously MIT-licensed portions.
 
 SVP Manager and SVPflow are **not bundled**. They are detected only from a
 legitimate user installation and remain governed by their upstream terms.

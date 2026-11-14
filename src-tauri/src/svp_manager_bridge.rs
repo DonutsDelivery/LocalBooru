@@ -193,6 +193,13 @@ impl SvpManagerBridge {
     }
 
     pub fn start(&self, app: AppHandle) {
+        // These platforms use a global MPV socket/named pipe. Acceptance
+        // instances must not discover or register the user's control endpoint.
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        if std::env::var_os("LOCALBOORU_ISOLATED_INSTANCE_ID").is_some() {
+            log::debug!("[SVPManager] external control disabled for isolated acceptance");
+            return;
+        }
         let bridge = self.clone();
         tauri::async_runtime::spawn(async move {
             if let Err(error) = bridge.run_server(app).await {
