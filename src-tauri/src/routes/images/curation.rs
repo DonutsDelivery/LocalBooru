@@ -57,18 +57,45 @@ fn move_file(source: &Path, destination: &Path) -> Result<(), AppError> {
         std::fs::create_dir_all(parent)
             .map_err(|error| io_error("Failed to create dumpster directory", error))?;
     }
-    match std::fs::rename(source, destination) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            std::fs::copy(source, destination)
-                .map_err(|error| io_error("Failed to copy media to dumpster", error))?;
-            if let Err(error) = std::fs::remove_file(source) {
-                let _ = std::fs::remove_file(destination);
-                return Err(io_error("Failed to remove original media", error));
-            }
-            Ok(())
+    // Link installation is atomic and refuses an existing destination. Unlike
+    // rename, it cannot overwrite a file created after the collision check.
+    if std::fs::hard_link(source, destination).is_err() {
+        // Cross-device filesystems may not support links. Reserve the output
+        // exclusively before copying so this fallback also refuses collisions.
+        let mut input = std::fs::File::open(source)?;
+        let mut output = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(destination)
+            .map_err(|error| io_error("Failed to reserve media destination", error))?;
+        let copied = (|| -> Result<(), std::io::Error> {
+            std::io::copy(&mut input, &mut output)?;
+            output.set_permissions(input.metadata()?.permissions())?;
+            output.sync_all()
+        })();
+        if let Err(error) = copied {
+            drop(output);
+            let cleanup = std::fs::remove_file(destination);
+            return Err(io_error(
+                "Failed to copy media",
+                match cleanup {
+                    Ok(()) => error.to_string(),
+                    Err(cleanup) => format!("{error}; incomplete destination retained: {cleanup}"),
+                },
+            ));
         }
     }
+    if let Err(error) = std::fs::remove_file(source) {
+        let cleanup = std::fs::remove_file(destination);
+        return Err(io_error(
+            "Failed to remove original media",
+            match cleanup {
+                Ok(()) => error.to_string(),
+                Err(cleanup) => format!("{error}; destination copy retained: {cleanup}"),
+            },
+        ));
+    }
+    Ok(())
 }
 
 type TrackedMove = (i64, PathBuf, PathBuf);
@@ -877,6 +904,41 @@ mod tests {
             0
         );
         assert!(!thumb.exists());
+    }
+
+    // AC: @curation-game ac-5
+    #[test]
+    fn curation_concurrent_moves_never_overwrite_the_destination() {
+        let fixture = Fixture::new(2);
+        let destination = fixture.root.join("contended.png");
+        let start = std::sync::Barrier::new(2);
+        let results = std::thread::scope(|scope| {
+            let first = scope.spawn(|| {
+                start.wait();
+                move_file(&fixture.moves[0].1, &destination)
+            });
+            let second = scope.spawn(|| {
+                start.wait();
+                move_file(&fixture.moves[1].1, &destination)
+            });
+            [first.join().unwrap(), second.join().unwrap()]
+        });
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        for (index, result) in results.iter().enumerate() {
+            let source = &fixture.moves[index].1;
+            if result.is_ok() {
+                assert!(!source.exists());
+                assert_eq!(
+                    std::fs::read(&destination).unwrap(),
+                    format!("synthetic-media-{}", index + 1).as_bytes()
+                );
+            } else {
+                assert_eq!(
+                    std::fs::read(source).unwrap(),
+                    format!("synthetic-media-{}", index + 1).as_bytes()
+                );
+            }
+        }
     }
 
     // AC: @curation-game ac-4, ac-5
