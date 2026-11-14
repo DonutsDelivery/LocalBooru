@@ -1070,27 +1070,7 @@ pub async fn upload_image(
     })
     .await??;
 
-    // Read generation metadata and tag prompt words from the saved original.
-    if result.status == importer::ImportStatus::Imported {
-        if let Some(img_id) = result.image_id {
-            if let Err(error) = crate::services::task_queue::extract_image_metadata(
-                &state,
-                &lib,
-                img_id,
-                Some(dir_id),
-                saved_path_str,
-                true,
-            )
-            .await
-            {
-                log::warn!(
-                    "[Upload] Metadata extraction failed for image #{}: {}",
-                    img_id,
-                    error
-                );
-            }
-        }
-    }
+    complete_upload(&state, &lib, &result, dir_id, saved_path_str, auto_tag).await;
 
     let image_id = result.image_id;
     let status_str = match result.status {
@@ -1099,23 +1079,6 @@ pub async fn upload_image(
         importer::ImportStatus::Error => "error",
     };
 
-    // Enqueue tagging task if requested and import was successful
-    if auto_tag && result.status == importer::ImportStatus::Imported {
-        if let Some(img_id) = image_id {
-            let payload = json!({
-                "image_id": img_id,
-                "directory_id": dir_id,
-            });
-            let _ = crate::services::task_queue::enqueue_task(
-                &state,
-                crate::services::task_queue::TASK_TAG,
-                &payload,
-                0,
-                Some(img_id),
-            );
-        }
-    }
-
     Ok(Json(json!({
         "status": status_str,
         "image_id": image_id,
@@ -1123,6 +1086,59 @@ pub async fn upload_image(
         "filename": result.filename,
         "message": result.message,
     })))
+}
+
+async fn complete_upload(
+    state: &AppState,
+    library: &std::sync::Arc<crate::db::library::LibraryContext>,
+    result: &importer::ImportResult,
+    directory_id: i64,
+    saved_path: String,
+    auto_tag: bool,
+) {
+    if !matches!(
+        result.status,
+        importer::ImportStatus::Imported | importer::ImportStatus::Duplicate
+    ) {
+        return;
+    }
+    let Some(image_id) = result.image_id else {
+        return;
+    };
+
+    // The watcher can index the saved file first. A duplicate still needs the
+    // upload's metadata work and explicit tagging request; queued tags dedupe
+    // against the complete library + directory + image identity.
+    if let Err(error) = crate::services::task_queue::extract_image_metadata(
+        state,
+        library,
+        image_id,
+        Some(directory_id),
+        saved_path,
+        true,
+    )
+    .await
+    {
+        log::warn!(
+            "[Upload] Metadata extraction failed for image #{}: {}",
+            image_id,
+            error
+        );
+    }
+    if auto_tag {
+        let payload = json!({
+            "image_id": image_id,
+            "directory_id": directory_id,
+            "library_id": library.uuid,
+        });
+        let _ = crate::services::task_queue::enqueue_task(
+            state,
+            crate::services::task_queue::TASK_TAG,
+            &payload,
+            0,
+            Some(image_id),
+        );
+    }
 }
 
 /// GET /api/images/:image_id/preview-frames — Get list of video preview frame URLs.
@@ -1648,7 +1664,47 @@ mod tests {
 
 #[cfg(test)]
 mod upload_persistence_tests {
-    use super::save_upload;
+    use super::{complete_upload, importer, save_upload, AppState};
+
+    #[tokio::test]
+    async fn watcher_first_import_keeps_requested_upload_tagging() {
+        for auto_tag in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let state = AppState::new(root.path(), 0).unwrap();
+            let library = state.library_manager().primary().clone();
+            let png = root.path().join("uploaded.png");
+            image::DynamicImage::new_rgb8(2, 2).save(&png).unwrap();
+            let path = png.to_string_lossy().to_string();
+
+            let watcher = importer::import_image(&state, &library, &path, 11, true).unwrap();
+            assert_eq!(watcher.status, importer::ImportStatus::Imported);
+            let upload = importer::import_image(&state, &library, &path, 11, false).unwrap();
+            assert_eq!(upload.status, importer::ImportStatus::Duplicate);
+            assert_eq!(upload.image_id, watcher.image_id);
+
+            // Repeated completion must also preserve queue deduplication.
+            for _ in 0..2 {
+                complete_upload(&state, &library, &upload, 11, path.clone(), auto_tag).await;
+            }
+            let connection = state.main_db().get().unwrap();
+            let mut statement = connection
+                .prepare("SELECT payload FROM task_queue WHERE task_type = ?1")
+                .unwrap();
+            let tasks: Vec<String> = statement
+                .query_map([crate::services::task_queue::TASK_TAG], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert_eq!(tasks.len(), usize::from(auto_tag));
+            if auto_tag {
+                let payload: serde_json::Value = serde_json::from_str(&tasks[0]).unwrap();
+                assert_eq!(payload["image_id"].as_i64(), watcher.image_id);
+                assert_eq!(payload["directory_id"], 11);
+                assert_eq!(payload["library_id"], library.uuid);
+            }
+            assert!(png.is_file());
+        }
+    }
 
     #[test]
     fn relative_directory_cannot_fall_back_to_the_process_working_directory() {
