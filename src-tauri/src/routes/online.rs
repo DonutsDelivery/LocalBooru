@@ -4055,9 +4055,18 @@ mod creator_offline_tests {
     }
 
     #[tokio::test]
-    async fn startup_reconciliation_preserves_committed_original_and_removes_staging() {
-        let (dir, state, source, queued) = setup(64);
-        retain(dir.path(), &source, &queued, b"durable original");
+    async fn startup_reconciliation_preserves_original_after_thumbnail_eviction_and_reopen() {
+        let (dir, state, source, queued) = setup(8192);
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(100, 80)
+            .write_to(&mut encoded, image::ImageFormat::Jpeg)
+            .unwrap();
+        let original = encoded.into_inner();
+        retain(dir.path(), &source, &queued, &original);
+        let thumbnail = state.thumbnails_dir().join("offline-derived.webp");
+        image::DynamicImage::new_rgb8(10, 8)
+            .save(&thumbnail)
+            .unwrap();
         let root = offline::cache_root(dir.path(), &source.source_id);
         let staging = root.join("interrupted.part");
         std::fs::write(&staging, b"incomplete").unwrap();
@@ -4070,11 +4079,67 @@ mod creator_offline_tests {
             4,
         )
         .unwrap();
-        // Reopen the database and run the same reconciliation used at startup.
-        drop(offline::open(dir.path()).unwrap());
+        // Evict only this fixture's derived thumbnail, then discard all app
+        // state and run the same reconciliation used at startup.
+        std::fs::remove_file(&thumbnail).unwrap();
+        drop(state);
+        let state = AppState::new(dir.path(), 0).unwrap();
+        initialize_offline_database(dir.path()).unwrap();
         offline::reconcile_startup(dir.path()).unwrap();
+        assert!(!thumbnail.exists());
         assert!(!staging.exists());
+        let reservations: i64 = offline::open(dir.path())
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM offline_variants WHERE source_id=?1 AND post_id='43'",
+                params![source.source_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(reservations, 0);
         let response = asset(
+            State(state.clone()),
+            AxumPath((source.source_id.clone(), "42".into(), "original".into())),
+            HeaderMap::new(),
+            Query(AssetQuery { offline_only: true }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let served = axum::body::to_bytes(response.into_body(), 8192)
+            .await
+            .unwrap();
+        assert_eq!(served.as_ref(), original);
+        let decoded = image::load_from_memory(&served).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (100, 80));
+
+        let retained = offline::personal_variant(dir.path(), &source.source_id, "42", "original")
+            .unwrap()
+            .unwrap();
+        let held = dir.path().join("held-original.jpg");
+        std::fs::rename(&retained.path, &held).unwrap();
+        let missing = asset(
+            State(state.clone()),
+            AxumPath((source.source_id.clone(), "42".into(), "original".into())),
+            HeaderMap::new(),
+            Query(AssetQuery { offline_only: true }),
+        )
+        .await
+        .unwrap_err()
+        .into_response();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+        let error: Value = serde_json::from_slice(
+            &axum::body::to_bytes(missing.into_body(), 1024)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            error["detail"],
+            "Personal offline representation is unavailable"
+        );
+        std::fs::rename(held, &retained.path).unwrap();
+        let restored = asset(
             State(state),
             AxumPath((source.source_id.clone(), "42".into(), "original".into())),
             HeaderMap::new(),
@@ -4083,16 +4148,11 @@ mod creator_offline_tests {
         .await
         .unwrap();
         assert_eq!(
-            axum::body::to_bytes(response.into_body(), 1024)
+            axum::body::to_bytes(restored.into_body(), 8192)
                 .await
                 .unwrap()
                 .as_ref(),
-            b"durable original"
-        );
-        assert!(
-            offline::personal_variant(dir.path(), &source.source_id, "43", "original")
-                .unwrap()
-                .is_none()
+            original
         );
     }
 
