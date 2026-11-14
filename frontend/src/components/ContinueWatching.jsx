@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { getContinueWatching, clearWatchHistory, fetchImage, getMediaUrl } from '../api'
+import { useState, useEffect, useRef } from 'react'
+import { getContinueWatching, clearWatchHistory, fetchImage, getMediaUrl, getFamilyModeStatus, subscribeToLibraryEvents } from '../api'
 import { canonicalWatchItem, watchHistoryIdentityKey, watchHistoryLocator } from '../utils/continueWatching.js'
 import './ContinueWatching.css'
 
@@ -15,14 +15,44 @@ function formatTime(s) {
 export default function ContinueWatching({ onImageClick }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
+  // Null until the backend lock state is known; the server filters the list.
+  const [familyLocked, setFamilyLocked] = useState(null)
+  const [lockRevision, setLockRevision] = useState(0)
+
+  const loadGeneration = useRef(0)
 
   useEffect(() => {
-    loadItems()
+    let alive = true
+    let receivedEvent = false
+    getFamilyModeStatus()
+      .then(data => { if (alive && !receivedEvent) setFamilyLocked(!!data.is_locked) })
+      .catch(() => { if (alive && !receivedEvent) setFamilyLocked(false) })
+    const unsubscribe = subscribeToLibraryEvents(event => {
+      if (!alive || event.type !== 'family_mode') return
+      const isLocked = event.data?.is_locked ?? event.is_locked
+      if (isLocked != null) {
+        receivedEvent = true
+        loadGeneration.current++
+        setItems([])
+        setLoading(true)
+        setFamilyLocked(!!isLocked)
+        setLockRevision(revision => revision + 1)
+      }
+    })
+    return () => { alive = false; loadGeneration.current++; unsubscribe() }
   }, [])
 
-  async function loadItems() {
+  useEffect(() => {
+    if (familyLocked === null) return
+    const generation = ++loadGeneration.current
+    loadItems(generation)
+    return () => { loadGeneration.current++ }
+  }, [familyLocked, lockRevision])
+
+  async function loadItems(generation) {
     try {
       const data = await getContinueWatching()
+      if (generation !== loadGeneration.current) return
       const watchItems = data.items || []
 
       // Hydrate each watch history item with image details (thumbnail, filename)
@@ -46,11 +76,12 @@ export default function ContinueWatching({ onImageClick }) {
         })
       )
 
+      if (generation !== loadGeneration.current) return
       setItems(hydrated.filter(Boolean))
     } catch (e) {
       // Silently fail - not critical
     }
-    setLoading(false)
+    if (generation === loadGeneration.current) setLoading(false)
   }
 
   const handleDismiss = async (e, item) => {
