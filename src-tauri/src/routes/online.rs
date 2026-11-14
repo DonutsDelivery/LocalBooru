@@ -4054,6 +4054,48 @@ mod creator_offline_tests {
         .unwrap();
     }
 
+    #[tokio::test]
+    async fn startup_reconciliation_preserves_committed_original_and_removes_staging() {
+        let (dir, state, source, queued) = setup(64);
+        retain(dir.path(), &source, &queued, b"durable original");
+        let root = offline::cache_root(dir.path(), &source.source_id);
+        let staging = root.join("interrupted.part");
+        std::fs::write(&staging, b"incomplete").unwrap();
+        offline::reserve(
+            dir.path(),
+            &source.source_id,
+            "43",
+            "revision-1",
+            "original",
+            4,
+        )
+        .unwrap();
+        // Reopen the database and run the same reconciliation used at startup.
+        drop(offline::open(dir.path()).unwrap());
+        offline::reconcile_startup(dir.path()).unwrap();
+        assert!(!staging.exists());
+        let response = asset(
+            State(state),
+            AxumPath((source.source_id.clone(), "42".into(), "original".into())),
+            HeaderMap::new(),
+            Query(AssetQuery { offline_only: true }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            axum::body::to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap()
+                .as_ref(),
+            b"durable original"
+        );
+        assert!(
+            offline::personal_variant(dir.path(), &source.source_id, "43", "original")
+                .unwrap()
+                .is_none()
+        );
+    }
+
     #[test]
     fn following_does_not_queue_download_and_storage_reservations_resume_within_cap() {
         let (dir, _, source, queued) = setup(8);

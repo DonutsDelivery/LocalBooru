@@ -1202,12 +1202,7 @@ pub fn start(state: AppState) -> Result<OfflineRuntime, String> {
         .lock()
         .map_err(|_| "Offline runtime lock poisoned")?
         .insert(inner.state.data_dir().to_path_buf(), weak.clone());
-    // Unfinished reservations belong to vanished staging files after restart.
-    open(inner.state.data_dir())
-        .map_err(|e| e.to_string())?
-        .execute("DELETE FROM offline_variants WHERE state!='ready'", [])
-        .map_err(|e| e.to_string())?;
-    recover_staging(inner.state.data_dir()).map_err(|e| e.to_string())?;
+    reconcile_startup(inner.state.data_dir()).map_err(|e| e.to_string())?;
     handle.spawn(async move{let mut timer=tokio::time::interval(std::time::Duration::from_secs(60));loop{timer.tick().await;let Some(runtime)=weak.upgrade()else{break};if runtime.cancel.load(Ordering::Acquire){break}let state=runtime.state.clone();drop(runtime);let sources=(||->Result<Vec<String>,AppError>{let conn=open(state.data_dir())?;let mut stmt=conn.prepare("SELECT o.source_id FROM offline_sources o JOIN remote_sources s USING(source_id) WHERE o.enabled=1 AND o.paused=0 AND s.enabled=1")?;let rows=stmt.query_map([],|r|r.get(0))?;Ok(rows.collect::<Result<_,_>>()?)})();match sources{Ok(sources)=>for sid in sources{if let Err(error)=kick(&state,&sid){let _=self::state(state.data_dir(),&sid,"error",Some(&error.to_string()));}},Err(error)=>log::error!("Offline supervisor failed: {error}")}}});
     Ok(OfflineRuntime { inner })
 }
@@ -1369,6 +1364,12 @@ pub fn remember_creator_directory(
 
 /// Crashes can leave a file between rename and SQLite commit. Reconcile managed
 /// paths individually rather than loading the catalog or trusting stale reservations.
+pub(crate) fn reconcile_startup(data_dir: &Path) -> Result<(), AppError> {
+    // Unfinished reservations belong to vanished staging files after restart.
+    open(data_dir)?.execute("DELETE FROM offline_variants WHERE state!='ready'", [])?;
+    recover_staging(data_dir)
+}
+
 fn recover_staging(data_dir: &Path) -> Result<(), AppError> {
     let root = data_dir.join("online-offline");
     if !root.exists() {
