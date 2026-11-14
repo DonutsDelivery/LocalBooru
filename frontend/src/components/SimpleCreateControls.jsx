@@ -57,8 +57,8 @@ function LoRAPicker({ label, value, choices, disabled, onChange }) {
     setQuery('')
     if (choice != null && choice !== value) onChange(choice)
   }
-  return <label className="create-field create-lora-name">{label}
-    <input role="combobox" aria-expanded={open && !disabled} aria-autocomplete="list" disabled={disabled}
+  return <div className="create-field create-lora-name"><label htmlFor={`${listId}-input`}>{label}</label>
+    <input id={`${listId}-input`} role="combobox" aria-expanded={open && !disabled} aria-autocomplete="list" disabled={disabled}
       aria-controls={open && !disabled ? listId : undefined}
       aria-activedescendant={open && !disabled && matches[active] != null ? `${listId}-${active}` : undefined}
       value={open ? query : modelLabel(value || '')} placeholder={open ? 'Search any part of the filename' : undefined}
@@ -87,7 +87,7 @@ function LoRAPicker({ label, value, choices, disabled, onChange }) {
           onMouseDown={event => event.preventDefault()} onClick={() => pick(choice)}>{modelLabel(choice)}</button>
       </li>)}
     </ul>}
-  </label>
+  </div>
 }
 
 function displayNumber(value) {

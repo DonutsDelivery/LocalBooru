@@ -55,6 +55,7 @@ test('LoRA dropdown matches any text in the filename, not only its first letters
   const input = screen.getByLabelText('LoRA')
   fireEvent.focus(input)
   fireEvent.change(input, { target: { value: 'hetics' } })
+  expect(screen.getByRole('combobox', { name: 'LoRA', exact: true })).toBe(input)
   expect(screen.getByRole('option', { name: 'Krea2 NSFW Aesthetics V1' })).toBeTruthy()
   expect(screen.queryByRole('option', { name: 'style' })).toBeNull()
   const option = screen.getByRole('option', { name: 'Krea2 NSFW Aesthetics V1' })
