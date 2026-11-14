@@ -936,6 +936,12 @@ pub struct DeleteQuery {
 fn save_upload(directory: &Path, filename: &str, data: &[u8]) -> std::io::Result<PathBuf> {
     use std::io::Write;
 
+    if !directory.is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Upload directory must be an absolute selected folder",
+        ));
+    }
     let leaf = filename.rsplit(['/', '\\']).next().unwrap_or("");
     let leaf: String = leaf
         .chars()
@@ -1643,6 +1649,17 @@ mod tests {
 #[cfg(test)]
 mod upload_persistence_tests {
     use super::save_upload;
+
+    #[test]
+    fn relative_directory_cannot_fall_back_to_the_process_working_directory() {
+        let error = save_upload(
+            std::path::Path::new("nonexistent-relative-upload-directory"),
+            "image.png",
+            b"synthetic image",
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
 
     #[test]
     fn saved_upload_survives_staging_cleanup() {
