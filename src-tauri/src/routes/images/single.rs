@@ -4,7 +4,7 @@ use axum::body::Body;
 use axum::extract::{Multipart, Path as AxumPath, Query, Request, State};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::fs::File;
@@ -933,6 +933,44 @@ pub struct DeleteQuery {
     pub library_id: Option<String>,
 }
 
+fn save_upload(directory: &Path, filename: &str, data: &[u8]) -> std::io::Result<PathBuf> {
+    use std::io::Write;
+
+    let leaf = filename.rsplit(['/', '\\']).next().unwrap_or("");
+    let leaf: String = leaf
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let leaf = leaf.trim_end_matches(['.', ' ']);
+    let leaf = if leaf.is_empty() { "upload" } else { leaf };
+    let extension = Path::new(leaf).extension().and_then(|ext| ext.to_str());
+    let mut staged = tempfile::Builder::new()
+        .prefix(".upload-")
+        .tempfile_in(directory)?;
+    staged.write_all(data)?;
+    let mut destination = directory.join(leaf);
+    loop {
+        match staged.persist_noclobber(&destination) {
+            Ok(_) => return Ok(destination),
+            Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => {
+                staged = error.file;
+                let name = match extension {
+                    Some(ext) => format!("{}.{}", uuid::Uuid::new_v4(), ext),
+                    None => uuid::Uuid::new_v4().to_string(),
+                };
+                destination = directory.join(name);
+            }
+            Err(error) => return Err(error.error),
+        }
+    }
+}
+
 /// POST /api/images/upload — Upload an image via multipart form data.
 pub async fn upload_image(
     State(state): State<AppState>,
@@ -1001,31 +1039,32 @@ pub async fn upload_image(
         )));
     }
 
-    // Save to temp file
-    let ext = std::path::Path::new(&filename)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("bin");
-    let tmp_path = crate::platform_paths::temporary_dir()
-        .map_err(AppError::Internal)?
-        .join(format!("localbooru_upload_{}.{}", uuid::Uuid::new_v4(), ext));
-
-    tokio::fs::write(&tmp_path, &data).await?;
-
-    // Import the file
-    let state_clone = state.clone();
     let lib = state.library_manager().primary().clone();
-    let tmp_path_str = tmp_path.to_string_lossy().to_string();
-    let import_lib = lib.clone();
-    let import_path = tmp_path_str.clone();
+    let directory_path: String = lib
+        .main_pool
+        .get()?
+        .query_row(
+            "SELECT path FROM watch_directories WHERE id = ?1",
+            params![dir_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| AppError::BadRequest(format!("Directory {} does not exist", dir_id)))?;
 
-    let result = tokio::task::spawn_blocking(move || {
-        importer::import_image(&state_clone, &import_lib, &import_path, dir_id, false)
+    // Save and index off the async executor. original_path must remain valid
+    // after the request and its staging file have gone away.
+    let state_clone = state.clone();
+    let import_lib = lib.clone();
+    let (result, saved_path_str) = tokio::task::spawn_blocking(move || {
+        let saved_path = save_upload(Path::new(&directory_path), &filename, &data)?;
+        let saved_path_str = saved_path.to_string_lossy().to_string();
+        let result =
+            importer::import_image(&state_clone, &import_lib, &saved_path_str, dir_id, false)?;
+        Ok::<_, AppError>((result, saved_path_str))
     })
     .await??;
 
-    // The temp file is deleted below, before a queued extraction could read it,
-    // so read the generation metadata (and tag prompt words) now.
+    // Read generation metadata and tag prompt words from the saved original.
     if result.status == importer::ImportStatus::Imported {
         if let Some(img_id) = result.image_id {
             if let Err(error) = crate::services::task_queue::extract_image_metadata(
@@ -1033,7 +1072,7 @@ pub async fn upload_image(
                 &lib,
                 img_id,
                 Some(dir_id),
-                tmp_path_str,
+                saved_path_str,
                 true,
             )
             .await
@@ -1046,9 +1085,6 @@ pub async fn upload_image(
             }
         }
     }
-
-    // Clean up temp file
-    let _ = tokio::fs::remove_file(&tmp_path).await;
 
     let image_id = result.image_id;
     let status_str = match result.status {
@@ -1601,5 +1637,41 @@ mod tests {
         let thumbnail = image::load_from_memory(&body).unwrap();
         assert_eq!((thumbnail.width(), thumbnail.height()), (300, 225));
         let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(test)]
+mod upload_persistence_tests {
+    use super::save_upload;
+
+    #[test]
+    fn saved_upload_survives_staging_cleanup() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = save_upload(directory.path(), "image.png", b"synthetic image").unwrap();
+        assert_eq!(path.parent(), Some(directory.path()));
+        assert_eq!(std::fs::read(&path).unwrap(), b"synthetic image");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn collision_keeps_existing_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let existing = directory.path().join("image.png");
+        std::fs::write(&existing, b"old").unwrap();
+        let path = save_upload(directory.path(), "image.png", b"new").unwrap();
+        assert_ne!(path, existing);
+        assert_eq!(path.extension().unwrap(), "png");
+        assert_eq!(std::fs::read(existing).unwrap(), b"old");
+        assert_eq!(std::fs::read(path).unwrap(), b"new");
+    }
+
+    #[test]
+    fn traversal_filename_stays_in_selected_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        for name in ["../../escape.png", "..\\..\\escape.jpg"] {
+            let path = save_upload(directory.path(), name, b"data").unwrap();
+            assert_eq!(path.parent(), Some(directory.path()));
+            assert_eq!(std::fs::read(path).unwrap(), b"data");
+        }
     }
 }
