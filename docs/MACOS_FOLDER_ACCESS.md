@@ -44,6 +44,10 @@ Native acceptance must use an isolated fixture and the exact signed package:
   and references remain. Verify bundled helpers inherit appropriate sandbox
   access and can decode/transcode the selected media.
 
-This is source implementation and a native inspection-build configuration.
-Store signing, bundled helper validation and real-Mac acceptance are outstanding;
-the configuration does not submit or publish the application.
+This is an inspection-build configuration. Native compilation, universal helper
+packaging and actual container-local import/transcoding have passed on physical
+Apple Silicon for revision `8178386b`. They do not establish access to an external
+user-selected folder: real Powerbox selection, bookmark recovery and helper
+authorization still need the acceptance above. Production signing, visible UI,
+speaker/GPU behavior, Intel execution and Store acceptance remain outstanding.
+The configuration does not submit or publish the application.

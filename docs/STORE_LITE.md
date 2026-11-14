@@ -25,13 +25,25 @@ LOCALBOORU_MACOS_EDITION=store-lite scripts/build-macos-ci.sh
 
 It selects the feature and separate `com.localbooru.app.lite` identity, target
 directory, application name, and artifacts. The normal full build is unchanged.
-The output is still ad-hoc signed for inspection. Native Apple compilation has
-not been verified by Linux unit tests.
+The output is still ad-hoc signed for inspection. Linux unit tests do not
+establish native Apple behavior.
 
 The macOS lite config now selects App Sandbox entitlements and its native folder
 picker persists security-scoped bookmarks with startup restoration and recovery.
 See [folder access](MACOS_FOLDER_ACCESS.md) for the implementation and remaining
-native acceptance. These paths have not yet been validated on an Apple build.
+native acceptance. Native compilation is verified; real external-folder
+selection, bookmark recovery and helper authorization still need acceptance.
+
+On 14 November 2026, the exact `8178386b` universal inspection package passed
+14 backend checks on physical Apple Silicon, including saved uploads, media
+helpers, transcodes, restart, thumbnail eviction and folder relocation inside
+an owned disposable container. A separate Linux client verified real LAN login,
+authenticated image/video and range transfer, audio/video decoding, read-only
+restrictions and persistence across restart. LAN access was unavailable before
+enabling it and after disabling it again. All owned fixtures were cleaned up.
+These are backend/API checks, not visible playback, Powerbox, speaker, GPU,
+Intel execution, production signing or Store approval. The tested package's
+corresponding source remains the exact `8178386b` revision.
 
 Before distribution through the Mac App Store, verify native bookmark/permission
 behavior and App Sandbox entitlements, bundled media helpers and codec behavior, account/provisioning/store signing,
