@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use axum::extract::{Path as AxumPath, State};
 use axum::response::Json;
@@ -100,11 +101,40 @@ fn move_file(source: &Path, destination: &Path) -> Result<(), AppError> {
 
 type TrackedMove = (i64, PathBuf, PathBuf);
 
+fn curation_operation_lock(conn: &rusqlite::Connection) -> Result<Arc<Mutex<()>>, AppError> {
+    type Locks = std::collections::HashMap<PathBuf, Weak<Mutex<()>>>;
+    static LOCKS: OnceLock<Mutex<Locks>> = OnceLock::new();
+    let path = conn
+        .path()
+        .filter(|path| !path.is_empty())
+        .ok_or_else(|| AppError::Internal("Curation requires a directory database file".into()))?;
+    let path = std::fs::canonicalize(path)?;
+    let mut locks = LOCKS
+        .get_or_init(|| Mutex::new(Locks::new()))
+        .lock()
+        .map_err(|_| AppError::Internal("Curation operation registry unavailable".into()))?;
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = locks.get(&path).and_then(Weak::upgrade) {
+        return Ok(lock);
+    }
+    let lock = Arc::new(Mutex::new(()));
+    locks.insert(path, Arc::downgrade(&lock));
+    Ok(lock)
+}
+
 fn discard_moves(
     conn: &mut rusqlite::Connection,
     moves: &[TrackedMove],
     mut mover: impl FnMut(&Path, &Path) -> Result<(), AppError>,
 ) -> Result<usize, AppError> {
+    // Recovery rows are published before filesystem moves. A second client
+    // must not interpret that active operation as an interrupted discard.
+    let operation = curation_operation_lock(conn)?;
+    let _guard = operation.try_lock().map_err(|_| {
+        AppError::TooManyRequests(
+            "Another curation change is finishing. Retry once it completes.".into(),
+        )
+    })?;
     // Reject missing inputs and collisions before changing any file or row.
     let mut destinations = std::collections::HashSet::new();
     for (_, source, destination) in moves {
@@ -217,6 +247,12 @@ fn restore_moves(
     moves: &[TrackedMove],
     mut mover: impl FnMut(&Path, &Path) -> Result<(), AppError>,
 ) -> Result<usize, AppError> {
+    let operation = curation_operation_lock(conn)?;
+    let _guard = operation.try_lock().map_err(|_| {
+        AppError::TooManyRequests(
+            "Another curation change is finishing. Retry once it completes.".into(),
+        )
+    })?;
     let mut completed = Vec::new();
     let update = (|| -> Result<(), AppError> {
         // Keep watcher imports from creating another reference at the restored
@@ -874,6 +910,26 @@ mod tests {
         assert_eq!(plan.len(), 1);
         restore_moves(&mut conn, &plan, move_file).unwrap();
         fixture.assert_originals(&conn);
+    }
+
+    // AC: @curation-game ac-4, ac-5
+    #[test]
+    fn curation_operations_in_separate_databases_remain_independent() {
+        let first = Fixture::new(1);
+        let second = Fixture::new(1);
+        let mut conn = first.connection();
+        discard_moves(&mut conn, &first.moves, |from, to| {
+            let mut other = second.connection();
+            discard_moves(&mut other, &second.moves, move_file)?;
+            let plan = second.restore_plan(&other);
+            restore_moves(&mut other, &plan, move_file)?;
+            second.assert_originals(&other);
+            move_file(from, to)
+        })
+        .unwrap();
+        let plan = first.restore_plan(&conn);
+        restore_moves(&mut conn, &plan, move_file).unwrap();
+        first.assert_originals(&conn);
     }
 
     // AC: @curation-game ac-4, ac-5, ac-10
