@@ -1,4 +1,4 @@
-# Optional Windows MSIX packaging
+# Windows MSIX packaging
 
 MSIX uses the same x64 executable, FFmpeg/FFprobe, libraries and notices as the
 canonical NSIS/portable build. It is a packaged Win32 **full-trust** application,
@@ -20,11 +20,14 @@ do not invent a receipt for an unknown executable.
 
 Stage from that exact commit and its receipt. Supply the identity and publisher
 from Partner Center or the intended sideload certificate, never a guessed
-production identity. Use the reserved publisher's display name. Store submission
-versions must follow Microsoft's requirements, including a zero fourth component.
+production identity. Use the reserved publisher's display name. For Microsoft
+Store staging, pass `--store`. It rejects a nonzero fourth
+version component and the reserved unsigned-development publisher OID before
+creating output. It does not query Partner Center or verify a reservation.
+The three identity values must come from DMC's own Product identity page.
 
 ```sh
-python3 scripts/stage-windows-msix.py \
+python3 scripts/stage-windows-msix.py --store \
   --zip /absolute/release/DonutMediaCenter-Windows.zip \
   --receipt /absolute/release/Windows-build-receipt.json \
   --source FULL_40_CHARACTER_SOURCE_SHA \
@@ -70,14 +73,24 @@ the receipt still says unsigned until explicit signing and verification succeed.
 The bootstrap and adapter have fixture checks; actual native tool compilation and
 package acceptance must be recorded separately.
 
-Optional signing requires all three explicit parameters: `--signtool`,
+For Microsoft Store MSIX submissions, Microsoft signs the package after
+certification; an Azure Artifact Signing enrollment or purchased certificate is
+not required. See [Microsoft's signing options](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options).
+Do not use a development-test publisher or guess the production Publisher CN
+from its display label.
+
+Optional sideload signing requires all three explicit parameters: `--signtool`,
 `--certificate-thumbprint` and `--timestamp-url` (HTTPS RFC3161). The thumbprint
 selects a certificate already available to the signing environment. The script
 uses SHA256, timestamps during signing, then verifies with SignTool's default
 authentication policy. It does not import certificates, accept a password on the
 command line, install packages, submit to a store or publish. The final sidecar
 receipt records the package digest and whether signature verification ran.
-Unsigned SDK packages are inspection inputs, not installable release claims.
+Unsigned SDK validation alone does not establish installability. Windows 11
+supports an explicitly separate [unsigned development test identity](https://learn.microsoft.com/en-us/windows/msix/package/unsigned-package)
+with the documented publisher OID and administrative `Add-AppxPackage -AllowUnsigned`.
+Keep its package name and protocol separate, and remove that OID from Store
+packages. This test route does not establish App Control approval or Store acceptance.
 
 The command interfaces follow Microsoft's [desktop manifest guidance](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-manual-conversion),
 [MakeAppx validation](https://learn.microsoft.com/en-us/windows/msix/package/create-app-package-with-makeappx-tool),
@@ -97,5 +110,7 @@ Before release, verify the exact package on an owned Windows fixture account:
   unavailable/revoked folders and recovery without destructive cleanup.
 
 Use the privacy and Windows acceptance procedure in
-[release infrastructure](agents/release-and-infrastructure.md). No real SDK MSIX,
-signature or Windows package acceptance has yet been produced by this change.
+[release infrastructure](agents/release-and-infrastructure.md). Record SDK structural
+validation, actual installed-package behavior and certification separately. The
+[Windows App Certification Kit](https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/windows-app-certification-kit)
+requires an active user session; SSH Session 0 is not that graphical test session.

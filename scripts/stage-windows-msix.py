@@ -29,7 +29,7 @@ def git_file(source, path):
     return subprocess.check_output(['git', '-C', str(ROOT), 'show', source + ':' + path])
 
 
-def validate_identity(identity, publisher, version):
+def validate_identity(identity, publisher, version, *, store=False):
     if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{2,49}', identity)
             or identity.endswith('.') or DEVICES.fullmatch(identity)):
         raise ValueError('Invalid package identity')
@@ -38,6 +38,10 @@ def validate_identity(identity, publisher, version):
     if (not re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', version)
             or any(int(x) > 65535 for x in version.split('.')) or int(version.split('.')[0]) == 0):
         raise ValueError('Use a four-part Windows version, first component 1..65535')
+    if store and int(version.split('.')[3]) != 0:
+        raise ValueError('Microsoft Store reserves the fourth version component; use zero')
+    if store and '2.25.311729368913984317654407730594956997722' in publisher:
+        raise ValueError('The unsigned development publisher OID cannot be submitted to the Store')
 
 
 def archive_entries(archive):
@@ -96,8 +100,8 @@ def validate_pe(path):
         raise ValueError('Expected x64 PE32+ executable/library: ' + path.name)
 
 
-def stage(zip_path, receipt_path, source, output, identity, publisher, display_name, version):
-    validate_identity(identity, publisher, version)
+def stage(zip_path, receipt_path, source, output, identity, publisher, display_name, version, *, store=False):
+    validate_identity(identity, publisher, version, store=store)
     if not re.fullmatch('[0-9a-f]{40}', source) or not display_name.strip():
         raise ValueError('Use an exact source commit and publisher display name')
     receipt = json.loads(Path(receipt_path).read_text())
@@ -186,6 +190,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('zip', 'receipt', 'source', 'output', 'identity', 'publisher', 'publisher-display-name', 'version'):
         parser.add_argument('--' + name, required=True)
+    parser.add_argument('--store', action='store_true', help='Check Store version and reject unsigned-development publisher OID; identity values must come from DMC Partner Center')
     parser.add_argument('--package', help='Optional new .msix output; requires the real SDK MakeAppx tool')
     parser.add_argument('--makeappx', help='Executable path, or a wrapper invoking SDK MakeAppx under Wine')
     parser.add_argument('--packager-kind', choices=['makeappx', 'makemsix'], default='makeappx')
@@ -198,12 +203,13 @@ def main():
     if not args.package and any((args.makeappx, args.signtool, args.certificate_thumbprint, args.timestamp_url)):
         parser.error('SDK/signing options require --package')
     output, receipt = stage(args.zip, args.receipt, args.source.lower(), args.output, args.identity,
-                            args.publisher, args.publisher_display_name, args.version)
+                            args.publisher, args.publisher_display_name, args.version, store=args.store)
     if args.package:
         result = package(output, args.package, args.makeappx, args.signtool,
                          args.certificate_thumbprint, args.timestamp_url, packager_kind=args.packager_kind)
         result.update(source_commit=receipt['source_commit'], portable_sha256=receipt['portable_sha256'],
-                      identity=args.identity, publisher=args.publisher, version=args.version)
+                      identity=args.identity, publisher=args.publisher, version=args.version,
+                      store_constraints_checked=args.store, partner_center_identity_verified=False)
         Path(str(args.package) + '.receipt.json').write_text(json.dumps(result, indent=2) + '\n')
         print('SDK package verified:', args.package)
     else:

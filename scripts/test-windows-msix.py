@@ -7,6 +7,7 @@ import shutil
 import stat
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
@@ -53,9 +54,9 @@ class PackagingTests(unittest.TestCase):
                       recipe_sha256=msix.hashlib.sha256(msix.git_file(self.source, 'scripts/build-windows-docker.sh')).hexdigest())
         self.receipt.write_text(json.dumps(record))
 
-    def stage(self):
+    def stage(self, **options):
         return msix.stage(self.zip, self.receipt, self.source, self.root / 'new package stage',
-                          'Example.DMC.Test', 'CN=Fixture & Testing', 'Fixture & Testing', '2.1.1.0')[0]
+                          'Example.DMC.Test', 'CN=Fixture & Testing', 'Fixture & Testing', '2.1.1.0', **options)[0]
 
     def test_valid_payload_manifest_and_spaces(self):
         stage = self.stage()
@@ -103,6 +104,36 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'helpers'): self.stage()
         for version in ('2.1.1', '0.1.1.0', '2.1.65536.0', '2.01.1.0'):
             with self.assertRaises(ValueError): msix.validate_identity('Example.DMC.Test', 'CN=Fixture', version)
+
+    def test_store_constraints_preserve_generic_versions_and_validate_before_io(self):
+        msix.validate_identity('Example.DMC.Test', 'CN=Fixture', '2.1.1.7')
+        msix.validate_identity('Example.DMC.Test', 'CN=Fixture', '2.65535.65535.0', store=True)
+        output = self.root / 'invalid-store-stage'
+        with self.assertRaisesRegex(ValueError, 'fourth'):
+            msix.stage(self.root / 'missing.zip', self.root / 'missing.json', self.source,
+                       output, 'Example.DMC.Test', 'CN=Fixture', 'Fixture', '2.1.1.7', store=True)
+        self.assertFalse(output.exists())
+        stage = self.stage(store=True)
+        self.assertEqual(ET.parse(stage / 'AppxManifest.xml').getroot()[0].get('Version'), '2.1.1.0')
+
+    def test_store_rejects_unsigned_development_oid_without_changing_sideload_validation(self):
+        publisher = 'CN=Fixture, OID.2.25.311729368913984317654407730594956997722=1'
+        msix.validate_identity('Example.DMC.Test', publisher, '2.1.1.0')
+        with self.assertRaisesRegex(ValueError, 'development publisher OID'):
+            msix.stage(self.zip, self.receipt, self.source, self.root / 'invalid-store-stage',
+                       'Example.DMC.Test', publisher, 'Fixture', '2.1.1.0', store=True)
+        self.assertFalse((self.root / 'invalid-store-stage').exists())
+
+    def test_store_cli_rejects_reserved_version_before_output_mutation(self):
+        output = self.root / 'invalid-cli-stage'
+        result = subprocess.run([sys.executable, str(Path(msix.__file__)), '--store',
+                                 '--zip', str(self.root / 'missing.zip'), '--receipt', str(self.root / 'missing.json'),
+                                 '--source', self.source, '--output', str(output), '--identity', 'Example.DMC.Test',
+                                 '--publisher', 'CN=Fixture', '--publisher-display-name', 'Fixture', '--version', '2.1.1.3'],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('fourth', result.stderr)
+        self.assertFalse(output.exists())
 
     def runner(self, stage, commands, fail=None, corrupt=False):
         def run(command, check):
