@@ -44,10 +44,18 @@ Native acceptance must use an isolated fixture and the exact signed package:
   and references remain. Verify bundled helpers inherit appropriate sandbox
   access and can decode/transcode the selected media.
 
-This is an inspection-build configuration. Native compilation, universal helper
-packaging and actual container-local import/transcoding have passed on physical
-Apple Silicon for revision `8178386b`. They do not establish access to an external
-user-selected folder: real Powerbox selection, bookmark recovery and helper
-authorization still need the acceptance above. Production signing, visible UI,
-speaker/GPU behavior, Intel execution and Store acceptance remain outstanding.
-The configuration does not submit or publish the application.
+On 14 November 2026, the exact `a12182be` universal Lite inspection package passed
+six native checks on physical Apple Silicon. A person selected an external
+synthetic folder through the native chooser. The sandboxed app persisted its
+bookmark, read the image and video, generated a video thumbnail using its bundled
+helpers, and saved a real multipart upload into that folder. After a process
+restart and eviction of the synthetic video thumbnail, restored access supported
+media reads, a fresh helper thumbnail, and an HLS transcode with decodable audio.
+The controller deliberately restarted and closed the test app; its disposable
+profile, external fixture and temporary test LaunchAgent were removed.
+
+This establishes positive chooser, bookmark restoration, external app read/write
+and helper read behavior for that ad-hoc package. Revoke/reacquire, moved-folder
+and disconnected-volume recovery, production signing, visible gallery/video
+playback, speaker/GPU behavior, Intel execution and Store acceptance remain
+outstanding. The configuration does not submit or publish the application.

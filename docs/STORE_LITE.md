@@ -31,8 +31,11 @@ establish native Apple behavior.
 The macOS lite config now selects App Sandbox entitlements and its native folder
 picker persists security-scoped bookmarks with startup restoration and recovery.
 See [folder access](MACOS_FOLDER_ACCESS.md) for the implementation and remaining
-native acceptance. Native compilation is verified; real external-folder
-selection, bookmark recovery and helper authorization still need acceptance.
+native acceptance. Physical Apple Silicon acceptance now includes native
+selection of a synthetic external folder, saved uploads, bookmark restoration
+after restart, and fresh video-helper access after thumbnail eviction in the
+exact `a12182be` ad-hoc package. Revoke/reacquire and moved-folder recovery still
+need native acceptance with the intended production signing identity.
 
 On 14 November 2026, the exact `8178386b` universal inspection package passed
 14 backend checks on physical Apple Silicon, including saved uploads, media
@@ -44,6 +47,14 @@ enabling it and after disabling it again. All owned fixtures were cleaned up.
 These are backend/API checks, not visible playback, Powerbox, speaker, GPU,
 Intel execution, production signing or Store approval. The tested package's
 corresponding source remains the exact `8178386b` revision.
+
+The later `a12182be` folder-permission run passed six checks, including external
+HLS transcoding with decodable audio. The person selected only the prepared test
+folder; the controller then restarted and closed the disposable instance and
+verified cleanup. This adds positive Powerbox/bookmark/helper evidence without
+establishing visible playback, speaker/GPU behavior, Intel execution or Store
+approval. The same exact package then passed all 14 backend checks and all four
+real LAN phases again, with fresh disposable profiles and verified cleanup.
 
 Before distribution through the Mac App Store, verify native bookmark/permission
 behavior and App Sandbox entitlements, bundled media helpers and codec behavior, account/provisioning/store signing,
