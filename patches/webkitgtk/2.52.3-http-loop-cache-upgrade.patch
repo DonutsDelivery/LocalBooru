@@ -1,0 +1,17 @@
+# Upgrade the recognized pre-loop-fix cache without discarding native objects.
+# primary-patch 479a89d73458a208d9297260d13f8a3c605121130d223bae5a8c2839d3a5f509
+# previous-stack 9d77eb65131e16c6fa6805afc46cf3627ec3512c9fc453b824f147a8d4a55029
+# preimage ebd7f1a383c897097523233a8e248a39ee72d3652c4ca45a5a5ed22e81f6bdd7 d8bbfb6fafd924c9e9ef6f8d629cf0854336db0ab50f63f19be77f1dc9a386af Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -4340,6 +4340,10 @@
+     if (!player->isVideoPlayer())
+         return false;
+ 
++    // HTTP range-backed video loops need a flushing seek without a segment restart.
++    if (m_url.protocolIsInHTTPFamily() && !m_url.path().endsWithIgnoringASCIICase(".m3u8"_s))
++        return false;
++
+     // The GStreamer oggdemux element doesn't handle segment seeks.
+     if (m_containerType == ContainerType::Ogg) {
+         GST_DEBUG_OBJECT(m_pipeline.get(), "Seamless seeking not supported for media muxed in Ogg container");
