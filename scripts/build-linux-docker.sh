@@ -69,35 +69,49 @@ download_checked() {
 }
 
 prepare_webkit() {
+  source "$ROOT/scripts/webkit-http-loop-cache.sh"
   local tarball="$BUILD/downloads/webkitgtk-$WEBKIT_VERSION.tar.xz"
   local source="$BUILD/webkitgtk-$WEBKIT_VERSION"
   local build_dir="$BUILD/webkit-build"
   local patch_file="$ROOT/patches/webkitgtk/2.52.3-playbin-video-filter.patch"
   local bridge_patch="$ROOT/patches/webkitgtk/2.52.3-flatpak-video-bridge.patch"
   local process_patch="$ROOT/patches/webkitgtk/2.52.3-bundled-process-directory.patch"
+  local loop_patch="$ROOT/patches/webkitgtk/2.52.3-http-loop-cache-upgrade.patch"
   local patch_hash base_patch_hash previous_patch_hash
   local configure_stamp="$build_dir/.localbooru-config-ubuntu24-gtk3-ruby34-v3"
   base_patch_hash="$(sha256sum "$patch_file" | cut -d' ' -f1)"
   previous_patch_hash="$(cat "$patch_file" "$bridge_patch" | sha256sum | cut -d' ' -f1)"
   patch_hash="$(cat "$patch_file" "$bridge_patch" "$process_patch" | sha256sum | cut -d' ' -f1)"
+  local runtime_stamp="$build_dir/.localbooru-runtime-$patch_hash"
 
   download_checked \
     "https://webkitgtk.org/releases/webkitgtk-$WEBKIT_VERSION.tar.xz" \
     "$tarball" "$WEBKIT_SHA256"
 
   if [[ ! -f "$source/.localbooru-patch-$patch_hash" ]]; then
-    if [[ ! -f "$source/.localbooru-patch-$base_patch_hash" && ! -f "$source/.localbooru-patch-$previous_patch_hash" ]]; then
+    if localbooru_webkit_http_loop_stack_matches "$source" "$base_patch_hash" "$loop_patch"; then
+      localbooru_webkit_http_loop_upgrade_available "$source" "$base_patch_hash" \
+        "$loop_patch" "$ROOT/scripts/prepare-webkit-flatpak-bridge.py"
+      echo "==> Preserving recognized WebKitGTK cache for HTTP loop upgrade"
+    elif [[ ! -f "$source/.localbooru-patch-$base_patch_hash" && ! -f "$source/.localbooru-patch-$previous_patch_hash" ]]; then
       rm -rf "$source" "$build_dir"
       tar -xJf "$tarball" -C "$BUILD"
       patch -d "$source" -p1 < "$patch_file"
       touch "$source/.localbooru-patch-$base_patch_hash"
     fi
   fi
+  localbooru_webkit_prepare_http_loop "$source" "$base_patch_hash" "$loop_patch" \
+    "$ROOT/scripts/prepare-webkit-flatpak-bridge.py" "$runtime_stamp"
   # Recognize only the exact launcher pre/postimage. Keep the base runtime's
   # expensive objects while updating its combined source identity.
   python3 "$ROOT/scripts/prepare-webkit-flatpak-bridge.py" --source "$source" --apply
   python3 "$ROOT/scripts/prepare-webkit-flatpak-bridge.py" --source "$source" --apply --patch "$process_patch"
   touch "$source/.localbooru-patch-$patch_hash"
+  if [[ "$base_patch_hash" == "$(awk '$2 == "primary-patch" {print $3}' "$loop_patch")" ]]; then
+    local old_stack
+    old_stack="$(awk '$2 == "previous-stack" {print $3}' "$loop_patch")"
+    rm -f "$source/.localbooru-patch-$old_stack"
+  fi
   rm -f "$source/.localbooru-patch-$base_patch_hash" "$source/.localbooru-patch-$previous_patch_hash"
 
   if [[ ! -f "$configure_stamp" ]]; then
@@ -126,9 +140,6 @@ prepare_webkit() {
     echo "==> Reusing patched WebKitGTK configuration"
   fi
 
-  local bridge_patch_hash bridge_stamp
-  bridge_patch_hash="$(cat "$bridge_patch" "$process_patch" | sha256sum | cut -d' ' -f1)"
-  bridge_stamp="$build_dir/.localbooru-flatpak-bridge-$bridge_patch_hash"
   local webkit_targets=(WebKit WebKitWebProcess WebKitNetworkProcess webkit2gtkinjectedbundle)
   if grep -q '^ENABLE_GPU_PROCESS:BOOL=ON$' "$build_dir/CMakeCache.txt"; then
     webkit_targets+=(WebKitGPUProcess)
@@ -149,14 +160,12 @@ prepare_webkit() {
       "$build_dir/lib/libwebkit2gtk-4.1.so.0"
     timeout --signal=TERM --kill-after=30s "$NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS" \
       cmake --build "$build_dir" --target "${webkit_targets[@]}" --parallel "$JOBS"
-    touch "$bridge_stamp"
-  elif [[ ! -f "$bridge_stamp" || ! -x "$build_dir/bin/WebKitNetworkProcess" || ! -s "$build_dir/lib/libwebkit2gtkinjectedbundle.so" ]] || {
+  elif [[ ! -f "$runtime_stamp" || ! -x "$build_dir/bin/WebKitNetworkProcess" || ! -s "$build_dir/lib/libwebkit2gtkinjectedbundle.so" ]] || {
     grep -q '^ENABLE_GPU_PROCESS:BOOL=ON$' "$build_dir/CMakeCache.txt" && [[ ! -x "$build_dir/bin/WebKitGPUProcess" ]];
   }; then
-    echo "==> Updating WebKitGTK Flatpak video bridge"
+    echo "==> Updating WebKitGTK for the complete patch stack"
     timeout --signal=TERM --kill-after=30s "$NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS" \
       cmake --build "$build_dir" --target "${webkit_targets[@]}" --parallel "$JOBS"
-    touch "$bridge_stamp"
   else
     echo "==> Reusing completed patched WebKitGTK runtime"
   fi
@@ -165,6 +174,7 @@ prepare_webkit() {
   test -s "$build_dir/lib/libwebkit2gtkinjectedbundle.so"
   test -x "$build_dir/bin/WebKitNetworkProcess"
   if grep -q '^ENABLE_GPU_PROCESS:BOOL=ON$' "$build_dir/CMakeCache.txt"; then test -x "$build_dir/bin/WebKitGPUProcess"; fi
+  touch "$runtime_stamp"
 }
 
 prepare_vapoursynth() {
@@ -435,7 +445,9 @@ package_source_offer() {
   cp "$ROOT/patches/webkitgtk/2.52.3-playbin-video-filter.patch" "$source_stage/"
   cp "$ROOT/patches/webkitgtk/2.52.3-flatpak-video-bridge.patch" "$source_stage/"
   cp "$ROOT/patches/webkitgtk/2.52.3-bundled-process-directory.patch" "$source_stage/"
+  cp "$ROOT/patches/webkitgtk/2.52.3-http-loop-cache-upgrade.patch" "$source_stage/"
   cp "$ROOT/scripts/prepare-webkit-flatpak-bridge.py" "$source_stage/"
+  cp "$ROOT/scripts/webkit-http-loop-cache.sh" "$source_stage/"
   cp "$ROOT/scripts/select-appimage-webkit.sh" "$source_stage/"
   git -C "$BUILD/vapoursynth-r75" archive --format=tar.gz \
     --output="$source_stage/vapoursynth-R75.tar.gz" "$VAPOURSYNTH_COMMIT"

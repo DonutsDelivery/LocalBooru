@@ -343,6 +343,19 @@ and the expensive native runtime cache when only Rust outputs are obsolete.
 WebKitGTK is the dominant build cost; do not delete the persistent build root between
 releases.
 
+The HTTP loop repair recognizes the exact prior WebKit patch stack and C++
+preimage, applies its narrow upgrade while preserving native objects, and
+rebuilds the WebKit targets. Unknown edits to that recognized cache fail without
+deleting it. Native completion is stamped with the full patch-stack hash only
+after a successful build and helper checks; an interrupted upgrade must resume
+the build. The upgrade patch and helper are included in the runtime source offer.
+Its synthetic cache checks use owned public-source copies and fake CMake:
+
+```bash
+python3 scripts/test-webkit-http-loop-cache.py --source /path/to/prior/webkitgtk-2.52.3 \
+  --upstream-archive /path/to/webkitgtk-2.52.3.tar.xz
+```
+
 ## Linux build contents
 
 The container builds:
