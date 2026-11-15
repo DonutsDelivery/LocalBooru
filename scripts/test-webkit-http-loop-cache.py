@@ -95,6 +95,23 @@ class CacheTests(unittest.TestCase):
     def calls(self):
         return self.log.read_text().splitlines() if self.log.exists() else []
 
+    def run_host(self):
+        (self.build / '.localbooru-build-cache').write_text('localbooru-build-cache-v1\n')
+        vs = self.build / 'vapoursynth-stage'
+        vs.mkdir()
+        (vs / '.localbooru-vapoursynth-c05906995662bacd5bddf853d8e68f19286987db').touch()
+        docker = self.root / 'bin/docker'
+        docker.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >>"$DOCKER_LOG"\nexit 0\n')
+        docker.chmod(0o700)
+        env = {**self.env, 'HOME': str(self.root / 'home'), 'XDG_STATE_HOME': str(self.root / 'state'),
+               'LOCALBOORU_DOCKER_BUILD_ROOT': str(self.build), 'LOCALBOORU_CCACHE_DIR': str(self.root / 'ccache'),
+               'LOCALBOORU_DIST_LINUX_DIR': str(self.root / 'output'), 'LOCALBOORU_SOURCE_REVISION': 'HEAD',
+               'LOCALBOORU_BUILD_LOCK_TIMEOUT': '0', 'DOCKER_LOG': str(self.root / 'docker.log'),
+               'LOCALBOORU_BUILD_MIN_FREE_GB': '1', 'LOCALBOORU_BUILD_ROOT_MIN_FREE_GB': '1'}
+        # Tiny fake containers consume no build space; real build floors stay unchanged.
+        return subprocess.run(['bash', str(REPO / 'scripts/build-linux-local.sh'), '--deb'],
+                              env=env, text=True, capture_output=True, timeout=15)
+
     def test_host_recognition_does_not_mutate(self):
         before = {str(p.relative_to(self.build)): (p.stat().st_ino, p.stat().st_mtime_ns, p.read_bytes())
                   for p in self.build.rglob('*') if p.is_file()}
@@ -103,6 +120,23 @@ class CacheTests(unittest.TestCase):
                  for p in self.build.rglob('*') if p.is_file()}
         self.assertEqual(before, after)
         self.assertFalse(self.log.exists())
+
+    def test_host_wrapper_admits_recognized_upgrade_without_mutating_source(self):
+        result = self.run_host()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('LOCALBOORU_BUILD_STATUS=STARTED', result.stdout)
+        self.assertIn('run --rm ', (self.root / 'docker.log').read_text())
+        self.assertEqual(hashlib.sha256((self.source / RELATIVE).read_bytes()).hexdigest(), self.before)
+
+    def test_host_wrapper_refuses_unknown_upgrade_before_container(self):
+        path = self.source / RELATIVE
+        path.write_bytes(path.read_bytes() + b'\n// synthetic unknown host source\n')
+        edited = path.read_bytes()
+        result = self.run_host()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('LOCALBOORU_BUILD_STATUS=NEEDS_BOOTSTRAP', result.stderr)
+        self.assertFalse((self.root / 'docker.log').exists())
+        self.assertEqual(path.read_bytes(), edited)
 
     def test_upgrade_preserves_objects_and_builds_complete_stack(self):
         result = self.run_prepare()

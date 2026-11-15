@@ -53,6 +53,8 @@ pins = json.loads(source_file('scripts/windows-media-sources.json'))
                     'docs/WINDOWS_MEDIA_HELPERS.md', 'LICENSE', 'NOTICE', 'LICENSES/MIT-legacy.txt'))).hexdigest(),
 }))
 (dist / 'DonutMediaCenter-Windows-media-sources.tar.xz').write_bytes(b'Synthetic media source offer')
+(dist / 'DonutMediaCenter-Windows-runtime-sources.tar.xz').write_bytes(b'Synthetic runtime source offer')
+(dist / 'runtime-source-receipt.json').write_text('{"synthetic": true}\n')
 archive = dist / 'DonutMediaCenter-Windows-source.tar.xz'
 with tarfile.open(archive, 'w:xz') as tar:
     data = b'Synthetic receipt fixture, not an application source export'
@@ -68,6 +70,8 @@ with tarfile.open(archive, 'w:xz') as tar:
     'installer_sha256': digest('DonutMediaCenter-Windows-Setup.exe'),
     'media_receipt_sha256': digest('media-build-receipt.json'),
     'media_source_archive_sha256': digest('DonutMediaCenter-Windows-media-sources.tar.xz'),
+    'runtime_source_receipt_sha256': digest('runtime-source-receipt.json'),
+    'runtime_source_archive_sha256': digest('DonutMediaCenter-Windows-runtime-sources.tar.xz'),
     'application_source_archive_sha256': digest(archive.name),
 }))
 PY
@@ -79,6 +83,22 @@ fi
 exit 0
 EOF
 chmod +x "$TEMP_DIR/bin/docker"
+
+export BUILD_STATUS_TEST_PYTHON="$(command -v python3)"
+export BUILD_STATUS_TEST_RUNTIME_LOG="$TEMP_DIR/runtime-check.log"
+# This fake-container suite checks admission/status wiring. Source-export
+# verification has its own behavioral suite; intercept only the fake export.
+cat >"$TEMP_DIR/bin/python3" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1##*/}" == export-windows-runtime-sources.py ]]; then
+  [[ "$*" == *--verify-export* ]]
+  printf '%s\n' "$*" >>"$BUILD_STATUS_TEST_RUNTIME_LOG"
+  exit 0
+fi
+exec "$BUILD_STATUS_TEST_PYTHON" "$@"
+EOF
+chmod +x "$TEMP_DIR/bin/python3"
 
 export HOME="$TEMP_DIR/home"
 export XDG_STATE_HOME="$TEMP_DIR/state"
@@ -170,6 +190,8 @@ source_commit="$(git -C "$ROOT" rev-parse HEAD)"
 grep -F "LOCALBOORU_BUILD_STATUS=STARTED platform=windows source=$source_commit stage=artifacts" \
   "$windows_output" >/dev/null
 grep -F "LOCALBOORU_SOURCE_REVISION=$source_commit" "$BUILD_STATUS_TEST_DOCKER_LOG" >/dev/null
+[[ "$(wc -l <"$BUILD_STATUS_TEST_RUNTIME_LOG")" -eq 1 ]]
+grep -F -- '--verify-export' "$BUILD_STATUS_TEST_RUNTIME_LOG" >/dev/null
 
 : >"$BUILD_STATUS_TEST_DOCKER_LOG"
 linux_missing_output="$TEMP_DIR/linux-missing-runtime.log"
