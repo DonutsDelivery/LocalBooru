@@ -203,7 +203,20 @@ def main(source):
         helper = os.environ.get('HOST_HEAVY_BUILD_HELPER', str(Path.home() / '.local/bin/host-heavy-build'))
         binary = Path(directory) / 'fixture'
         subprocess.run([helper, 'run', '--project', 'dmc-http-seek-fixture', '--worktree', str(REPO), '--wait', '21600', '--', 'g++', '-std=c++17', '-pthread', str(cpp), '-o', str(binary), *flags], check=True)
-        subprocess.run([str(binary)], check=True, timeout=15)
+        # Keep the compiler's real admission environment, but never use the
+        # person's GStreamer registry or home for the synthetic runtime.
+        runtime = Path(directory) / 'runtime'
+        runtime.mkdir(mode=0o700)
+        runtime_env = {key: value for key, value in os.environ.items() if not key.startswith('GST_')}
+        for key, name in (('HOME', 'home'), ('XDG_CONFIG_HOME', 'config'),
+                          ('XDG_DATA_HOME', 'data'), ('XDG_CACHE_HOME', 'cache'),
+                          ('XDG_STATE_HOME', 'state'), ('XDG_RUNTIME_DIR', 'run'),
+                          ('TMPDIR', 'tmp')):
+            path = runtime / name
+            path.mkdir(mode=0o700)
+            runtime_env[key] = str(path)
+        runtime_env['GST_REGISTRY'] = runtime_env['GST_REGISTRY_1_0'] = str(runtime / 'registry.bin')
+        subprocess.run([str(binary)], check=True, timeout=15, env=runtime_env)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
