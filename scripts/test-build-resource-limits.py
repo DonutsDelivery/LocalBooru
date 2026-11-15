@@ -6,6 +6,7 @@ import hashlib
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import tarfile
 import unittest
@@ -79,6 +80,8 @@ class BuildResourceTests(unittest.TestCase):
                     'docs/WINDOWS_MEDIA_HELPERS.md', 'LICENSE', 'NOTICE', 'LICENSES/MIT-legacy.txt'))).hexdigest(),
             }))
             (output/'DonutMediaCenter-Windows-media-sources.tar.xz').write_bytes(b'Synthetic media source offer')
+            (output/'DonutMediaCenter-Windows-runtime-sources.tar.xz').write_bytes(b'Synthetic runtime source offer')
+            (output/'runtime-source-receipt.json').write_text('{"synthetic": true}\n')
             archive = output/'DonutMediaCenter-Windows-source.tar.xz'
             with tarfile.open(archive, 'w:xz') as tar:
                 data = b'Synthetic receipt fixture, not an application source export'
@@ -95,6 +98,8 @@ class BuildResourceTests(unittest.TestCase):
                 'installer_sha256': hashlib.sha256(b'synthetic artifact').hexdigest(),
                 'media_receipt_sha256': digest('media-build-receipt.json'),
                 'media_source_archive_sha256': digest('DonutMediaCenter-Windows-media-sources.tar.xz'),
+                'runtime_source_receipt_sha256': digest('runtime-source-receipt.json'),
+                'runtime_source_archive_sha256': digest('DonutMediaCenter-Windows-runtime-sources.tar.xz'),
                 'application_source_archive_sha256': digest(archive.name),
             }))
             # Synthetic cache sentinels prevent an implicit native bootstrap.
@@ -115,7 +120,27 @@ class BuildResourceTests(unittest.TestCase):
             # its host verifier too; production artifact checks stay unchanged.
             sha = binary/'sha256sum'
             sha.write_text('#!/bin/bash\nif [[ "$1" == -c ]]; then exit 0; fi\nexec /usr/bin/sha256sum "$@"\n'); sha.chmod(0o755)
+            # This suite tests host resource admission and command wiring, not
+            # real source archives. The exporter has separate behavioral tests.
+            # Intercept only this fake-container verification command; never
+            # add a test bypass to the production wrapper or exporter.
+            runtime_log = tmp/'runtime-check.jsonl'
+            env['FAKE_RUNTIME_CHECK_LOG'] = str(runtime_log)
+            python = binary/'python3'
+            python.write_text('#!' + sys.executable + '\n'
+                'import json, os, sys\nfrom pathlib import Path\n'
+                'args=sys.argv[1:]\n'
+                'if args and Path(args[0]).name=="export-windows-runtime-sources.py":\n'
+                ' assert "--verify-export" in args\n'
+                ' with open(os.environ["FAKE_RUNTIME_CHECK_LOG"],"a") as f: f.write(json.dumps(args)+"\\n")\n'
+                ' sys.exit(0)\n'
+                'os.execv(' + repr(sys.executable) + ',[' + repr(sys.executable) + ',*args])\n')
+            python.chmod(0o755)
             result = subprocess.run([str(ROOT/'scripts'/f'build-{platform}-local.sh')], env=env, text=True, capture_output=True)
+            if platform == 'windows' and result.returncode == 0:
+                invoked = [json.loads(line) for line in runtime_log.read_text().splitlines()]
+                self.assertEqual(len(invoked), 1)
+                self.assertIn(str(output/'media-build-receipt.json'), invoked[0])
             calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
             return result, calls
 

@@ -206,7 +206,12 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
             response = await self.http.post(route + '/cancel', json={'id': job_id})
             self.assertEqual(response.json()['job']['state'], 'cancelled')
         self.assertFalse(any('enhancer' in url for _, url, _, _ in self.backend.requests))
-        for data in ({'kind': 'enhance', 'model': []}, {'kind': 'enhance', 'model': 'minicpm', 'image_brief': 'x' * 16001}, {'url': 'http://other.invalid'}):
+        with patch.object(self.controller.enhancer, 'ready', return_value=True), patch.object(self.controller.enhancer, 'infer', new=AsyncMock(return_value={'main_prompt': 'Ink wash. Synthetic owl.', 'face_prompt': 'Ink wash. The owl looks left.'})) as infer:
+            response = await self.http.post(route, json={'kind': 'enhance', 'model': 'minicpm', 'image_brief': 'Synthetic owl.', 'face_brief': '', 'style_brief': 'Ink wash.'})
+            self.assertEqual(response.status_code, 200)
+            await self.controller.enhancer.task
+            self.assertEqual(infer.await_args.args[-1], 'Ink wash.')
+        for data in ({'kind': 'enhance', 'model': []}, {'kind': 'enhance', 'model': 'minicpm', 'image_brief': 'x' * 16001}, {'kind': 'enhance', 'model': 'minicpm', 'image_brief': 'x', 'style_brief': 'y' * 4001}, {'kind': 'enhance', 'model': 'minicpm', 'image_brief': 'x', 'style_brief': 3}, {'url': 'http://other.invalid'}):
             response = await self.http.post(route, json=data)
             self.assertEqual(response.status_code, 400)
 
