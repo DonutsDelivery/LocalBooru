@@ -352,7 +352,8 @@ the build. The upgrade patch and helper are included in the runtime source offer
 Its synthetic cache checks use owned public-source copies and fake CMake:
 
 ```bash
-python3 scripts/test-webkit-http-loop-cache.py --source /path/to/prior/webkitgtk-2.52.3
+python3 scripts/test-webkit-http-loop-cache.py --source /path/to/prior/webkitgtk-2.52.3 \
+  --upstream-archive /path/to/webkitgtk-2.52.3.tar.xz
 ```
 
 ## Linux build contents

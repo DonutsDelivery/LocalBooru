@@ -1,5 +1,5 @@
 # Upgrade the recognized pre-loop-fix cache without discarding native objects.
-# primary-patch 479a89d73458a208d9297260d13f8a3c605121130d223bae5a8c2839d3a5f509
+# primary-patch 9fe88cc7ebfa24c62d5b2050090a10d487bbb9393d4169bccc51ad6464615a33
 # previous-stack 9d77eb65131e16c6fa6805afc46cf3627ec3512c9fc453b824f147a8d4a55029
 # preimage ebd7f1a383c897097523233a8e248a39ee72d3652c4ca45a5a5ed22e81f6bdd7 d8bbfb6fafd924c9e9ef6f8d629cf0854336db0ab50f63f19be77f1dc9a386af Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp

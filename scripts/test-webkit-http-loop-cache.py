@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tarfile
 import unittest
 
 REPO = Path(__file__).resolve().parents[1]
@@ -14,6 +15,7 @@ RELATIVE = Path('Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGS
 PATCHES = ('2.52.3-playbin-video-filter.patch', '2.52.3-flatpak-video-bridge.patch',
            '2.52.3-bundled-process-directory.patch', '2.52.3-http-loop-cache-upgrade.patch')
 SOURCE = None
+UPSTREAM_ARCHIVE = None
 
 
 class CacheTests(unittest.TestCase):
@@ -148,6 +150,30 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(len(self.calls()), 1)
         self.assertIn("'WebKitGPUProcess', '--parallel', '1'", self.calls()[0])
 
+    def test_pristine_and_incremental_patch_produce_identical_source(self):
+        with UPSTREAM_ARCHIVE.open('rb') as stream:
+            self.assertEqual(hashlib.file_digest(stream, 'sha256').hexdigest(),
+                             '5b3e0d174e63dcc28848b1194e0e7448d5948c3c2427ecd931c2c5be5261aebb')
+        patch = self.repo / 'patches/webkitgtk' / PATCHES[0]
+        needed = {line.split()[1][2:] for line in patch.read_text().splitlines() if line.startswith('+++ b/')}
+        pristine = self.root / 'pristine'
+        prefix = 'webkitgtk-2.52.3/'
+        with tarfile.open(UPSTREAM_ARCHIVE, 'r|xz') as archive:
+            for entry in archive:
+                relative = entry.name.removeprefix(prefix)
+                if entry.name.startswith(prefix) and relative in needed:
+                    self.assertTrue(entry.isfile())
+                    self.assertNotIn('..', Path(relative).parts)
+                    destination = pristine / relative
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_bytes(archive.extractfile(entry).read())
+        result = subprocess.run(['patch', '--batch', '--forward', '-p1', '-i', str(patch)],
+                                cwd=pristine, text=True, capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.run_prepare().returncode, 0)
+        self.assertEqual((pristine / RELATIVE).read_bytes(), (self.source / RELATIVE).read_bytes())
+        self.assertEqual(hashlib.sha256((pristine / RELATIVE).read_bytes()).hexdigest(), self.after)
+
     def test_unknown_edit_refused_without_deletion_or_compilation(self):
         path = self.source / RELATIVE
         path.write_bytes(path.read_bytes() + b'\n// synthetic unrecognized edit\n')
@@ -202,6 +228,8 @@ class CacheTests(unittest.TestCase):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', required=True, type=Path, help='Read-only recognized old public WebKit source')
+    parser.add_argument('--upstream-archive', required=True, type=Path, help='Pinned pristine WebKit 2.52.3 archive')
     args, remaining = parser.parse_known_args()
     SOURCE = args.source
+    UPSTREAM_ARCHIVE = args.upstream_archive
     unittest.main(argv=[__file__, *remaining])
