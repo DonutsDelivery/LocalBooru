@@ -54,8 +54,8 @@ struct MediaTime {
 static GstClockTime toGstClockTime(MediaTime time){if(time.value<0)return GST_CLOCK_TIME_NONE;return static_cast<GstClockTime>(time.value*GST_SECOND);}
 struct SeekTarget {MediaTime time;};
 struct MediaPlayer { enum class NetworkState { DecodeError, Empty }; enum class ReadyState { HaveNothing }; };
-struct FakePlayer { bool looping=false; bool isLooping()const{return looping;} float rate()const{return 1;} void rateChanged(){ } };
-struct PlayerPtr {FakePlayer value; FakePlayer* get(){return &value;} };
+struct FakePlayer { bool looping=false; bool isLooping()const{return looping;} bool isVideoPlayer()const{return true;} float rate()const{return 1;} void rateChanged(){ } };
+struct PlayerPtr {FakePlayer value; FakePlayer* get()const{return const_cast<FakePlayer*>(&value);} };
 constexpr const char* operator""_s(const char* text,size_t){return text;}
 struct URL {bool http=true,hls=false; bool protocolIsInHTTPFamily()const{return http;}
     struct Path {bool hls; bool endsWithIgnoringASCIICase(const char*)const{return hls;} };
@@ -103,7 +103,8 @@ public:
     int bufferingPercentage=100; double stateMilliseconds=0; MediaTime m_timeOfOverlappingSeek=MediaTime::invalidTime();
     explicit MediaPlayerPrivateGStreamer(GstElement* p):m_pipeline(p) { }
     GstElement* pipeline(){return m_pipeline.get();}
-    bool paused(){return false;} bool isSeamlessSeekingEnabled(){return false;}
+    enum class ContainerType { Unknown, Ogg }; ContainerType m_containerType=ContainerType::Unknown;
+    bool paused(){return false;} bool isSeamlessSeekingEnabled() const;
     MediaTime duration(){return {120};} MediaTime currentTime(){return m_isSeeking?m_seekTarget.time:MediaTime{0};} void didEnd(){ }
     void updateBufferingStatus(GstBufferingMode,double percent,bool,bool){bufferingPercentage=percent;buffering=percent<100;}
     ChangePipelineStateResult changePipelineState(GstState state){auto start=g_get_monotonic_time();gst_element_set_state(pipeline(),state);stateMilliseconds+=(g_get_monotonic_time()-start)/1000.0;playing=state==GST_STATE_PLAYING;return ChangePipelineStateResult::Succeeded;}
@@ -159,7 +160,7 @@ static void run(bool http,bool loop,bool rate,bool reject=false,bool supersede=f
     gst_element_set_state(pipeline,GST_STATE_PLAYING);gst_element_get_state(pipeline,nullptr,nullptr,5*GST_SECOND);
     r.loop=g_main_loop_new(nullptr,false);auto heartbeat=g_timeout_add(10,tick,&r);g_timeout_add(100,startSeek,&r);g_timeout_add(150,changeOwner,&r);g_timeout_add(800,end,&r);g_main_loop_run(r.loop);g_source_remove(heartbeat);
     std::cout<<"http="<<http<<" loop="<<loop<<" rate="<<rate<<" rejected="<<reject<<" superseded="<<supersede<<" replaced="<<replace<<" gap_ms="<<r.maxGap/1000.0<<" final_rate="<<r.lastRate<<" max_active="<<r.maxActiveSends<<" final_target_s="<<r.lastTarget/GST_SECOND<<" seeks="<<r.seeks<<" beats="<<r.beats<<"\n";
-    assert(r.seeks==(supersede||duringRate?2:1));assert(r.maxActiveSends==1);
+    assert(r.seeks==(supersede||duringRate|| (loop && (!http || hls)) ? 2 : 1));assert(r.maxActiveSends==1);
     assert(r.lastTarget==(supersede?3*GST_SECOND:2*GST_SECOND));if(r.asynchronous&&!duringRate){assert(r.maxGap<100000);assert(r.player->stateMilliseconds<100);}else assert(r.maxGap>200000);
     if(duringRate){assert(r.lastRate==2);assert(r.player->m_lastPlaybackRate==2);assert(!r.player->m_isChangingRate);}
     if(reject&&!supersede&&!replace){assert(r.player->failed);assert(!r.player->m_isSeeking);assert(!r.player->m_isSeekPending);assert(r.player->buffering);assert(!r.player->playing); /* terminal visible error, never pretend old buffer survived */}
@@ -177,7 +178,7 @@ int main(int argc,char** argv){std::cout<<std::unitbuf;gst_init(&argc,&argv);
     assert(!localBooruShouldDispatchSeekAsync(pipeline,false,false,false));assert(!localBooruShouldDispatchSeekAsync(pipeline,true,true,false));assert(!localBooruShouldDispatchSeekAsync(pipeline,true,false,true));
     assert(gst_element_register(nullptr,"localbooruvs",GST_RANK_NONE,synthetic_interpolation_get_type()));
     auto* nested=gst_bin_new("nested");auto* filter=gst_element_factory_make("localbooruvs",nullptr);assert(filter);gst_bin_add(GST_BIN(nested),filter);gst_bin_add(GST_BIN(pipeline),nested);assert(!localBooruShouldDispatchSeekAsync(pipeline,true,false,false));gst_object_unref(pipeline);
-    run(false,false,false);run(true,false,false);run(true,true,false);run(true,false,true);
+    run(false,false,false);run(true,false,false);run(true,true,false);run(false,true,false);run(true,true,false,false,false,false,false,false,true);run(true,false,true);
     run(true,false,false,false,true);run(true,false,false,true);run(true,false,false,true,true);run(true,false,false,true,false,true);run(true,false,false,true,false,false,true);run(true,false,false,false,false,false,false,true);run(true,false,false,false,false,false,false,false,true);
     std::cout<<"Production HTTP guard/dispatch/pause/error/pending-ticket/owner tests passed\n";
 }
@@ -194,9 +195,10 @@ def main(source):
     update = 'void MediaPlayerPrivateGStreamer::updateStates(){ GstState state,pending; auto getStateResult=gst_element_get_state(m_pipeline.get(),&state,&pending,0); auto m_currentState=state; RefPtr player=m_player.get(); ' + state_tail
     finish = 'void MediaPlayerPrivateGStreamer::finishSeek' + media.split('void MediaPlayerPrivateGStreamer::finishSeek', 1)[1].split('void MediaPlayerPrivateGStreamer::updateStates', 1)[0]
     rate = 'void MediaPlayerPrivateGStreamer::updatePlaybackRate' + media.split('void MediaPlayerPrivateGStreamer::updatePlaybackRate', 1)[1].split('MediaTime MediaPlayerPrivateGStreamer::duration', 1)[0]
+    seamless = 'bool MediaPlayerPrivateGStreamer::isSeamlessSeekingEnabled' + media.split('bool MediaPlayerPrivateGStreamer::isSeamlessSeekingEnabled', 1)[1].split('void MediaPlayerPrivateGStreamer::triggerRepaint', 1)[0]
     with tempfile.TemporaryDirectory(prefix='dmc-synthetic-http-seek-') as directory:
         cpp = Path(directory) / 'fixture.cpp'
-        cpp.write_text(HEADER + helpers + CLASS + INSTRUMENT + do_seek + seek_to + finish + rate + update + TEST)
+        cpp.write_text(HEADER + helpers + CLASS + INSTRUMENT + seamless + do_seek + seek_to + finish + rate + update + TEST)
         flags = shlex.split(subprocess.check_output(['pkg-config', '--cflags', '--libs', 'gstreamer-1.0'], text=True))
         helper = os.environ.get('HOST_HEAVY_BUILD_HELPER', str(Path.home() / '.local/bin/host-heavy-build'))
         binary = Path(directory) / 'fixture'
