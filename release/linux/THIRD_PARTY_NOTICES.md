@@ -54,6 +54,14 @@ directory.
 The AppImage includes Ubuntu gstreamer1.0-gl; its package copyright and
 license notice accompanies the bundled plugin.
 
+The AppImage also retains the build image's AVIF decoder dependency chain,
+including libavif, libgav1, libyuv and Abseil. This keeps the replacement
+WebKit paired with matching codecs. Package notices are retained in
+`distro-packages/`; `avif-dependencies.json` records codec hashes and direct
+dependencies. The staging and verification helper is included in the native
+source artifact. Host glibc and C/C++ support libraries remain platform
+dependencies. The manifest is a byte inventory, not source attestation.
+
 The `libgstlocalboorupass.so` and `libgstlocalbooruvs.so` bridge plugins and
 `liblocalbooru-webkit-gst-hook.so` filter hook are DonutMediaCenter components
 covered by the repository GPL-3.0-only license. Their source is in
