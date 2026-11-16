@@ -297,11 +297,8 @@ pub fn extract_preview_frames(
     let hwaccel = get_hwaccel_args();
 
     let mut cmd_args: Vec<String> = low_priority;
-    cmd_args.push(
-        crate::platform_paths::helper("ffmpeg")
-            .to_string_lossy()
-            .into_owned(),
-    );
+    let media_helper = crate::platform_paths::helper("ffmpeg");
+    cmd_args.push(media_helper.to_string_lossy().into_owned());
     cmd_args.push("-y".into());
 
     // Add skip_frame for keyframe-only decoding
@@ -347,7 +344,7 @@ pub fn extract_preview_frames(
         (cmd_args[0].clone(), cmd_args[1..].to_vec())
     };
 
-    let mut command = crate::platform_paths::media_command(&program);
+    let mut command = crate::platform_paths::media_command_with_helper(&program, &media_helper);
     command
         .args(&args)
         .stdout(std::process::Stdio::null())
@@ -479,11 +476,8 @@ pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) 
     // hardware acceleration.
     for position in [seek_time, 0.0] {
         let mut cmd_args = get_low_priority_prefix();
-        cmd_args.push(
-            crate::platform_paths::helper("ffmpeg")
-                .to_string_lossy()
-                .into_owned(),
-        );
+        let media_helper = crate::platform_paths::helper("ffmpeg");
+        cmd_args.push(media_helper.to_string_lossy().into_owned());
         cmd_args.extend([
             "-hide_banner".into(),
             "-loglevel".into(),
@@ -506,7 +500,8 @@ pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) 
             output_path.into(),
         ]);
 
-        let mut command = crate::platform_paths::media_command(&cmd_args[0]);
+        let mut command =
+            crate::platform_paths::media_command_with_helper(&cmd_args[0], &media_helper);
         command.args(&cmd_args[1..]);
         suppress_console_window(&mut command);
         match command.output() {

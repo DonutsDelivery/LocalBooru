@@ -13,6 +13,15 @@ prepend_path() {
   fi
 }
 
+# Preserve whether the caller supplied the variable, including an empty value.
+if [[ ${LD_LIBRARY_PATH+x} ]]; then
+  export DMC_APPIMAGE_ORIGINAL_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+  export DMC_APPIMAGE_LD_LIBRARY_PATH_STATE=set
+else
+  unset DMC_APPIMAGE_ORIGINAL_LD_LIBRARY_PATH
+  export DMC_APPIMAGE_LD_LIBRARY_PATH_STATE=unset
+fi
+
 prepend_path LD_LIBRARY_PATH "$RUNTIME/lib"
 prepend_path LD_LIBRARY_PATH "$RUNTIME/python-home/lib"
 prepend_path PYTHONPATH "$RUNTIME/python-home/lib/python3.12/site-packages"

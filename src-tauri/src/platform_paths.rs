@@ -132,11 +132,93 @@ fn command_with_bookmarks(
 /// Media helpers activate the parent's persisted grants inside their own process.
 /// Full editions clear this private transfer variable rather than inherit it.
 pub fn media_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    let program = program.as_ref();
+    media_command_with_helper(program, program)
+}
+
+/// Priority wrappers pass on the media helper's library environment unchanged.
+/// Select that environment using the actual helper, rather than the wrapper.
+pub fn media_command_with_helper(
+    program: impl AsRef<std::ffi::OsStr>,
+    helper: impl AsRef<std::ffi::OsStr>,
+) -> std::process::Command {
     #[cfg(all(target_os = "macos", feature = "store-lite"))]
     let directory = crate::macos_folder_access::helper_bookmark_directory();
     #[cfg(not(all(target_os = "macos", feature = "store-lite")))]
     let directory = None;
-    command_with_bookmarks(program, directory)
+    let command = command_with_bookmarks(program, directory);
+    #[cfg(target_os = "linux")]
+    {
+        let mut command = command;
+        restore_appimage_helper_library_path(&mut command, helper.as_ref());
+        command
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = helper;
+        command
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn restore_appimage_helper_library_path(
+    command: &mut std::process::Command,
+    program: &std::ffi::OsStr,
+) {
+    apply_appimage_helper_library_path(
+        command,
+        program,
+        std::env::var_os("APPDIR"),
+        std::env::var_os("DMC_APPIMAGE_LD_LIBRARY_PATH_STATE"),
+        std::env::var_os("DMC_APPIMAGE_ORIGINAL_LD_LIBRARY_PATH"),
+        std::env::var_os("PATH"),
+    );
+}
+
+#[cfg(target_os = "linux")]
+fn apply_appimage_helper_library_path(
+    command: &mut std::process::Command,
+    program: &std::ffi::OsStr,
+    appdir: Option<std::ffi::OsString>,
+    state: Option<std::ffi::OsString>,
+    original: Option<std::ffi::OsString>,
+    search_path: Option<std::ffi::OsString>,
+) {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(root) = appdir.map(PathBuf::from).filter(|root| root.is_absolute()) else {
+        return;
+    };
+    let root = root.canonicalize().unwrap_or(root);
+    let path = Path::new(program);
+    let resolved = if path.components().count() == 1 {
+        search_path.and_then(|paths| {
+            std::env::split_paths(&paths)
+                .map(|dir| dir.join(path))
+                .find(|candidate| {
+                    candidate.metadata().is_ok_and(|metadata| {
+                        metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+                    })
+                })
+        })
+    } else {
+        Some(path.to_path_buf())
+    };
+    // Resolve aliases too: a bundle entry can point to a host tool or vice versa.
+    let bundled =
+        resolved.is_some_and(|path| path.canonicalize().unwrap_or(path).starts_with(&root));
+    if !bundled {
+        match state.as_deref() {
+            Some(state) if state == "set" => {
+                if let Some(original) = original {
+                    command.env("LD_LIBRARY_PATH", original);
+                }
+            }
+            Some(state) if state == "unset" => {
+                command.env_remove("LD_LIBRARY_PATH");
+            }
+            _ => {}
+        }
+    }
 }
 
 pub fn media_command_async(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command {
@@ -179,6 +261,10 @@ impl HideConsoleWindow for tokio::process::Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Keep script creation and execution together: concurrent forks can briefly
+    // retain another test's writable script descriptor until their own exec.
+    #[cfg(target_os = "linux")]
+    static HELPER_SCRIPT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     #[test]
     fn isolated_temporary_work_never_falls_back_to_system_storage() {
         let fixture = tempfile::tempdir().unwrap();
@@ -335,6 +421,256 @@ mod tests {
             PathBuf::from("/fixture/App.app/Contents/Resources/bin/ffprobe")
         );
         assert!(contained_helper("ffmpeg", None, None).is_absolute());
+    }
+
+    #[cfg(target_os = "linux")]
+    fn library_path_child(
+        program: &Path,
+        appdir: Option<&Path>,
+        state: Option<&str>,
+        original: Option<&str>,
+        search_path: Option<&std::ffi::OsStr>,
+    ) -> Vec<u8> {
+        let mut command = command_with_bookmarks(program, None);
+        command.env("LD_LIBRARY_PATH", "/synthetic-inherited/lib");
+        command.env("DMC_UNRELATED_FIXTURE", "retained");
+        if let Some(path) = search_path {
+            command.env("PATH", path);
+        }
+        apply_appimage_helper_library_path(
+            &mut command,
+            program.as_os_str(),
+            appdir.map(|p| p.as_os_str().to_owned()),
+            state.map(Into::into),
+            original.map(Into::into),
+            search_path.map(ToOwned::to_owned),
+        );
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{:?}", output);
+        output.stdout
+    }
+
+    #[cfg(target_os = "linux")]
+    fn library_path_script(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(
+            path,
+            "#!/bin/sh\nprintf '%s|%s' \"${LD_LIBRARY_PATH-missing}\" \"$DMC_UNRELATED_FIXTURE\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_host_helper_receives_original_library_path() {
+        let _guard = HELPER_SCRIPT_TEST_LOCK.lock().unwrap();
+        let fixture = tempfile::tempdir().unwrap();
+        let appdir = fixture.path().join("App Dir");
+        std::fs::create_dir(&appdir).unwrap();
+        let helper = fixture.path().join("host helper");
+        library_path_script(&helper);
+        for (state, original, expected) in [
+            ("unset", None, "missing|retained"),
+            ("set", Some(""), "|retained"),
+            ("set", Some("/caller/lib"), "/caller/lib|retained"),
+        ] {
+            assert_eq!(
+                library_path_child(&helper, Some(&appdir), Some(state), original, None),
+                expected.as_bytes()
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_bundled_helpers_retain_library_path_including_path_lookup() {
+        let _guard = HELPER_SCRIPT_TEST_LOCK.lock().unwrap();
+        let fixture = tempfile::tempdir().unwrap();
+        let helper = fixture.path().join("ffprobe");
+        library_path_script(&helper);
+        for program in [helper.as_path(), Path::new("ffprobe")] {
+            assert_eq!(
+                library_path_child(
+                    program,
+                    Some(fixture.path()),
+                    Some("unset"),
+                    None,
+                    Some(fixture.path().as_os_str())
+                ),
+                b"/synthetic-inherited/lib|retained"
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_host_helper_requires_complete_launcher_context() {
+        let _guard = HELPER_SCRIPT_TEST_LOCK.lock().unwrap();
+        let fixture = tempfile::tempdir().unwrap();
+        let appdir = fixture.path().join("bundle");
+        std::fs::create_dir(&appdir).unwrap();
+        let helper = fixture.path().join("host-helper");
+        library_path_script(&helper);
+        for (root, state, original) in [
+            (None, Some("unset"), None),
+            (Some(Path::new("relative")), Some("unset"), None),
+            (Some(appdir.as_path()), None, None),
+            (Some(appdir.as_path()), Some("invalid"), None),
+            (Some(appdir.as_path()), Some("set"), None),
+        ] {
+            assert_eq!(
+                library_path_child(&helper, root, state, original, None),
+                b"/synthetic-inherited/lib|retained"
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_helper_aliases_follow_the_actual_helper_location() {
+        let _guard = HELPER_SCRIPT_TEST_LOCK.lock().unwrap();
+        use std::os::unix::fs::symlink;
+        let fixture = tempfile::tempdir().unwrap();
+        let appdir = fixture.path().join("bundle");
+        std::fs::create_dir(&appdir).unwrap();
+        let host = fixture.path().join("host-helper");
+        let bundled = appdir.join("bundled-helper");
+        library_path_script(&host);
+        library_path_script(&bundled);
+        let host_alias = appdir.join("host-alias");
+        let bundled_alias = fixture.path().join("bundled-alias");
+        symlink(&host, &host_alias).unwrap();
+        symlink(&bundled, &bundled_alias).unwrap();
+        assert_eq!(
+            library_path_child(&host_alias, Some(&appdir), Some("unset"), None, None),
+            b"missing|retained"
+        );
+        assert_eq!(
+            library_path_child(&bundled_alias, Some(&appdir), Some("unset"), None, None),
+            b"/synthetic-inherited/lib|retained"
+        );
+        let appdir_alias = fixture.path().join("bundle-alias");
+        symlink(&appdir, &appdir_alias).unwrap();
+        assert_eq!(
+            library_path_child(&bundled, Some(&appdir_alias), Some("unset"), None, None),
+            b"/synthetic-inherited/lib|retained"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_path_lookup_skips_nonexecutable_bundle_entries() {
+        let _guard = HELPER_SCRIPT_TEST_LOCK.lock().unwrap();
+        let fixture = tempfile::tempdir().unwrap();
+        let appdir = fixture.path().join("bundle");
+        let host = fixture.path().join("host");
+        std::fs::create_dir(&appdir).unwrap();
+        std::fs::create_dir(&host).unwrap();
+        std::fs::write(appdir.join("ffprobe"), "not executable").unwrap();
+        library_path_script(&host.join("ffprobe"));
+        let paths = std::env::join_paths([&appdir, &host]).unwrap();
+        assert_eq!(
+            library_path_child(
+                Path::new("ffprobe"),
+                Some(&appdir),
+                Some("set"),
+                Some("/caller/lib"),
+                Some(&paths)
+            ),
+            b"/caller/lib|retained"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_wrapped_helper_child() {
+        let Some(helper) = std::env::var_os("DMC_TEST_WRAPPED_HELPER") else {
+            return;
+        };
+        let wrapper = std::env::var_os("DMC_TEST_PRIORITY_WRAPPER").unwrap();
+        let second_wrapper = std::env::var_os("DMC_TEST_SECOND_WRAPPER").unwrap();
+        let output = media_command_with_helper(&wrapper, &helper)
+            .arg("-c3")
+            .arg(second_wrapper)
+            .args(["-n", "10"])
+            .arg(helper)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            output.stdout,
+            std::env::var("DMC_TEST_EXPECTED_LIBRARY_PATH")
+                .unwrap()
+                .as_bytes()
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_wrapper_chain_uses_the_actual_media_helper_environment() {
+        let _guard = HELPER_SCRIPT_TEST_LOCK.lock().unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = tempfile::tempdir().unwrap();
+        let appdir = fixture.path().join("bundle");
+        std::fs::create_dir(&appdir).unwrap();
+        let first = fixture.path().join("ionice");
+        let second = fixture.path().join("nice");
+        std::fs::write(
+            &first,
+            "#!/bin/sh\n[ \"$1\" = -c3 ] || exit 40\nshift\nexec \"$@\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &second,
+            "#!/bin/sh\n[ \"$1 $2\" = '-n 10' ] || exit 41\nshift 2\nexec \"$@\"\n",
+        )
+        .unwrap();
+        for path in [&first, &second] {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        for (location, bundled) in [(appdir.as_path(), true), (fixture.path(), false)] {
+            let helper = location.join("ffmpeg");
+            library_path_script(&helper);
+            for original in [None, Some(""), Some("/caller/lib")] {
+                let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+                child
+                    .arg("appimage_wrapped_helper_child")
+                    .arg("--nocapture")
+                    .env("APPDIR", &appdir)
+                    .env("DMC_TEST_WRAPPED_HELPER", &helper)
+                    .env("DMC_TEST_PRIORITY_WRAPPER", &first)
+                    .env("DMC_TEST_SECOND_WRAPPER", &second)
+                    .env("DMC_UNRELATED_FIXTURE", "retained")
+                    .env("LD_LIBRARY_PATH", "/synthetic-inherited/lib")
+                    .env(
+                        "DMC_APPIMAGE_LD_LIBRARY_PATH_STATE",
+                        if original.is_some() { "set" } else { "unset" },
+                    )
+                    .env(
+                        "DMC_TEST_EXPECTED_LIBRARY_PATH",
+                        format!(
+                            "{}|retained",
+                            if bundled {
+                                "/synthetic-inherited/lib"
+                            } else {
+                                original.unwrap_or("missing")
+                            }
+                        ),
+                    );
+                if let Some(original) = original {
+                    child.env("DMC_APPIMAGE_ORIGINAL_LD_LIBRARY_PATH", original);
+                } else {
+                    child.env_remove("DMC_APPIMAGE_ORIGINAL_LD_LIBRARY_PATH");
+                }
+                let output = child.output().unwrap();
+                assert!(output.status.success(), "{output:?}");
+                assert!(
+                    String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+                    "{output:?}"
+                );
+            }
+        }
     }
 
     #[test]
