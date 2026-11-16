@@ -47,7 +47,7 @@ class PrivatePortTests(unittest.TestCase):
             child.stdout.close()
             log.close()
 
-    def start(self):
+    def start(self, windows_newlines=False):
         env = dict(os.environ)
         env.pop('PYTHONPATH', None)
         for key in ('HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'TMPDIR'):
@@ -56,7 +56,10 @@ class PrivatePortTests(unittest.TestCase):
             env[key] = str(path)
         env.update(PYTHONNOUSERSITE='1', PYTHONDONTWRITEBYTECODE='1')
         log = (self.root / f'child-{len(self.children)}.log').open('wb')
-        child = subprocess.Popen([sys.executable, '-u', '-c', BOOTSTRAP.read_text()], cwd=self.root,
+        bootstrap = BOOTSTRAP.read_text()
+        if windows_newlines:
+            bootstrap = "import sys; sys.stdout.reconfigure(newline='\\r\\n')\n" + bootstrap
+        child = subprocess.Popen([sys.executable, '-u', '-c', bootstrap], cwd=self.root,
                                  env=env, stdout=subprocess.PIPE, stderr=log)
         self.children.append((child, log))
         with selectors.DefaultSelector() as selector:
@@ -66,6 +69,7 @@ class PrivatePortTests(unittest.TestCase):
         self.assertTrue(greeting.startswith(b'DMC_SVP_PORT=') and greeting.endswith(b'\n'), greeting)
         port = int(greeting.removeprefix(b'DMC_SVP_PORT='))
         self.assertTrue(0 < port <= 65535)
+        self.assertEqual(greeting, f'DMC_SVP_PORT={port}\n'.encode('ascii'))
         # The child binds before reporting. Health may follow ASGI startup.
         import time
         deadline = time.monotonic() + 5
@@ -95,6 +99,11 @@ class PrivatePortTests(unittest.TestCase):
         second, second_port = self.start()
         self.assertNotEqual(first_port, second_port)
         self.assertIsNone(first.poll()); self.assertIsNone(second.poll())
+
+    def test_windows_text_newlines_cannot_change_wire_handshake(self):
+        child, port = self.start(windows_newlines=True)
+        self.assertIsNone(child.poll())
+        self.assertTrue(0 < port <= 65535)
 
     def test_stopping_child_releases_only_its_socket(self):
         with socket.socket() as foreign:
