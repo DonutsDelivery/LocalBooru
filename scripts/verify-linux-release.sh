@@ -84,6 +84,10 @@ tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
 tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
   | grep -Fx './test-prepare-appimage-desktop.py' >/dev/null
 tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
+  | grep -Fx './stage-appimage-avif.py' >/dev/null
+tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
+  | grep -Fx './test-stage-appimage-avif.py' >/dev/null
+tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
   | grep 'vapoursynth-R75.tar.gz' >/dev/null
 
 tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" | grep "Dockerfile.linux-release-gl" >/dev/null
@@ -121,6 +125,7 @@ if has_bundle appimage; then
   python3 "$SCRIPT_ROOT/scripts/prepare-appimage-desktop.py" --check "$WORK/squashfs-root/com.localbooru.app.desktop"
   python3 "$SCRIPT_ROOT/scripts/prepare-appimage-desktop.py" --check "$WORK/squashfs-root/usr/share/applications/com.localbooru.app.desktop"
   verify_runtime_tree "$WORK/squashfs-root"
+  python3 "$SCRIPT_ROOT/scripts/stage-appimage-avif.py" "$WORK/squashfs-root" --verify
   require_file "$WORK/squashfs-root/usr/lib/gstreamer-1.0/libgstopengl.so"
   require_file "$WORK/squashfs-root/usr/share/doc/gstreamer1.0-gl/copyright"
 
