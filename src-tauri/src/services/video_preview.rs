@@ -16,7 +16,8 @@ fn suppress_console_window(_command: &mut Command) {}
 pub fn check_ffmpeg_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
-        let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffmpeg"));
+        let mut command =
+            crate::platform_paths::media_command(crate::platform_paths::helper("ffmpeg"));
         command
             .arg("-version")
             .stdout(std::process::Stdio::null())
@@ -26,17 +27,91 @@ pub fn check_ffmpeg_available() -> bool {
     })
 }
 
+fn probe_diagnostic(
+    isolated: bool,
+    helper: &std::ffi::OsStr,
+    phase: &str,
+    detail: &str,
+) -> Option<String> {
+    isolated.then(|| {
+        let bounded: String = detail.chars().take(512).collect();
+        format!("ffprobe diagnostic: helper={helper:?} phase={phase} detail={bounded}")
+    })
+}
+
+fn isolated_probe_diagnostic(command: &Command, phase: &str, detail: &str) {
+    if let Some(message) = probe_diagnostic(
+        std::env::var_os("LOCALBOORU_ISOLATED_INSTANCE_ID").is_some(),
+        command.get_program(),
+        phase,
+        detail,
+    ) {
+        eprintln!("{message}");
+    }
+}
+
+fn probe_version_result(
+    result: std::io::Result<std::process::ExitStatus>,
+    mut diagnostic: impl FnMut(&str, &str),
+) -> bool {
+    match result {
+        Ok(status) if status.success() => true,
+        Ok(status) => {
+            diagnostic("version status", &status.to_string());
+            false
+        }
+        Err(error) => {
+            diagnostic("version spawn", &format!("{error:?}"));
+            false
+        }
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn parse_probe_metadata(stdout: &[u8]) -> Result<(i32, i32, f64), String> {
+    // Preserve the previous parser's lossy UTF-8 treatment of unused fields.
+    let stdout = String::from_utf8_lossy(stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).map_err(|e| format!("JSON parse: {}", e))?;
+    let stream = json
+        .get("streams")
+        .and_then(|v| v.as_array())
+        .and_then(|v| v.first())
+        .ok_or("missing or invalid streams[0]")?;
+    let width = stream
+        .get("width")
+        .and_then(|v| v.as_i64())
+        .ok_or("missing or invalid width")? as i32;
+    let height = stream
+        .get("height")
+        .and_then(|v| v.as_i64())
+        .ok_or("missing or invalid height")? as i32;
+    let duration_str = json
+        .get("format")
+        .and_then(|v| v.get("duration"))
+        .and_then(|v| v.as_str())
+        .ok_or("missing or invalid duration")?;
+    let duration = duration_str
+        .parse::<f64>()
+        .map_err(|e| format!("duration parse: {}", e))?;
+    Ok((width, height, duration))
+}
+
 /// Check if ffprobe is available on the system.
 pub fn check_ffprobe_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
-        let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffprobe"));
+        let mut command =
+            crate::platform_paths::media_command(crate::platform_paths::helper("ffprobe"));
         command
             .arg("-version")
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
         suppress_console_window(&mut command);
-        command.status().map(|s| s.success()).unwrap_or(false)
+        let result = command.status();
+        probe_version_result(result, |phase, detail| {
+            isolated_probe_diagnostic(&command, phase, detail)
+        })
     })
 }
 
@@ -47,7 +122,8 @@ pub fn get_video_metadata(file_path: &str) -> Option<(i32, i32, f64)> {
         return None;
     }
 
-    let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffprobe"));
+    let mut command =
+        crate::platform_paths::media_command(crate::platform_paths::helper("ffprobe"));
     command.args([
         "-v",
         "error",
@@ -60,23 +136,40 @@ pub fn get_video_metadata(file_path: &str) -> Option<(i32, i32, f64)> {
         file_path,
     ]);
     suppress_console_window(&mut command);
-    let output = command.output().ok()?;
+    let result = command.output();
+    probe_metadata_result(result, file_path, |phase, detail| {
+        isolated_probe_diagnostic(&command, phase, detail)
+    })
+}
 
+#[cfg(not(target_os = "android"))]
+fn probe_metadata_result(
+    result: std::io::Result<std::process::Output>,
+    file_path: &str,
+    mut diagnostic: impl FnMut(&str, &str),
+) -> Option<(i32, i32, f64)> {
+    let output = match result {
+        Ok(output) => output,
+        Err(error) => {
+            diagnostic("metadata spawn", &format!("{error:?}"));
+            return None;
+        }
+    };
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).replace(file_path, "<media>");
+        diagnostic(
+            "metadata status",
+            &format!("{} stderr={}", output.status, stderr),
+        );
         return None;
     }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value = serde_json::from_str(&stdout).ok()?;
-
-    let stream = json.get("streams")?.as_array()?.first()?;
-    let width = stream.get("width")?.as_i64()? as i32;
-    let height = stream.get("height")?.as_i64()? as i32;
-
-    let duration_str = json.get("format")?.get("duration")?.as_str()?;
-    let duration = duration_str.parse::<f64>().ok()?;
-
-    Some((width, height, duration))
+    match parse_probe_metadata(&output.stdout) {
+        Ok(metadata) => Some(metadata),
+        Err(error) => {
+            diagnostic("metadata parse", &error);
+            None
+        }
+    }
 }
 
 /// Get video duration in seconds using ffprobe.
@@ -123,7 +216,8 @@ pub fn get_hwaccel_args() -> Vec<String> {
         if !check_ffmpeg_available() {
             return vec![];
         }
-        let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffmpeg"));
+        let mut command =
+            crate::platform_paths::media_command(crate::platform_paths::helper("ffmpeg"));
         command.arg("-hwaccels");
         suppress_console_window(&mut command);
         let output = command.output().ok();
@@ -538,4 +632,139 @@ pub fn extract_preview_frames(
 #[cfg(target_os = "android")]
 pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) -> bool {
     crate::android_media::thumbnail(video_path, output_path, size)
+}
+
+#[cfg(all(test, not(target_os = "android")))]
+mod probe_diagnostic_tests {
+    use super::{
+        parse_probe_metadata, probe_diagnostic, probe_metadata_result, probe_version_result,
+    };
+    use std::ffi::OsStr;
+    use std::process::{ExitStatus, Output};
+
+    fn status(code: i32) -> ExitStatus {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            ExitStatus::from_raw(code << 8)
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::ExitStatusExt;
+            ExitStatus::from_raw(code as u32)
+        }
+    }
+
+    #[test]
+    fn version_success_and_failures_keep_availability_semantics() {
+        let mut events = Vec::new();
+        assert!(probe_version_result(Ok(status(0)), |p, d| events.push(format!("{p}:{d}"))));
+        assert!(events.is_empty());
+        assert!(!probe_version_result(Ok(status(7)), |p, d| events.push(format!("{p}:{d}"))));
+        assert!(events[0].starts_with("version status:"));
+        events.clear();
+        assert!(!probe_version_result(
+            Err(std::io::Error::from_raw_os_error(2)),
+            |p, d| events.push(format!("{p}:{d}"))
+        ));
+        assert!(events[0].starts_with("version spawn:"));
+        assert!(events[0].contains("code: 2"));
+    }
+
+    #[test]
+    fn metadata_spawn_failure_and_nonzero_exit_are_distinct() {
+        let mut events = Vec::new();
+        assert!(probe_metadata_result(
+            Err(std::io::Error::from_raw_os_error(5)),
+            "owned-media",
+            |p, d| events.push(format!("{p}:{d}"))
+        )
+        .is_none());
+        assert!(events[0].starts_with("metadata spawn:"));
+        events.clear();
+        let output = Output {
+            status: status(1),
+            stdout: Vec::new(),
+            stderr: b"could not open owned-media".to_vec(),
+        };
+        assert!(
+            probe_metadata_result(Ok(output), "owned-media", |p, d| events
+                .push(format!("{p}:{d}")))
+            .is_none()
+        );
+        assert!(events[0].starts_with("metadata status:"));
+        assert!(events[0].contains("<media>"));
+        assert!(!events[0].contains("owned-media"));
+    }
+
+    #[test]
+    fn metadata_success_is_silent_and_parse_failure_is_observable() {
+        let mut events = Vec::new();
+        let output = |stdout: &[u8]| Output {
+            status: status(0),
+            stdout: stdout.to_vec(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(
+            probe_metadata_result(
+                Ok(output(
+                    br#"{"streams":[{"width":320,"height":180}],"format":{"duration":"3.0"}}"#
+                )),
+                "owned-media",
+                |p, d| events.push(format!("{p}:{d}"))
+            ),
+            Some((320, 180, 3.0))
+        );
+        assert!(events.is_empty());
+        assert!(
+            probe_metadata_result(Ok(output(b"{")), "owned-media", |p, d| events
+                .push(format!("{p}:{d}")))
+            .is_none()
+        );
+        assert!(events[0].starts_with("metadata parse:JSON parse"));
+    }
+
+    #[test]
+    fn diagnostics_are_isolated_only_and_unicode_bounded() {
+        let detail = "é".repeat(600);
+        assert!(probe_diagnostic(false, OsStr::new("ffprobe"), "phase", &detail).is_none());
+        let value = probe_diagnostic(true, OsStr::new("ffprobe"), "phase", &detail).unwrap();
+        assert!(value.contains("helper=\"ffprobe\" phase=phase"));
+        assert_eq!(value.matches('é').count(), 512);
+    }
+
+    #[test]
+    fn preserves_lossy_utf8_in_unused_json_fields() {
+        let mut stdout =
+            br#"{"streams":[{"width":320,"height":180}],"format":{"duration":"3"},"unused":""#
+                .to_vec();
+        stdout.push(0xff);
+        stdout.extend_from_slice(b"\"}");
+        assert_eq!(parse_probe_metadata(&stdout).unwrap(), (320, 180, 3.0));
+    }
+
+    #[test]
+    fn parses_metadata_and_reports_invalid_responses() {
+        assert_eq!(
+            parse_probe_metadata(
+                br#"{"streams":[{"width":1920,"height":1080}],"format":{"duration":"2.5"}}"#
+            )
+            .unwrap(),
+            (1920, 1080, 2.5)
+        );
+        assert!(parse_probe_metadata(b"{")
+            .unwrap_err()
+            .contains("JSON parse"));
+        assert!(parse_probe_metadata(br#"{"streams":[]}"#)
+            .unwrap_err()
+            .contains("streams"));
+        assert!(parse_probe_metadata(br#"{"streams":[{"width":1}]}"#)
+            .unwrap_err()
+            .contains("height"));
+        assert!(parse_probe_metadata(
+            br#"{"streams":[{"width":1,"height":2}],"format":{"duration":"bad"}}"#
+        )
+        .unwrap_err()
+        .contains("duration parse"));
+    }
 }
