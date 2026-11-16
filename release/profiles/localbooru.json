@@ -149,6 +149,114 @@
             "github",
             "website"
           ]
+        },
+        {
+          "id": "linux-application-sources",
+          "platform": "source",
+          "architecture": "all",
+          "kind": "source-offer",
+          "source": "dist-linux-local/DonutMediaCenter-Linux-source.tar.xz",
+          "filename": "DonutMediaCenter-Linux-source.tar.xz",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "source-offer"
+          ],
+          "publishTo": [
+            "vps",
+            "github"
+          ]
+        },
+        {
+          "id": "linux-distro-sources",
+          "platform": "source",
+          "architecture": "all",
+          "kind": "source-offer",
+          "source": "dist-linux-local/DonutMediaCenter-Ubuntu-Distro-Sources.tar",
+          "filename": "DonutMediaCenter-Ubuntu-Distro-Sources.tar",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "source-offer"
+          ],
+          "publishTo": [
+            "vps",
+            "github"
+          ]
+        },
+        {
+          "id": "linux-avif-sources",
+          "platform": "source",
+          "architecture": "all",
+          "kind": "source-offer",
+          "source": "dist-linux-local/DonutMediaCenter-AVIF-Codec-Sources.tar.xz",
+          "filename": "DonutMediaCenter-AVIF-Codec-Sources.tar.xz",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "source-offer"
+          ],
+          "publishTo": [
+            "vps",
+            "github"
+          ]
+        },
+        {
+          "id": "windows-application-sources",
+          "platform": "source",
+          "architecture": "all",
+          "kind": "source-offer",
+          "source": "dist-windows-local/DonutMediaCenter-Windows-source.tar.xz",
+          "filename": "DonutMediaCenter-Windows-source.tar.xz",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "source-offer"
+          ],
+          "publishTo": [
+            "vps",
+            "github"
+          ]
+        },
+        {
+          "id": "windows-media-sources",
+          "platform": "source",
+          "architecture": "all",
+          "kind": "source-offer",
+          "source": "dist-windows-local/DonutMediaCenter-Windows-media-sources.tar.xz",
+          "filename": "DonutMediaCenter-Windows-media-sources.tar.xz",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "source-offer"
+          ],
+          "publishTo": [
+            "vps",
+            "github"
+          ]
+        },
+        {
+          "id": "windows-runtime-sources",
+          "platform": "source",
+          "architecture": "all",
+          "kind": "source-offer",
+          "source": "dist-windows-local/DonutMediaCenter-Windows-runtime-sources.tar.xz",
+          "filename": "DonutMediaCenter-Windows-runtime-sources.tar.xz",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "source-offer"
+          ],
+          "publishTo": [
+            "vps",
+            "github"
+          ]
         }
       ]
     },
@@ -220,7 +328,8 @@
   "readiness": {
     "status": "migration",
     "blockers": [
-      "Shared VPS/GitHub/website beta publication adapters are not implemented yet."
+      "Shared VPS/GitHub/website beta publication adapters are not implemented yet.",
+      "Flatpak, macOS, AAB and Store package routes need reviewed format validators and destination support before shared-envelope inclusion."
     ]
   },
   "platformExclusions": [

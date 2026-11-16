@@ -1,6 +1,9 @@
 # Release and Infrastructure Guide
 
 This document is the operational source of truth for LocalBooru release builds.
+Use the [release protocol](../releases/PROTOCOL.md) to select distribution routes,
+freeze a version/tag and distinguish direct downloads from later Store or
+catalogue submissions. Build availability does not add a stable platform claim.
 
 Release and acceptance work must use synthetic or disposable test data outside
 this repository. Never back up, copy, or commit a user's library, thumbnails,
