@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/build-startup-status.sh"
 source "$ROOT/scripts/build-resource-limits.sh"
+source "$ROOT/scripts/webkit-http-loop-cache.sh"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/localbooru"
 SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
 DOCKERFILE_HASH="$(sha256sum "$ROOT/Dockerfile.linux-release" | cut -c1-12)"
@@ -81,6 +82,7 @@ SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct "$
 WEBKIT_PATCH_PATH="patches/webkitgtk/2.52.3-playbin-video-filter.patch"
 WEBKIT_BRIDGE_PATCH_PATH="patches/webkitgtk/2.52.3-flatpak-video-bridge.patch"
 WEBKIT_PROCESS_PATCH_PATH="patches/webkitgtk/2.52.3-bundled-process-directory.patch"
+WEBKIT_HTTP_LOOP_PATCH_PATH="patches/webkitgtk/2.52.3-http-loop-cache-upgrade.patch"
 WEBKIT_BASE_PATCH_HASH="$(git -C "$ROOT" show "$SOURCE_COMMIT:$WEBKIT_PATCH_PATH" | sha256sum | cut -d' ' -f1)"
 WEBKIT_PREVIOUS_PATCH_HASH="$(git -C "$ROOT" show "$SOURCE_COMMIT:$WEBKIT_PATCH_PATH" "$SOURCE_COMMIT:$WEBKIT_BRIDGE_PATCH_PATH" | sha256sum | cut -d' ' -f1)"
 WEBKIT_PATCH_HASH="$(git -C "$ROOT" show "$SOURCE_COMMIT:$WEBKIT_PATCH_PATH" "$SOURCE_COMMIT:$WEBKIT_BRIDGE_PATCH_PATH" "$SOURCE_COMMIT:$WEBKIT_PROCESS_PATCH_PATH" | sha256sum | cut -d' ' -f1)"
@@ -181,7 +183,10 @@ fi
 # A recognized base cache can receive the bounded launcher upgrade in place.
 if [[ ! -f "$BUILD_ROOT/webkitgtk-2.52.3/.localbooru-patch-$WEBKIT_PATCH_HASH" &&
       ! -f "$BUILD_ROOT/webkitgtk-2.52.3/.localbooru-patch-$WEBKIT_PREVIOUS_PATCH_HASH" &&
-      ! -f "$BUILD_ROOT/webkitgtk-2.52.3/.localbooru-patch-$WEBKIT_BASE_PATCH_HASH" ]]; then
+      ! -f "$BUILD_ROOT/webkitgtk-2.52.3/.localbooru-patch-$WEBKIT_BASE_PATCH_HASH" ]] &&
+    ! localbooru_webkit_http_loop_upgrade_available \
+      "$BUILD_ROOT/webkitgtk-2.52.3" "$WEBKIT_BASE_PATCH_HASH" \
+      "$ROOT/$WEBKIT_HTTP_LOOP_PATCH_PATH" "$ROOT/scripts/prepare-webkit-flatpak-bridge.py"; then
   native_runtime_cache_missing+=("webkitgtk-2.52.3/.localbooru-patch-$WEBKIT_PATCH_HASH")
 fi
 if [[ ! -f "$BUILD_ROOT/vapoursynth-stage/.localbooru-vapoursynth-$VAPOURSYNTH_COMMIT" ]]; then

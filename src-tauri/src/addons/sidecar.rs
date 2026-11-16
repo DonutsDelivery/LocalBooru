@@ -18,6 +18,17 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command as TokioCommand;
 
+/// Keep the embedded interpreter's home out of managed Python children.
+pub(super) fn configure_python_command(command: &mut Command) -> &mut Command {
+    command.env_remove("PYTHONHOME")
+}
+
+pub(super) fn configure_tokio_python_command(command: &mut TokioCommand) -> &mut TokioCommand {
+    command.env_remove("PYTHONHOME")
+}
+
+const SVP_SIDECAR_BOOTSTRAP: &str = include_str!("svp_sidecar.py");
+
 /// Find a usable `python3` (or `python`) binary on the system PATH.
 ///
 /// Checks `python3` first, then falls back to `python`, verifying each
@@ -65,7 +76,7 @@ pub fn find_python_version(minimum: u8, maximum: u8) -> Option<PathBuf> {
             // Apple's developer-tool stub is too old and can prompt for Xcode.
             continue;
         }
-        let check = Command::new(&name)
+        let check = configure_python_command(&mut Command::new(&name))
             .hide_console_window()
             .args(["--version"])
             .stdout(std::process::Stdio::piped())
@@ -105,7 +116,7 @@ fn parse_python_minor(version_output: &str) -> Option<u8> {
 }
 
 pub fn validate_python_minor(python: &Path, minimum: u8, maximum: u8) -> Result<(), String> {
-    let output = Command::new(python)
+    let output = configure_python_command(&mut Command::new(python))
         .hide_console_window()
         .arg("--version")
         .output()
@@ -170,7 +181,7 @@ pub fn create_venv(python: &Path, venv_dir: &Path) -> Result<(), String> {
         python.display()
     );
 
-    let output = Command::new(python)
+    let output = configure_python_command(&mut Command::new(python))
         .hide_console_window()
         .args(["-m", "venv", &venv_dir.to_string_lossy()])
         .stdout(std::process::Stdio::piped())
@@ -210,7 +221,7 @@ pub fn install_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
     let mut args = vec!["-m", "pip", "install", "--upgrade"];
     args.extend(deps.iter().copied());
 
-    let output = Command::new(&python)
+    let output = configure_python_command(&mut Command::new(&python))
         .hide_console_window()
         .args(&args)
         .stdout(std::process::Stdio::piped())
@@ -254,7 +265,7 @@ pub fn uninstall_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
     let python = get_venv_python(venv_dir);
     let mut args = vec!["-m", "pip", "uninstall", "-y"];
     args.extend(deps.iter().copied());
-    let output = Command::new(&python)
+    let output = configure_python_command(&mut Command::new(&python))
         .hide_console_window()
         .args(&args)
         .stdout(std::process::Stdio::piped())
@@ -297,7 +308,7 @@ if hasattr(ort, 'preload_dlls'):
         preload['succeeded'] = False
         preload['error'] = str(error)
 print(json.dumps({'onnxruntime': ort.__version__, 'available_providers': ort.get_available_providers(), 'packages': packages, 'preload': preload}))"#;
-    let output = Command::new(&python)
+    let output = configure_python_command(&mut Command::new(&python))
         .hide_console_window()
         .args(["-c", script])
         .output()
@@ -547,28 +558,59 @@ pub async fn spawn_sidecar(
     port: u16,
     envs: &[(String, String)],
 ) -> Result<tokio::process::Child, String> {
+    spawn_sidecar_process(addon_id, python, _venv_dir, app_dir, Some(port), envs)
+        .await
+        .map(|(child, _)| child)
+}
+
+/// SVP's private listener is bound by the owned child, never a shared fixed port.
+pub async fn spawn_svp_sidecar(
+    python: &Path,
+    venv_dir: &Path,
+    app_dir: &Path,
+    envs: &[(String, String)],
+) -> Result<(tokio::process::Child, u16), String> {
+    spawn_sidecar_process("svp", python, venv_dir, app_dir, None, envs).await
+}
+
+async fn spawn_sidecar_process(
+    addon_id: &str,
+    python: &Path,
+    _venv_dir: &Path,
+    app_dir: &Path,
+    port: Option<u16>,
+    envs: &[(String, String)],
+) -> Result<(tokio::process::Child, u16), String> {
     log::info!(
-        "[Addon] Spawning sidecar: {} -m uvicorn app:app --port {} (cwd: {})",
+        "[Addon] Spawning '{}' sidecar: {} (port: {:?}, cwd: {})",
+        addon_id,
         python.display(),
         port,
         app_dir.display()
     );
 
     let mut cmd = TokioCommand::new(python);
-    cmd.args([
-        "-m",
-        "uvicorn",
-        "app:app",
-        "--port",
-        &port.to_string(),
-        "--host",
-        "127.0.0.1",
-    ])
-    .current_dir(app_dir)
-    .stdout(std::process::Stdio::piped())
-    .stderr(std::process::Stdio::piped())
-    .kill_on_drop(true)
-    .env("PYTHONUNBUFFERED", "1");
+    if let Some(port) = port {
+        if port == 0 {
+            return Err("Fixed sidecar port must not be zero".into());
+        }
+        cmd.args([
+            "-m",
+            "uvicorn",
+            "app:app",
+            "--port",
+            &port.to_string(),
+            "--host",
+            "127.0.0.1",
+        ]);
+    } else {
+        cmd.args(["-c", SVP_SIDECAR_BOOTSTRAP]);
+    }
+    cmd.current_dir(app_dir)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .env("PYTHONUNBUFFERED", "1");
 
     for (key, value) in envs {
         if cfg!(target_os = "windows") && key.eq_ignore_ascii_case("PATH") {
@@ -609,6 +651,8 @@ pub async fn spawn_sidecar(
         }
     }
 
+    configure_tokio_python_command(&mut cmd);
+
     // Unix: create a new process group for clean shutdown
     #[cfg(unix)]
     {
@@ -646,19 +690,75 @@ pub async fn spawn_sidecar(
         }
     }
 
-    let mut child = cmd
+    let child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn addon sidecar: {}", e))?;
 
-    if let Some(stdout) = child.stdout.take() {
-        spawn_output_logger(stdout, addon_id.to_owned(), "stdout");
+    finish_sidecar_start(child, addon_id, port, Duration::from_secs(10)).await
+}
+
+async fn read_svp_port<R: AsyncRead + Unpin>(reader: &mut R) -> Result<u16, String> {
+    let mut line = Vec::new();
+    for _ in 0..64 {
+        let byte = reader
+            .read_u8()
+            .await
+            .map_err(|_| "SVP child exited before reporting its private port")?;
+        if byte == b'\n' {
+            let text = std::str::from_utf8(&line).map_err(|_| "Invalid SVP port handshake")?;
+            return text
+                .strip_prefix("DMC_SVP_PORT=")
+                .filter(|port| !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()))
+                .and_then(|port| port.parse::<u16>().ok())
+                .filter(|port| *port != 0)
+                .ok_or_else(|| "Invalid SVP port handshake".into());
+        }
+        line.push(byte);
     }
+    Err("SVP port handshake exceeds its size limit".into())
+}
+
+async fn finish_sidecar_start(
+    mut child: tokio::process::Child,
+    addon_id: &str,
+    port: Option<u16>,
+    handshake_timeout: Duration,
+) -> Result<(tokio::process::Child, u16), String> {
+    // Also kills the owned process group if this future is cancelled mid-handshake.
+    let mut guard = ManagedProcessGuard {
+        pid: child.id(),
+        armed: true,
+    };
     if let Some(stderr) = child.stderr.take() {
         spawn_output_logger(stderr, addon_id.to_owned(), "stderr");
     }
+    let stdout = child.stdout.take().ok_or("Sidecar stdout is unavailable")?;
+    let mut stdout = tokio::io::BufReader::new(stdout);
+    let selected = match port {
+        Some(port) => Ok(port),
+        None => tokio::time::timeout(handshake_timeout, read_svp_port(&mut stdout))
+            .await
+            .map_err(|_| "SVP private port handshake timed out".to_string())
+            .and_then(|value| value),
+    };
+    let port = match selected {
+        Ok(port) => port,
+        Err(error) => {
+            if let Some(pid) = child.id() {
+                kill_process(pid);
+            }
+            guard.armed = false;
+            let _ = child.start_kill();
+            let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+            return Err(error);
+        }
+    };
+    // Keep buffered bytes following the handshake for the ordinary output drain.
+    spawn_output_logger(stdout, addon_id.to_owned(), "stdout");
+    guard.armed = false;
 
     log::info!("[Addon] Sidecar spawned with PID {:?}", child.id());
-    Ok(child)
+    Ok((child, port))
 }
 
 #[derive(Debug)]
@@ -896,6 +996,85 @@ pub fn kill_process(pid: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn svp_private_port_handshake_is_bounded_and_validated() {
+        use tokio::io::AsyncWriteExt;
+        for (message, expected) in [
+            (b"DMC_SVP_PORT=49152\n".as_slice(), Some(49152)),
+            (b"DMC_SVP_PORT=0\n", None),
+            (b"DMC_SVP_PORT=65536\n", None),
+            (b"DMC_SVP_PORT=-1\n", None),
+            (b"unrelated output\n", None),
+            (b"DMC_SVP_PORT=12345", None),
+            (&[b'x'; 100], None),
+        ] {
+            let (mut write, mut read) = tokio::io::duplex(256);
+            write.write_all(message).await.unwrap();
+            drop(write);
+            assert_eq!(read_svp_port(&mut read).await.ok(), expected);
+        }
+        let (_write, mut read) = tokio::io::duplex(64);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), read_svp_port(&mut read))
+                .await
+                .is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn svp_invalid_missing_or_early_exit_handshake_reaps_owned_child() {
+        for script in ["printf 'invalid\\n'; sleep 60", "sleep 60", "exit 7"] {
+            let mut command = TokioCommand::new("sh");
+            command
+                .args(["-c", script])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .process_group(0)
+                .kill_on_drop(true);
+            let child = command.spawn().unwrap();
+            let pid = child.id().unwrap();
+            assert!(
+                finish_sidecar_start(child, "synthetic", None, Duration::from_millis(50))
+                    .await
+                    .is_err()
+            );
+            assert_eq!(unsafe { libc::kill(pid as i32, 0) }, -1);
+            assert_eq!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(libc::ESRCH)
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancelling_svp_handshake_stops_its_process_group() {
+        let mut command = TokioCommand::new("sh");
+        command
+            .args(["-c", "sleep 60"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .process_group(0)
+            .kill_on_drop(true);
+        let child = command.spawn().unwrap();
+        let pid = child.id().unwrap();
+        let task = tokio::spawn(finish_sidecar_start(
+            child,
+            "synthetic",
+            None,
+            Duration::from_secs(10),
+        ));
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        while unsafe { libc::kill(pid as i32, 0) } == 0 {
+            assert!(tokio::time::Instant::now() < deadline);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
     use std::sync::{Arc, Mutex};
     use tokio::io::AsyncWriteExt;
 
@@ -1234,5 +1413,66 @@ sleep 30
         })
         .await
         .expect("both streams should drain without blocking");
+    }
+}
+
+#[cfg(all(test, unix))]
+mod python_environment_regression {
+    use super::*;
+
+    #[tokio::test]
+    async fn managed_python_ignores_embedding_home_and_preserves_other_environment() {
+        let root = tempfile::tempdir().unwrap();
+        let venv = root.path().join("venv");
+        let modules = root.path().join("modules");
+        std::fs::create_dir(&modules).unwrap();
+        std::fs::write(modules.join("dmc_env_fixture.py"), "value = 'preserved'\n").unwrap();
+        let bad_home = root.path().join("python312-embedding-home");
+        std::fs::create_dir(&bad_home).unwrap();
+        let mut create = Command::new("python3");
+        create
+            .env("PYTHONHOME", &bad_home)
+            .args(["-m", "venv", "--without-pip"])
+            .arg(&venv);
+        assert!(configure_python_command(&mut create)
+            .status()
+            .unwrap()
+            .success());
+        let python = get_venv_python(&venv);
+        let script = "import os, sys, dmc_env_fixture; assert sys.prefix == sys.argv[1]; assert dmc_env_fixture.value == 'preserved'; assert os.environ['DMC_TEST_UNRELATED'] == 'kept'; assert 'PYTHONHOME' not in os.environ";
+        let mut command = Command::new(&python);
+        command
+            .env("PYTHONHOME", &bad_home)
+            .env("PYTHONPATH", &modules)
+            .env("DMC_TEST_UNRELATED", "kept")
+            .args(["-c", script])
+            .arg(&venv);
+        assert!(configure_python_command(&mut command)
+            .status()
+            .unwrap()
+            .success());
+        let mut async_command = TokioCommand::new(&python);
+        async_command
+            .env("PYTHONHOME", &bad_home)
+            .env("PYTHONPATH", &modules)
+            .env("DMC_TEST_UNRELATED", "kept")
+            .args(["-c", script])
+            .arg(&venv);
+        assert!(configure_tokio_python_command(&mut async_command)
+            .status()
+            .await
+            .unwrap()
+            .success());
+        let mut unset = Command::new(&python);
+        unset
+            .env_remove("PYTHONHOME")
+            .env("PYTHONPATH", &modules)
+            .env("DMC_TEST_UNRELATED", "kept")
+            .args(["-c", script])
+            .arg(&venv);
+        assert!(configure_python_command(&mut unset)
+            .status()
+            .unwrap()
+            .success());
     }
 }

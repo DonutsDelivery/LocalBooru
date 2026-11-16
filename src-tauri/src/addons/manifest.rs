@@ -95,7 +95,8 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             description: "High quality frame interpolation using VapourSynth and SVPflow",
             runtime: AddonRuntime::Sidecar,
             installation: AddonInstallation::PythonVenv,
-            port: Some(18008),
+            // Allocated and retained by each owned child; never a global slot.
+            port: None,
             python_deps: &["vapoursynth"],
         },
         AddonManifest {

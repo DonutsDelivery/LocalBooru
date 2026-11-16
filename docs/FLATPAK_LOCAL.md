@@ -7,6 +7,12 @@ from the exact reviewed release candidate, and keep its corresponding native
 runtime source archive and licensing notices available. An older AppImage does
 not include later sandbox fixes.
 
+SVP streams use the serving DMC instance's HTTP API. Its helper binds a private
+loopback port on startup; it does not require port 18008 or replace another
+installation's listener. The add-on API reports the tracked child's port and
+clears it on stop, cancelled startup or observed exit. Remote clients, including Macs,
+continue using the server's normal API address.
+
 The output directory must be an absolute path that does not already exist:
 
 ```sh

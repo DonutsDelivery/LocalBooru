@@ -413,7 +413,18 @@ diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStrea
 +    videoFilter = localBooruComposeVideoFilter(ownsResolution ? &resize : nullptr, videoFilter);
 +    if (videoFilter)
 +        g_object_set(m_pipeline.get(), "video-filter", videoFilter, nullptr);
-
+@@ -3962,6 +4340,10 @@
+     if (!player->isVideoPlayer())
+         return false;
+-
++
++    // HTTP range-backed video loops need a flushing seek without a segment restart.
++    if (m_url.protocolIsInHTTPFamily() && !m_url.path().endsWithIgnoringASCIICase(".m3u8"_s))
++        return false;
++
+     // The GStreamer oggdemux element doesn't handle segment seeks.
+     if (m_containerType == ContainerType::Ogg) {
+         GST_DEBUG_OBJECT(m_pipeline.get(), "Seamless seeking not supported for media muxed in Ogg container");
 diff --git a/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp b/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp
 --- a/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp
 +++ b/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp
