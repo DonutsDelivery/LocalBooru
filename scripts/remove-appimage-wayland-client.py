@@ -14,7 +14,7 @@ PATTERN = re.compile(r'libwayland-client\.so(?:\.[0-9]+)*\Z')
 def apply(root, verify=False):
     if not root.is_absolute() or root == Path('/') or root.resolve() != root or not root.is_dir():
         raise ValueError('Expected an absolute, unredirected AppDir')
-    if not (root / 'AppRun').is_file():
+    if not (root / 'AppRun').is_file() or (root / 'AppRun').is_symlink():
         raise ValueError('Missing AppRun')
     lib = root / 'usr/lib'
     receipt = root / RECEIPT
@@ -40,9 +40,11 @@ def apply(root, verify=False):
             raise ValueError('Invalid Wayland client policy receipt')
         return data
     data = {'schema': 1, 'policy': POLICY, 'removed': [p.name for p in entries]}
+    # A failed receipt write must leave all libraries intact. Verification also
+    # rejects a partial removal if a later unlink fails.
+    receipt.write_text(json.dumps(data, indent=2, sort_keys=True) + '\n')
     for path in entries:
         path.unlink()
-    receipt.write_text(json.dumps(data, indent=2, sort_keys=True) + '\n')
     return data
 
 

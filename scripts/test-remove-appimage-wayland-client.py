@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('wayland', Path(__file__).with_name('remove-appimage-wayland-client.py'))
 module = importlib.util.module_from_spec(spec)
@@ -10,6 +11,33 @@ spec.loader.exec_module(module)
 
 
 class TestPolicy(unittest.TestCase):
+    def test_failed_receipt_persistence_does_not_remove_libraries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'AppDir'
+            lib = root / 'usr/lib'
+            lib.mkdir(parents=True)
+            (root / 'usr/share/doc/localbooru').mkdir(parents=True)
+            (root / 'AppRun').touch()
+            client = lib / 'libwayland-client.so.0'
+            client.write_bytes(b'synthetic client')
+            with patch.object(Path, 'write_text', side_effect=OSError('synthetic storage failure')):
+                with self.assertRaises(OSError): module.apply(root)
+            self.assertEqual(client.read_bytes(), b'synthetic client')
+
+    def test_redirected_apprun_marker_is_rejected_before_mutation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'AppDir'
+            lib = root / 'usr/lib'
+            lib.mkdir(parents=True)
+            (root / 'usr/share/doc/localbooru').mkdir(parents=True)
+            outside = Path(tmp) / 'synthetic-outside'
+            outside.touch()
+            (root / 'AppRun').symlink_to(outside)
+            client = lib / 'libwayland-client.so.0'
+            client.touch()
+            with self.assertRaises(ValueError): module.apply(root)
+            self.assertTrue(client.exists())
+
     def test_removal_and_verification(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'AppDir'
