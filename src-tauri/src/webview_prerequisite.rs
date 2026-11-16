@@ -27,7 +27,10 @@ fn preflight<E>(
 pub fn check() -> bool {
     use webview2_com_sys::Microsoft::Web::WebView2::Win32::GetAvailableCoreWebView2BrowserVersionString;
     use windows_core::{PCWSTR, PWSTR};
-    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::System::Com::{
+        CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED,
+        COINIT_DISABLE_OLE1DDE,
+    };
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         MessageBoxW, IDYES, MB_ICONERROR, MB_ICONWARNING, MB_YESNO,
@@ -63,16 +66,32 @@ pub fn check() -> bool {
             message("Microsoft Edge WebView2 is required to start Donut Media Center. Open Microsoft's download page? Install the Evergreen Runtime, then relaunch the app.", MB_YESNO | MB_ICONWARNING) == IDYES
         },
         || {
+            // Shell URL handlers can require COM. Balance S_OK and S_FALSE;
+            // this runs only on the download-and-exit path, before Tauri starts.
+            let initialized = unsafe {
+                CoInitializeEx(
+                    std::ptr::null(),
+                    (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32,
+                )
+            };
+            if initialized < 0 {
+                return Err(format!(
+                    "Could not initialize Windows link handling (HRESULT {:#010x}).",
+                    initialized as u32
+                ));
+            }
             let result = unsafe {
-                ShellExecuteW(
+                let opened = ShellExecuteW(
                     std::ptr::null_mut(),
                     wide("open").as_ptr(),
                     wide("https://developer.microsoft.com/microsoft-edge/webview2/").as_ptr(),
                     std::ptr::null(),
                     std::ptr::null(),
                     1,
-                )
-            } as isize;
+                ) as isize;
+                CoUninitialize();
+                opened
+            };
             if result <= 32 {
                 Err(format!(
                     "Could not open the WebView2 download page (ShellExecute error {}).",
