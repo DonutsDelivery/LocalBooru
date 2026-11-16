@@ -366,6 +366,8 @@ struct AddonState {
     installation_progress: Option<LadaInstallProgress>,
     /// The child process handle, present only while the addon is running.
     process: Option<Arc<TokioMutex<tokio::process::Child>>>,
+    /// Port of the tracked child; SVP reports its private socket allocation.
+    runtime_port: Option<u16>,
 }
 
 /// Public-facing information about an addon, suitable for JSON serialization.
@@ -416,8 +418,43 @@ pub struct AddonManager {
     data_dir: PathBuf,
     lifecycle: TokioRwLock<()>,
     lada_operation: TokioMutex<()>,
+    svp_start: TokioMutex<()>,
     lada_install_cancelled: Arc<AtomicBool>,
     shutting_down: AtomicBool,
+}
+
+// A cancelled request must not leave an advertised endpoint or a permanent
+// Starting state. The child stays tracked so Stop/Shutdown/new Start can await
+// its cleanup even if the asynchronous cleanup has not acquired its lock yet.
+struct SvpStartGuard<'a> {
+    manager: &'a AddonManager,
+    armed: bool,
+}
+
+impl Drop for SvpStartGuard<'_> {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let process = self.manager.addons.get_mut("svp").and_then(|mut state| {
+            if state.status != AddonStatus::Starting {
+                return None;
+            }
+            state.runtime_port = None;
+            state.status = AddonStatus::Error("SVP startup was cancelled; start it again".into());
+            state.process.clone()
+        });
+        if let Some(process) = process {
+            tokio::spawn(async move {
+                let mut child = process.lock().await;
+                if let Some(pid) = child.id() {
+                    sidecar::kill_process(pid);
+                }
+                let _ = child.start_kill();
+                let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+            });
+        }
+    }
 }
 
 impl AddonManager {
@@ -466,6 +503,7 @@ impl AddonManager {
                     readiness,
                     installation_progress: None,
                     process: None,
+                    runtime_port: None,
                 },
             );
         }
@@ -481,6 +519,7 @@ impl AddonManager {
             data_dir: data_dir.to_path_buf(),
             lifecycle: TokioRwLock::new(()),
             lada_operation: TokioMutex::new(()),
+            svp_start: TokioMutex::new(()),
             lada_install_cancelled: Arc::new(AtomicBool::new(false)),
             shutting_down: AtomicBool::new(false),
         }
@@ -882,6 +921,7 @@ impl AddonManager {
                     .is_some_and(|current| Arc::ptr_eq(current, &process))
             {
                 state.process = None;
+                state.runtime_port = None;
                 state.status = AddonStatus::Error(format!(
                     "Addon '{}' exited ({}). Start the add-on again.",
                     id, exit
@@ -907,7 +947,11 @@ impl AddonManager {
             description: manifest.description.to_string(),
             runtime: manifest.runtime,
             installation: manifest.installation,
-            port: manifest.port,
+            port: if manifest.id == "svp" {
+                state.as_ref().and_then(|state| state.runtime_port)
+            } else {
+                manifest.port
+            },
             requires_start: manifest.runtime == AddonRuntime::Sidecar
                 && manifest.installation == AddonInstallation::PythonVenv,
             status,
@@ -1173,6 +1217,20 @@ impl AddonManager {
     /// and health-checked before marking it as running.
     pub async fn start_addon(&self, id: &str) -> Result<(), String> {
         crate::edition::require_addon(id)?;
+        // Serialize SVP starts before taking the lifecycle read lock, so Stop
+        // can cancel a pending start without a newer start inheriting its child.
+        let _svp_start = if id == "svp" {
+            Some(self.svp_start.lock().await)
+        } else {
+            None
+        };
+        let cancelled_child = id == "svp"
+            && self.addons.get(id).is_some_and(|state| {
+                state.status != AddonStatus::Running && state.process.is_some()
+            });
+        if cancelled_child {
+            self.stop_addon_inner(id, false).await?;
+        }
         let lifecycle = self.lifecycle.read().await;
         if self.shutting_down.load(Ordering::SeqCst) {
             return Err("Application shutdown is in progress".into());
@@ -1203,33 +1261,44 @@ impl AddonManager {
                 AddonStatus::NotInstalled => {
                     return Err(format!("Addon '{}' is not installed", id));
                 }
-                _ => state.status = AddonStatus::Starting,
+                _ => {
+                    state.status = AddonStatus::Starting;
+                    state.runtime_port = None;
+                }
             }
         }
 
         let venv_dir = self.venv_dir(id);
+        let mut startup_guard = SvpStartGuard {
+            manager: self,
+            armed: id == "svp",
+        };
         let python = sidecar::get_venv_python(&venv_dir);
         let app_dir = self.addon_dir(id);
-        let port = manifest.port.expect("sidecar addons must have a port");
+        // SVP allocates its listener inside the owned child. Other sidecars
+        // retain their existing fixed-port contract.
+        let fixed_port = if id == "svp" { None } else { manifest.port };
 
         // Never adopt health from an untracked listener. Linux can reclaim an
         // exact installed legacy controller, then launch a new owned child.
-        if tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
-            .await
-            .is_ok()
-        {
-            #[cfg(target_os = "linux")]
-            let recovery =
-                super::port_recovery::recover_installed_listener(&python, &app_dir, port).await;
-            #[cfg(not(target_os = "linux"))]
-            let recovery: Result<(), String> = Err("port is already in use".into());
-            if let Err(error) = recovery {
-                let message = format!(
-                    "Addon '{}' cannot start: port {} is already in use: {}",
-                    id, port, error
-                );
-                self.set_status(id, AddonStatus::Error(message.clone()));
-                return Err(message);
+        if let Some(port) = fixed_port {
+            if tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
+                .await
+                .is_ok()
+            {
+                #[cfg(target_os = "linux")]
+                let recovery =
+                    super::port_recovery::recover_installed_listener(&python, &app_dir, port).await;
+                #[cfg(not(target_os = "linux"))]
+                let recovery: Result<(), String> = Err("port is already in use".into());
+                if let Err(error) = recovery {
+                    let message = format!(
+                        "Addon '{}' cannot start: port {} is already in use: {}",
+                        id, port, error
+                    );
+                    self.set_status(id, AddonStatus::Error(message.clone()));
+                    return Err(message);
+                }
             }
         }
 
@@ -1368,21 +1437,20 @@ impl AddonManager {
 
         let sidecar_env = self.sidecar_env(id);
 
-        // Spawn the sidecar
-        let child = match sidecar::spawn_sidecar(
-            id,
-            &python,
-            &venv_dir,
-            &app_dir,
-            port,
-            &sidecar_env,
-        )
-        .await
-        {
-            Ok(c) => c,
-            Err(e) => {
-                self.set_status(id, AddonStatus::Error(e.clone()));
-                return Err(e);
+        // Only the private stdout handshake supplies SVP's endpoint.
+        let spawned = if id == "svp" {
+            sidecar::spawn_svp_sidecar(&python, &venv_dir, &app_dir, &sidecar_env).await
+        } else {
+            let port = fixed_port.expect("fixed-port sidecar must declare its port");
+            sidecar::spawn_sidecar(id, &python, &venv_dir, &app_dir, port, &sidecar_env)
+                .await
+                .map(|child| (child, port))
+        };
+        let (child, port) = match spawned {
+            Ok(value) => value,
+            Err(error) => {
+                self.set_status(id, AddonStatus::Error(error.clone()));
+                return Err(error);
             }
         };
 
@@ -1392,6 +1460,7 @@ impl AddonManager {
         let accepted = if let Some(mut state) = self.addons.get_mut(id) {
             if state.status == AddonStatus::Starting {
                 state.process = Some(process.clone());
+                state.runtime_port = Some(port);
                 true
             } else {
                 false
@@ -1466,11 +1535,13 @@ impl AddonManager {
                         .is_some_and(|tracked| Arc::ptr_eq(tracked, &process));
                     if owns_process {
                         state.process = None;
+                        state.runtime_port = None;
                     }
                 }
                 return Err(format!("Addon '{}' start was cancelled", id));
             }
             self.save_enabled_state(id, true);
+            startup_guard.armed = false;
             log::info!("[AddonManager] Addon '{}' is running on port {}", id, port);
             Ok(())
         } else {
@@ -1496,6 +1567,7 @@ impl AddonManager {
                     .is_some_and(|tracked| Arc::ptr_eq(tracked, &process));
                 if state.status == AddonStatus::Starting && owns_process {
                     state.process = None;
+                    state.runtime_port = None;
                     state.status = AddonStatus::Error(msg.clone());
                     true
                 } else {
@@ -1550,6 +1622,7 @@ impl AddonManager {
                 }
                 state.status = AddonStatus::Stopping;
             }
+            state.runtime_port = None;
             (state.process.take(), repairing)
         };
 
@@ -1602,8 +1675,12 @@ impl AddonManager {
         let status = self.get_addon_status(id);
 
         if status == AddonStatus::Running {
-            manifest
-                .port
+            let port = if id == "svp" {
+                self.addons.get(id)?.runtime_port
+            } else {
+                manifest.port
+            };
+            port.filter(|port| *port != 0)
                 .map(|port| format!("http://127.0.0.1:{}", port))
         } else {
             None
@@ -1626,6 +1703,7 @@ impl AddonManager {
             if let Some(process) = entry.value_mut().process.take() {
                 processes.push((id, process));
             }
+            entry.value_mut().runtime_port = None;
             // Mark stopped unless uninstalled
             if entry.value().status != AddonStatus::NotInstalled {
                 entry.value_mut().status = AddonStatus::Stopped;
@@ -1658,6 +1736,9 @@ impl AddonManager {
     /// Internal: update the status field for an addon.
     fn set_status(&self, id: &str, status: AddonStatus) {
         if let Some(mut state) = self.addons.get_mut(id) {
+            if !matches!(status, AddonStatus::Running | AddonStatus::Starting) {
+                state.runtime_port = None;
+            }
             state.status = status;
         }
     }
@@ -1666,6 +1747,197 @@ impl AddonManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(unix, not(feature = "store-lite")))]
+    fn synthetic_svp_manager(root: &Path) -> AddonManager {
+        use std::os::unix::fs::PermissionsExt;
+        let manager = AddonManager::new(root);
+        let app = manager.addon_dir("svp");
+        let venv = manager.venv_dir("svp");
+        std::fs::create_dir_all(venv.join("bin")).unwrap();
+        let python = sidecar::find_python().expect("synthetic SVP tests need Python3.10-3.13");
+        let launcher = sidecar::get_venv_python(&venv);
+        std::fs::write(
+            &launcher,
+            format!("#!/bin/sh\nexec '{}' -s \"$@\"\n", python.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let manifest = get_addon_manifest("svp").unwrap();
+        std::fs::write(
+            venv.join(INSTALLED_DEPENDENCIES_FILE),
+            manager.dependency_list("svp", manifest).join("\n"),
+        )
+        .unwrap();
+        // This fake uvicorn never imports the real SVP app, models or media.
+        std::fs::write(
+            app.join("uvicorn.py"),
+            r#"
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from pathlib import Path
+import time
+class Config:
+    def __init__(self, *args, **kwargs): pass
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args): pass
+    def do_GET(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b'synthetic SVP')
+class Server:
+    def __init__(self, config): pass
+    def run(self, sockets):
+        with Path('starts').open('a') as log: log.write('start\n')
+        if Path('delay').exists(): time.sleep(.3)
+        server = HTTPServer(('127.0.0.1', 0), Handler, bind_and_activate=False)
+        server.socket.close(); server.socket = sockets[0]
+        server.server_address = sockets[0].getsockname()
+        server.server_name = 'localhost'; server.server_port = server.server_address[1]
+        server.serve_forever()
+"#,
+        )
+        .unwrap();
+        manager.addons.get_mut("svp").unwrap().status = AddonStatus::Installed;
+        manager
+    }
+
+    #[cfg(all(unix, not(feature = "store-lite")))]
+    #[tokio::test]
+    async fn svp_instances_own_distinct_endpoints_and_concurrent_starts_share_one_child() {
+        let first_root = tempfile::tempdir().unwrap();
+        let second_root = tempfile::tempdir().unwrap();
+        let first = synthetic_svp_manager(first_root.path());
+        let second = synthetic_svp_manager(second_root.path());
+        let foreign = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let foreign_address = foreign.local_addr().unwrap();
+        let (one, repeated, two) = tokio::join!(
+            first.start_addon("svp"),
+            first.start_addon("svp"),
+            second.start_addon("svp")
+        );
+        one.unwrap();
+        repeated.unwrap();
+        two.unwrap();
+        let first_port = first.get_addon("svp").unwrap().port.unwrap();
+        let second_port = second.get_addon("svp").unwrap().port.unwrap();
+        assert_ne!(first_port, second_port);
+        assert_ne!(first_port, foreign_address.port());
+        assert_ne!(second_port, foreign_address.port());
+        assert_eq!(
+            first.addon_url("svp"),
+            Some(format!("http://127.0.0.1:{first_port}"))
+        );
+        assert_eq!(
+            std::fs::read_to_string(first.addon_dir("svp").join("starts"))
+                .unwrap()
+                .lines()
+                .count(),
+            1
+        );
+        first.stop_addon("svp").await.unwrap();
+        assert_eq!(first.get_addon("svp").unwrap().port, None);
+        assert_eq!(first.addon_url("svp"), None);
+        assert!(sidecar::check_health(second_port).await);
+        assert_eq!(foreign.local_addr().unwrap(), foreign_address);
+        second.stop_all().await;
+        assert_eq!(second.get_addon("svp").unwrap().port, None);
+    }
+
+    #[cfg(all(unix, not(feature = "store-lite")))]
+    #[tokio::test]
+    async fn svp_exit_invalidates_advertised_endpoint() {
+        let root = tempfile::tempdir().unwrap();
+        let manager = synthetic_svp_manager(root.path());
+        manager.start_addon("svp").await.unwrap();
+        let process = manager.addons.get("svp").unwrap().process.clone().unwrap();
+        {
+            let mut child = process.lock().await;
+            child.kill().await.unwrap();
+            child.wait().await.unwrap();
+        }
+        assert!(matches!(
+            manager.get_addon_status("svp"),
+            AddonStatus::Error(_)
+        ));
+        assert_eq!(manager.get_addon("svp").unwrap().port, None);
+        assert_eq!(manager.addon_url("svp"), None);
+    }
+
+    #[cfg(all(unix, not(feature = "store-lite")))]
+    #[tokio::test]
+    async fn svp_stop_during_start_cannot_transfer_its_child_to_a_new_start() {
+        let root = tempfile::tempdir().unwrap();
+        let manager = Arc::new(synthetic_svp_manager(root.path()));
+        std::fs::write(manager.addon_dir("svp").join("delay"), "synthetic").unwrap();
+        let starting = manager.clone();
+        let old = tokio::spawn(async move { starting.start_addon("svp").await });
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while manager.addons.get("svp").unwrap().process.is_none()
+            || !manager.addon_dir("svp").join("starts").exists()
+        {
+            assert!(tokio::time::Instant::now() < deadline);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        manager.stop_addon("svp").await.unwrap();
+        let replacement = manager.clone();
+        let next = tokio::spawn(async move { replacement.start_addon("svp").await });
+        assert!(old.await.unwrap().is_err());
+        next.await.unwrap().unwrap();
+        assert!(manager.addon_url("svp").is_some());
+        assert_eq!(
+            std::fs::read_to_string(manager.addon_dir("svp").join("starts"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+        manager.stop_all().await;
+    }
+
+    #[cfg(all(unix, not(feature = "store-lite")))]
+    #[tokio::test]
+    async fn svp_cancelled_start_clears_port_and_can_start_again() {
+        let root = tempfile::tempdir().unwrap();
+        let manager = Arc::new(synthetic_svp_manager(root.path()));
+        std::fs::write(manager.addon_dir("svp").join("delay"), "synthetic").unwrap();
+        let starting = manager.clone();
+        let task = tokio::spawn(async move { starting.start_addon("svp").await });
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while manager.addons.get("svp").unwrap().process.is_none()
+            || !manager.addon_dir("svp").join("starts").exists()
+        {
+            assert!(tokio::time::Instant::now() < deadline);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert!(matches!(
+            manager.get_addon_status("svp"),
+            AddonStatus::Error(_)
+        ));
+        assert_eq!(manager.get_addon("svp").unwrap().port, None);
+        assert_eq!(manager.addon_url("svp"), None);
+        manager.start_addon("svp").await.unwrap();
+        assert!(manager.addon_url("svp").is_some());
+        manager.stop_all().await;
+    }
+
+    #[cfg(all(unix, not(feature = "store-lite")))]
+    #[tokio::test]
+    async fn svp_bad_handshake_does_not_advertise_endpoint() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let manager = synthetic_svp_manager(root.path());
+        let python = sidecar::get_venv_python(&manager.venv_dir("svp"));
+        std::fs::write(&python, "#!/bin/sh\nprintf 'invalid\\n'\nexec sleep 60\n").unwrap();
+        std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(manager
+            .start_addon("svp")
+            .await
+            .unwrap_err()
+            .contains("handshake"));
+        assert_eq!(manager.get_addon("svp").unwrap().port, None);
+        assert_eq!(manager.addon_url("svp"), None);
+        assert!(manager.addons.get("svp").unwrap().process.is_none());
+    }
 
     #[cfg(feature = "store-lite")]
     #[tokio::test]
@@ -2383,6 +2655,7 @@ printf '%s\n' '{"addon_version":"0.1.0","protocol_version":1,"upstream_revision"
                 readiness: None,
                 installation_progress: None,
                 process: Some(process.clone()),
+                runtime_port: None,
             },
         );
         let mut guard = process.lock().await;
@@ -2444,6 +2717,7 @@ printf '%s\n' '{"addon_version":"0.1.0","protocol_version":1,"upstream_revision"
                 readiness: None,
                 installation_progress: None,
                 process: Some(process.clone()),
+                runtime_port: None,
             },
         );
 
