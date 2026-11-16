@@ -16,7 +16,8 @@ fn suppress_console_window(_command: &mut Command) {}
 pub fn check_ffmpeg_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
-        let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffmpeg"));
+        let mut command =
+            crate::platform_paths::media_command(crate::platform_paths::helper("ffmpeg"));
         command
             .arg("-version")
             .stdout(std::process::Stdio::null())
@@ -26,17 +27,75 @@ pub fn check_ffmpeg_available() -> bool {
     })
 }
 
+fn probe_diagnostic(isolated: bool, helper: &std::ffi::OsStr, phase: &str, detail: &str) {
+    if isolated {
+        let bounded: String = detail.chars().take(512).collect();
+        eprintln!(
+            "ffprobe diagnostic: helper={:?} phase={} detail={}",
+            helper, phase, bounded
+        );
+    }
+}
+
+fn isolated_probe_diagnostic(command: &Command, phase: &str, detail: &str) {
+    probe_diagnostic(
+        std::env::var_os("LOCALBOORU_ISOLATED_INSTANCE_ID").is_some(),
+        command.get_program(),
+        phase,
+        detail,
+    );
+}
+
+#[cfg(not(target_os = "android"))]
+fn parse_probe_metadata(stdout: &[u8]) -> Result<(i32, i32, f64), String> {
+    let json: serde_json::Value =
+        serde_json::from_slice(stdout).map_err(|e| format!("JSON parse: {}", e))?;
+    let stream = json
+        .get("streams")
+        .and_then(|v| v.as_array())
+        .and_then(|v| v.first())
+        .ok_or("missing or invalid streams[0]")?;
+    let width = stream
+        .get("width")
+        .and_then(|v| v.as_i64())
+        .ok_or("missing or invalid width")? as i32;
+    let height = stream
+        .get("height")
+        .and_then(|v| v.as_i64())
+        .ok_or("missing or invalid height")? as i32;
+    let duration_str = json
+        .get("format")
+        .and_then(|v| v.get("duration"))
+        .and_then(|v| v.as_str())
+        .ok_or("missing or invalid duration")?;
+    let duration = duration_str
+        .parse::<f64>()
+        .map_err(|e| format!("duration parse: {}", e))?;
+    Ok((width, height, duration))
+}
+
 /// Check if ffprobe is available on the system.
 pub fn check_ffprobe_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
-        let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffprobe"));
+        let mut command =
+            crate::platform_paths::media_command(crate::platform_paths::helper("ffprobe"));
         command
             .arg("-version")
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
         suppress_console_window(&mut command);
-        command.status().map(|s| s.success()).unwrap_or(false)
+        match command.status() {
+            Ok(status) if status.success() => true,
+            Ok(status) => {
+                isolated_probe_diagnostic(&command, "version status", &status.to_string());
+                false
+            }
+            Err(error) => {
+                isolated_probe_diagnostic(&command, "version spawn", &format!("{:?}", error));
+                false
+            }
+        }
     })
 }
 
@@ -47,7 +106,8 @@ pub fn get_video_metadata(file_path: &str) -> Option<(i32, i32, f64)> {
         return None;
     }
 
-    let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffprobe"));
+    let mut command =
+        crate::platform_paths::media_command(crate::platform_paths::helper("ffprobe"));
     command.args([
         "-v",
         "error",
@@ -60,23 +120,29 @@ pub fn get_video_metadata(file_path: &str) -> Option<(i32, i32, f64)> {
         file_path,
     ]);
     suppress_console_window(&mut command);
-    let output = command.output().ok()?;
-
+    let output = match command.output() {
+        Ok(output) => output,
+        Err(error) => {
+            isolated_probe_diagnostic(&command, "metadata spawn", &format!("{:?}", error));
+            return None;
+        }
+    };
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).replace(file_path, "<media>");
+        isolated_probe_diagnostic(
+            &command,
+            "metadata status",
+            &format!("{} stderr={}", output.status, stderr),
+        );
         return None;
     }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value = serde_json::from_str(&stdout).ok()?;
-
-    let stream = json.get("streams")?.as_array()?.first()?;
-    let width = stream.get("width")?.as_i64()? as i32;
-    let height = stream.get("height")?.as_i64()? as i32;
-
-    let duration_str = json.get("format")?.get("duration")?.as_str()?;
-    let duration = duration_str.parse::<f64>().ok()?;
-
-    Some((width, height, duration))
+    match parse_probe_metadata(&output.stdout) {
+        Ok(metadata) => Some(metadata),
+        Err(error) => {
+            isolated_probe_diagnostic(&command, "metadata parse", &error);
+            None
+        }
+    }
 }
 
 /// Get video duration in seconds using ffprobe.
@@ -123,7 +189,8 @@ pub fn get_hwaccel_args() -> Vec<String> {
         if !check_ffmpeg_available() {
             return vec![];
         }
-        let mut command = crate::platform_paths::media_command(crate::platform_paths::helper("ffmpeg"));
+        let mut command =
+            crate::platform_paths::media_command(crate::platform_paths::helper("ffmpeg"));
         command.arg("-hwaccels");
         suppress_console_window(&mut command);
         let output = command.output().ok();
@@ -538,4 +605,34 @@ pub fn extract_preview_frames(
 #[cfg(target_os = "android")]
 pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) -> bool {
     crate::android_media::thumbnail(video_path, output_path, size)
+}
+
+#[cfg(all(test, not(target_os = "android")))]
+mod probe_diagnostic_tests {
+    use super::parse_probe_metadata;
+
+    #[test]
+    fn parses_metadata_and_reports_invalid_responses() {
+        assert_eq!(
+            parse_probe_metadata(
+                br#"{"streams":[{"width":1920,"height":1080}],"format":{"duration":"2.5"}}"#
+            )
+            .unwrap(),
+            (1920, 1080, 2.5)
+        );
+        assert!(parse_probe_metadata(b"{")
+            .unwrap_err()
+            .contains("JSON parse"));
+        assert!(parse_probe_metadata(br#"{"streams":[]}"#)
+            .unwrap_err()
+            .contains("streams"));
+        assert!(parse_probe_metadata(br#"{"streams":[{"width":1}]}"#)
+            .unwrap_err()
+            .contains("height"));
+        assert!(parse_probe_metadata(
+            br#"{"streams":[{"width":1,"height":2}],"format":{"duration":"bad"}}"#
+        )
+        .unwrap_err()
+        .contains("duration parse"));
+    }
 }
