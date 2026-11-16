@@ -261,6 +261,10 @@ impl HideConsoleWindow for tokio::process::Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Keep script creation and execution together: concurrent forks can briefly
+    // retain another test's writable script descriptor until their own exec.
+    #[cfg(target_os = "linux")]
+    static HELPER_SCRIPT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     #[test]
     fn isolated_temporary_work_never_falls_back_to_system_storage() {
         let fixture = tempfile::tempdir().unwrap();
@@ -460,6 +464,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn appimage_host_helper_receives_original_library_path() {
+        let _guard = HELPER_SCRIPT_TEST_LOCK.lock().unwrap();
         let fixture = tempfile::tempdir().unwrap();
         let appdir = fixture.path().join("App Dir");
         std::fs::create_dir(&appdir).unwrap();
@@ -480,6 +485,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn appimage_bundled_helpers_retain_library_path_including_path_lookup() {
+        let _guard = HELPER_SCRIPT_TEST_LOCK.lock().unwrap();
         let fixture = tempfile::tempdir().unwrap();
         let helper = fixture.path().join("ffprobe");
         library_path_script(&helper);
@@ -500,6 +506,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn appimage_host_helper_requires_complete_launcher_context() {
+        let _guard = HELPER_SCRIPT_TEST_LOCK.lock().unwrap();
         let fixture = tempfile::tempdir().unwrap();
         let appdir = fixture.path().join("bundle");
         std::fs::create_dir(&appdir).unwrap();
@@ -522,6 +529,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn appimage_helper_aliases_follow_the_actual_helper_location() {
+        let _guard = HELPER_SCRIPT_TEST_LOCK.lock().unwrap();
         use std::os::unix::fs::symlink;
         let fixture = tempfile::tempdir().unwrap();
         let appdir = fixture.path().join("bundle");
@@ -553,6 +561,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn appimage_path_lookup_skips_nonexecutable_bundle_entries() {
+        let _guard = HELPER_SCRIPT_TEST_LOCK.lock().unwrap();
         let fixture = tempfile::tempdir().unwrap();
         let appdir = fixture.path().join("bundle");
         let host = fixture.path().join("host");
@@ -600,6 +609,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn appimage_wrapper_chain_uses_the_actual_media_helper_environment() {
+        let _guard = HELPER_SCRIPT_TEST_LOCK.lock().unwrap();
         use std::os::unix::fs::PermissionsExt;
         let fixture = tempfile::tempdir().unwrap();
         let appdir = fixture.path().join("bundle");
