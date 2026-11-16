@@ -44,7 +44,7 @@ fn binary(root: &Path) -> PathBuf {
 }
 
 fn probe(python: &Path) -> Result<(), String> {
-    let result = std::process::Command::new(python)
+    let result = super::sidecar::configure_python_command(&mut std::process::Command::new(python))
         .hide_console_window()
         .args([
             "-I",

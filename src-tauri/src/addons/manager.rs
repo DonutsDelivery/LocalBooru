@@ -1345,6 +1345,7 @@ impl AddonManager {
                     version,
                 ])
                 .kill_on_drop(true);
+            sidecar::configure_tokio_python_command(&mut probe);
             #[cfg(target_os = "windows")]
             probe.creation_flags(0x08000000);
             let available = matches!(tokio::time::timeout(Duration::from_secs(10), probe.output()).await,
@@ -1361,6 +1362,7 @@ impl AddonManager {
                         dependency,
                     ])
                     .kill_on_drop(true);
+                sidecar::configure_tokio_python_command(&mut install);
                 #[cfg(target_os = "windows")]
                 install.creation_flags(0x08000000);
                 let installed = matches!(tokio::time::timeout(Duration::from_secs(120), install.output()).await,

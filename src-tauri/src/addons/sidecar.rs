@@ -18,6 +18,15 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command as TokioCommand;
 
+/// Keep the embedded interpreter's home out of managed Python children.
+pub(super) fn configure_python_command(command: &mut Command) -> &mut Command {
+    command.env_remove("PYTHONHOME")
+}
+
+pub(super) fn configure_tokio_python_command(command: &mut TokioCommand) -> &mut TokioCommand {
+    command.env_remove("PYTHONHOME")
+}
+
 const SVP_SIDECAR_BOOTSTRAP: &str = include_str!("svp_sidecar.py");
 
 /// Find a usable `python3` (or `python`) binary on the system PATH.
@@ -67,7 +76,7 @@ pub fn find_python_version(minimum: u8, maximum: u8) -> Option<PathBuf> {
             // Apple's developer-tool stub is too old and can prompt for Xcode.
             continue;
         }
-        let check = Command::new(&name)
+        let check = configure_python_command(&mut Command::new(&name))
             .hide_console_window()
             .args(["--version"])
             .stdout(std::process::Stdio::piped())
@@ -107,7 +116,7 @@ fn parse_python_minor(version_output: &str) -> Option<u8> {
 }
 
 pub fn validate_python_minor(python: &Path, minimum: u8, maximum: u8) -> Result<(), String> {
-    let output = Command::new(python)
+    let output = configure_python_command(&mut Command::new(python))
         .hide_console_window()
         .arg("--version")
         .output()
@@ -172,7 +181,7 @@ pub fn create_venv(python: &Path, venv_dir: &Path) -> Result<(), String> {
         python.display()
     );
 
-    let output = Command::new(python)
+    let output = configure_python_command(&mut Command::new(python))
         .hide_console_window()
         .args(["-m", "venv", &venv_dir.to_string_lossy()])
         .stdout(std::process::Stdio::piped())
@@ -212,7 +221,7 @@ pub fn install_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
     let mut args = vec!["-m", "pip", "install", "--upgrade"];
     args.extend(deps.iter().copied());
 
-    let output = Command::new(&python)
+    let output = configure_python_command(&mut Command::new(&python))
         .hide_console_window()
         .args(&args)
         .stdout(std::process::Stdio::piped())
@@ -256,7 +265,7 @@ pub fn uninstall_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
     let python = get_venv_python(venv_dir);
     let mut args = vec!["-m", "pip", "uninstall", "-y"];
     args.extend(deps.iter().copied());
-    let output = Command::new(&python)
+    let output = configure_python_command(&mut Command::new(&python))
         .hide_console_window()
         .args(&args)
         .stdout(std::process::Stdio::piped())
@@ -299,7 +308,7 @@ if hasattr(ort, 'preload_dlls'):
         preload['succeeded'] = False
         preload['error'] = str(error)
 print(json.dumps({'onnxruntime': ort.__version__, 'available_providers': ort.get_available_providers(), 'packages': packages, 'preload': preload}))"#;
-    let output = Command::new(&python)
+    let output = configure_python_command(&mut Command::new(&python))
         .hide_console_window()
         .args(["-c", script])
         .output()
@@ -641,6 +650,8 @@ async fn spawn_sidecar_process(
             }
         }
     }
+
+    configure_tokio_python_command(&mut cmd);
 
     // Unix: create a new process group for clean shutdown
     #[cfg(unix)]
@@ -1402,5 +1413,66 @@ sleep 30
         })
         .await
         .expect("both streams should drain without blocking");
+    }
+}
+
+#[cfg(all(test, unix))]
+mod python_environment_regression {
+    use super::*;
+
+    #[tokio::test]
+    async fn managed_python_ignores_embedding_home_and_preserves_other_environment() {
+        let root = tempfile::tempdir().unwrap();
+        let venv = root.path().join("venv");
+        let modules = root.path().join("modules");
+        std::fs::create_dir(&modules).unwrap();
+        std::fs::write(modules.join("dmc_env_fixture.py"), "value = 'preserved'\n").unwrap();
+        let bad_home = root.path().join("python312-embedding-home");
+        std::fs::create_dir(&bad_home).unwrap();
+        let mut create = Command::new("python3");
+        create
+            .env("PYTHONHOME", &bad_home)
+            .args(["-m", "venv", "--without-pip"])
+            .arg(&venv);
+        assert!(configure_python_command(&mut create)
+            .status()
+            .unwrap()
+            .success());
+        let python = get_venv_python(&venv);
+        let script = "import os, sys, dmc_env_fixture; assert sys.prefix == sys.argv[1]; assert dmc_env_fixture.value == 'preserved'; assert os.environ['DMC_TEST_UNRELATED'] == 'kept'; assert 'PYTHONHOME' not in os.environ";
+        let mut command = Command::new(&python);
+        command
+            .env("PYTHONHOME", &bad_home)
+            .env("PYTHONPATH", &modules)
+            .env("DMC_TEST_UNRELATED", "kept")
+            .args(["-c", script])
+            .arg(&venv);
+        assert!(configure_python_command(&mut command)
+            .status()
+            .unwrap()
+            .success());
+        let mut async_command = TokioCommand::new(&python);
+        async_command
+            .env("PYTHONHOME", &bad_home)
+            .env("PYTHONPATH", &modules)
+            .env("DMC_TEST_UNRELATED", "kept")
+            .args(["-c", script])
+            .arg(&venv);
+        assert!(configure_tokio_python_command(&mut async_command)
+            .status()
+            .await
+            .unwrap()
+            .success());
+        let mut unset = Command::new(&python);
+        unset
+            .env_remove("PYTHONHOME")
+            .env("PYTHONPATH", &modules)
+            .env("DMC_TEST_UNRELATED", "kept")
+            .args(["-c", script])
+            .arg(&venv);
+        assert!(configure_python_command(&mut unset)
+            .status()
+            .unwrap()
+            .success());
     }
 }
