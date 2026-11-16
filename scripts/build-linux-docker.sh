@@ -392,6 +392,10 @@ package_appimage() {
   mv "$BUILD/squashfs-root" "$stage"
   install_runtime_tree "$stage"
   bash "$ROOT/scripts/select-appimage-webkit.sh" "$stage"
+  # The replacement WebKit was built after linuxdeploy collected dependencies.
+  # Keep its AVIF decoder paired with the image's codecs, including Abseil.
+  python3 "$ROOT/scripts/test-stage-appimage-avif.py"
+  python3 "$ROOT/scripts/stage-appimage-avif.py" "$stage"
   # Tauri discovers its tray library with dlopen, so linuxdeploy cannot infer
   # these dependencies. Bundle their SONAMEs for contained runtimes as well.
   mkdir -p "$stage/usr/lib"
@@ -453,6 +457,7 @@ package_source_offer() {
   cp "$ROOT/scripts/webkit-http-loop-cache.sh" "$source_stage/"
   cp "$ROOT/scripts/select-appimage-webkit.sh" "$source_stage/"
   cp "$ROOT/scripts/prepare-appimage-desktop.py" "$ROOT/scripts/test-prepare-appimage-desktop.py" "$source_stage/"
+  cp "$ROOT/scripts/stage-appimage-avif.py" "$ROOT/scripts/test-stage-appimage-avif.py" "$source_stage/"
   git -C "$BUILD/vapoursynth-r75" archive --format=tar.gz \
     --output="$source_stage/vapoursynth-R75.tar.gz" "$VAPOURSYNTH_COMMIT"
   cp "$ROOT/Dockerfile.linux-release" "$ROOT/Dockerfile.linux-release-gl" "$source_stage/"
