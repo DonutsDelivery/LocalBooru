@@ -117,3 +117,11 @@ documents automation without an interactive session. Its `appcert.exe` command-l
 procedure separately requires an active user session and excludes Session 0.
 Record the kit version, automation mode, tests run and skipped tests. SSH access
 alone does not establish graphical application behavior.
+
+At Windows startup DMC checks WebView2 availability before creating its windows.
+If the loader reports that no compatible runtime is available, a native prompt
+offers Microsoft's WebView2 download page. Accepting opens the page; install the
+Evergreen Runtime and relaunch DMC. Cancelling exits without opening the page.
+Other probe errors are reported separately. This does not install the runtime or
+establish Store provisioning; packaged-app behavior and clean Windows 10/11
+recovery still require native acceptance.
