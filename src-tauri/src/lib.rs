@@ -1,3 +1,6 @@
+#[cfg(any(windows, test))]
+mod webview_prerequisite;
+
 #[cfg(target_os = "windows")]
 use crate::platform_paths::HideConsoleWindow;
 use std::path::PathBuf;
@@ -201,6 +204,10 @@ fn should_cleanup_before_exit(exit_code: Option<i32>) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    if !webview_prerequisite::check() {
+        return;
+    }
     // ── Linux: Video pipeline in WebKitGTK ──
     // Prefer HW decoders (VA-API for zero-copy DMA-BUF, NVDEC as fallback).
     // Software decoders kept as safety net at low priority.
