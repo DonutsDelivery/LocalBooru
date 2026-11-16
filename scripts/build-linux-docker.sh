@@ -410,12 +410,15 @@ package_appimage() {
   cp /usr/share/doc/adwaita-icon-theme/copyright "$stage/usr/share/doc/adwaita-icon-theme/"
   # AppImage tools also consume a desktop entry and icon at the AppDir root.
   rm -f "$stage/DonutMediaCenter.desktop" "$stage/donutmediacenter.desktop" "$stage/localbooru.desktop"
+  # Tauri quotes this bare name; linuxdeploy's AppRun treats those quotes literally.
+  python3 "$ROOT/scripts/prepare-appimage-desktop.py" "$stage/usr/share/applications/com.localbooru.app.desktop"
   cp "$stage/usr/share/applications/com.localbooru.app.desktop" "$stage/"
   cp "$ROOT/assets/icon.png" "$stage/com.localbooru.app.png"
   ln -sfn com.localbooru.app.png "$stage/.DirIcon"
   python3 "$ROOT/scripts/collect-linux-distro-notices.py" "$stage"
   mv "$stage/AppRun" "$stage/AppRun.tauri"
   install -m 0755 "$ROOT/release/linux/AppRun" "$stage/AppRun"
+  python3 "$ROOT/scripts/test-prepare-appimage-desktop.py" --wrapped-launcher "$stage/AppRun.wrapped"
 
   tool="$BUILD/downloads/appimagetool-x86_64.AppImage"
   download_checked \
@@ -449,6 +452,7 @@ package_source_offer() {
   cp "$ROOT/scripts/prepare-webkit-flatpak-bridge.py" "$source_stage/"
   cp "$ROOT/scripts/webkit-http-loop-cache.sh" "$source_stage/"
   cp "$ROOT/scripts/select-appimage-webkit.sh" "$source_stage/"
+  cp "$ROOT/scripts/prepare-appimage-desktop.py" "$ROOT/scripts/test-prepare-appimage-desktop.py" "$source_stage/"
   git -C "$BUILD/vapoursynth-r75" archive --format=tar.gz \
     --output="$source_stage/vapoursynth-R75.tar.gz" "$VAPOURSYNTH_COMMIT"
   cp "$ROOT/Dockerfile.linux-release" "$ROOT/Dockerfile.linux-release-gl" "$source_stage/"
