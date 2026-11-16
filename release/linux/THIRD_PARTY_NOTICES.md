@@ -71,3 +71,9 @@ bundled historical MIT notice for previously MIT-licensed portions.
 SVP Manager and SVPflow are **not bundled**. They are detected only from a
 legitimate user installation and remain governed by their upstream terms.
 GPU vendor drivers are not bundled.
+
+The AppImage uses the platform Wayland client library required by the host
+EGL graphics stack, rather than packaging its own copy. The platform must supply
+that client; the Flatpak runtime supplies it for Flatpak. This policy does not
+disable GPU acceleration or redistribute host graphics drivers. The AppImage
+records removed client aliases in its Wayland client policy receipt.

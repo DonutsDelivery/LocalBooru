@@ -419,6 +419,8 @@ package_appimage() {
   cp "$stage/usr/share/applications/com.localbooru.app.desktop" "$stage/"
   cp "$ROOT/assets/icon.png" "$stage/com.localbooru.app.png"
   ln -sfn com.localbooru.app.png "$stage/.DirIcon"
+  python3 "$ROOT/scripts/test-remove-appimage-wayland-client.py"
+  python3 "$ROOT/scripts/remove-appimage-wayland-client.py" "$stage"
   python3 "$ROOT/scripts/collect-linux-distro-notices.py" "$stage"
   mv "$stage/AppRun" "$stage/AppRun.tauri"
   install -m 0755 "$ROOT/release/linux/AppRun" "$stage/AppRun"
@@ -458,6 +460,7 @@ package_source_offer() {
   cp "$ROOT/scripts/select-appimage-webkit.sh" "$source_stage/"
   cp "$ROOT/scripts/prepare-appimage-desktop.py" "$ROOT/scripts/test-prepare-appimage-desktop.py" "$source_stage/"
   cp "$ROOT/scripts/stage-appimage-avif.py" "$ROOT/scripts/test-stage-appimage-avif.py" "$source_stage/"
+  cp "$ROOT/scripts/remove-appimage-wayland-client.py" "$ROOT/scripts/test-remove-appimage-wayland-client.py" "$source_stage/"
   git -C "$BUILD/vapoursynth-r75" archive --format=tar.gz \
     --output="$source_stage/vapoursynth-R75.tar.gz" "$VAPOURSYNTH_COMMIT"
   cp "$ROOT/Dockerfile.linux-release" "$ROOT/Dockerfile.linux-release-gl" "$source_stage/"
