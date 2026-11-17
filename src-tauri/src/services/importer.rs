@@ -243,6 +243,38 @@ fn composite_on_white(img: &image::DynamicImage) -> image::RgbImage {
     rgb
 }
 
+// Stage in the destination directory so publication stays on the same filesystem.
+// Each attempt owns its temporary file; persist atomically replaces an existing
+// destination on supported platforms, including Windows.
+fn publish_thumbnail(output_path: &str, generate: impl FnOnce(&Path) -> bool) -> bool {
+    let output = Path::new(output_path);
+    let parent = output
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let staged = match tempfile::Builder::new()
+        .prefix(".thumbnail-")
+        .suffix(".webp")
+        .tempfile_in(parent)
+    {
+        Ok(file) => file,
+        Err(error) => {
+            log::error!("Failed to stage thumbnail: {}", error);
+            return false;
+        }
+    };
+    if !generate(staged.path()) {
+        return false;
+    }
+    match staged.persist(output) {
+        Ok(_) => true,
+        Err(error) => {
+            log::error!("Failed to publish thumbnail: {}", error.error);
+            false
+        }
+    }
+}
+
 /// Generate a thumbnail for an image file using the image crate.
 ///
 /// Handles RGBA/palette images by compositing onto a white background.
@@ -259,13 +291,9 @@ pub fn generate_thumbnail_from_image(
     } else {
         thumb.to_rgb8()
     };
-    match rgb.save_with_format(output_path, image::ImageFormat::WebP) {
-        Ok(()) => true,
-        Err(error) => {
-            log::error!("Failed to save thumbnail: {}", error);
-            false
-        }
-    }
+    publish_thumbnail(output_path, |path| {
+        rgb.save_with_format(path, image::ImageFormat::WebP).is_ok()
+    })
 }
 
 pub fn generate_thumbnail(file_path: &str, output_path: &str, size: u32) -> bool {
@@ -328,16 +356,7 @@ pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) 
     // Check for existing thumbnail first
     if let Some(existing) = find_existing_thumbnail(video_path) {
         if let Ok(img) = image::open(&existing) {
-            let thumb = img.thumbnail(size, size);
-            let rgb = if thumb.color().has_alpha() {
-                composite_on_white(&thumb)
-            } else {
-                thumb.to_rgb8()
-            };
-            if rgb
-                .save_with_format(output_path, image::ImageFormat::WebP)
-                .is_ok()
-            {
+            if generate_thumbnail_from_image(&img, output_path, size) {
                 log::info!("Used existing thumbnail: {}", existing.display());
                 return true;
             }
@@ -345,7 +364,9 @@ pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) 
     }
 
     // Fall back to ffmpeg
-    video_preview::generate_video_thumbnail(video_path, output_path, size)
+    publish_thumbnail(output_path, |path| {
+        video_preview::generate_video_thumbnail(video_path, &path.to_string_lossy(), size)
+    })
 }
 
 // ─── Import function ─────────────────────────────────────────────────────────
@@ -791,5 +812,81 @@ mod tests {
         let result = import_image(&state, &lib, &jpg.to_string_lossy(), 11, false).unwrap();
         assert_eq!(result.status, ImportStatus::Imported);
         assert!(queued_metadata_tasks(&state).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod thumbnail_publication_tests {
+    use super::*;
+    use std::sync::{mpsc, Arc, Barrier};
+
+    #[test]
+    fn staged_bytes_are_hidden_and_failures_preserve_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("thumb.webp");
+        std::fs::write(&output, b"old complete").unwrap();
+        let path = output.to_str().unwrap().to_owned();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            publish_thumbnail(&path, |staged| {
+                std::fs::write(staged, b"partial").unwrap();
+                ready_tx.send(()).unwrap();
+                resume_rx.recv().unwrap();
+                std::fs::write(staged, b"new complete").unwrap();
+                true
+            })
+        });
+        ready_rx.recv().unwrap();
+        assert_eq!(std::fs::read(&output).unwrap(), b"old complete");
+        resume_tx.send(()).unwrap();
+        assert!(writer.join().unwrap());
+        assert_eq!(std::fs::read(&output).unwrap(), b"new complete");
+        assert!(!publish_thumbnail(output.to_str().unwrap(), |staged| {
+            std::fs::write(staged, b"failed").unwrap();
+            false
+        }));
+        assert_eq!(std::fs::read(&output).unwrap(), b"new complete");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn simultaneous_attempts_publish_complete_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("thumb.webp");
+        let barrier = Arc::new(Barrier::new(2));
+        let threads: Vec<_> = [b"first".as_slice(), b"second".as_slice()]
+            .into_iter()
+            .map(|bytes| {
+                let path = output.to_str().unwrap().to_owned();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    publish_thumbnail(&path, |staged| {
+                        std::fs::write(staged, bytes).unwrap();
+                        barrier.wait();
+                        true
+                    })
+                })
+            })
+            .collect();
+        for thread in threads {
+            assert!(thread.join().unwrap());
+        }
+        let bytes = std::fs::read(&output).unwrap();
+        assert!(bytes == b"first" || bytes == b"second");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn image_producer_publishes_decodable_webp() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("thumb.webp");
+        let image = image::DynamicImage::new_rgba8(8, 8);
+        assert!(generate_thumbnail_from_image(
+            &image,
+            output.to_str().unwrap(),
+            4
+        ));
+        assert_eq!(image::open(&output).unwrap().width(), 4);
     }
 }
