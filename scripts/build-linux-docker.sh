@@ -317,14 +317,26 @@ install_runtime_tree() {
     --data-dir "$destination/usr/share" --launcher donutmediacenter
 }
 
+select_bundle() {
+  python3 "$ROOT/scripts/select-linux-bundle.py" select "$ROOT/src-tauri/tauri.conf.json" "$CARGO_TARGET_DIR/release/bundle" "$1"
+}
+
+verify_binary() {
+  python3 "$ROOT/scripts/select-linux-bundle.py" verify-binary "$1" "$CARGO_TARGET_DIR/release/donutmediacenter" "${@:2}"
+}
+
+DEB_VERIFIED=0
 package_deb() {
   has_bundle deb || return 0
   local base stage real_binary installed_size
-  base="$(find "$CARGO_TARGET_DIR/release/bundle/deb" -maxdepth 1 -name '*.deb' | head -1)"
+  base="$(select_bundle deb)"
   [[ -n "$base" ]]
   stage="$BUILD/package-deb"
   rm -rf "$stage"
   dpkg-deb -R "$base" "$stage"
+  [[ "$(dpkg-deb -f "$base" Version)" == "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/src-tauri/tauri.conf.json")" && "$(dpkg-deb -f "$base" Architecture)" == amd64 ]]
+  verify_binary "$stage/usr/bin/donutmediacenter"
+  DEB_VERIFIED=1
   install_runtime_tree "$stage"
 
   real_binary="$stage/usr/bin/donutmediacenter"
@@ -351,15 +363,17 @@ package_rpm() {
 
   # Reuse the verified Debian payload layout so every Linux format carries the
   # same launcher and native runtime. Metadata remains RPM-specific.
-  if [[ -d "$BUILD/package-deb/usr" ]]; then
+  if [[ "$DEB_VERIFIED" == 1 ]]; then
     cp -a "$BUILD/package-deb/usr" "$stage/"
   else
     local base_rpm extracted real_binary
-    base_rpm="$(find "$CARGO_TARGET_DIR/release/bundle/rpm" -maxdepth 1 -name '*.rpm' | head -1)"
+    base_rpm="$(select_bundle rpm)"
     [[ -n "$base_rpm" ]]
     extracted="$BUILD/base-rpm"
     rm -rf "$extracted"; mkdir -p "$extracted"
     (cd "$extracted" && rpm2cpio "$base_rpm" | cpio -idm --quiet)
+    [[ "$(rpm -qp --qf '%{VERSION} %{ARCH}' "$base_rpm")" == "$version x86_64" ]]
+    verify_binary "$extracted/usr/bin/donutmediacenter"
     cp -a "$extracted/usr" "$stage/"
     install_runtime_tree "$stage"
     real_binary="$stage/usr/bin/donutmediacenter"
@@ -384,12 +398,13 @@ package_rpm() {
 package_appimage() {
   has_bundle appimage || return 0
   local base stage tool tool_status
-  base="$(find "$CARGO_TARGET_DIR/release/bundle/appimage" -maxdepth 1 -name '*.AppImage' | head -1)"
+  base="$(select_bundle appimage)"
   [[ -n "$base" ]]
   stage="$BUILD/AppDir"
   rm -rf "$stage" "$BUILD/squashfs-root"
   (cd "$BUILD" && chmod +x "$base" && "$base" --appimage-extract >/dev/null)
   mv "$BUILD/squashfs-root" "$stage"
+  verify_binary "$stage/usr/bin/donutmediacenter" --loader-adjusted
   install_runtime_tree "$stage"
   bash "$ROOT/scripts/select-appimage-webkit.sh" "$stage"
   # The replacement WebKit was built after linuxdeploy collected dependencies.
@@ -464,7 +479,7 @@ package_source_offer() {
   git -C "$BUILD/vapoursynth-r75" archive --format=tar.gz \
     --output="$source_stage/vapoursynth-R75.tar.gz" "$VAPOURSYNTH_COMMIT"
   cp "$ROOT/Dockerfile.linux-release" "$ROOT/Dockerfile.linux-release-gl" "$source_stage/"
-  cp "$ROOT/scripts/build-linux-docker.sh" "$source_stage/"
+  cp "$ROOT/scripts/build-linux-docker.sh" "$ROOT/scripts/select-linux-bundle.py" "$ROOT/scripts/test-select-linux-bundle.py" "$source_stage/"
   cp "$ROOT/release/linux/THIRD_PARTY_NOTICES.md" "$source_stage/"
   tar -cJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
     -C "$source_stage" .
