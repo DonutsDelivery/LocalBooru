@@ -505,7 +505,11 @@ pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) 
         command.args(&cmd_args[1..]);
         suppress_console_window(&mut command);
         match command.output() {
-            Ok(output) if output.status.success() && Path::new(output_path).is_file() => {
+            Ok(output)
+                if output.status.success()
+                    && std::fs::metadata(output_path)
+                        .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0) =>
+            {
                 return true;
             }
             Ok(output) => log::warn!(

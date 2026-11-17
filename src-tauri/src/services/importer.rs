@@ -257,13 +257,19 @@ fn publish_thumbnail(output_path: &str, generate: impl FnOnce(&Path) -> bool) ->
         .suffix(".webp")
         .tempfile_in(parent)
     {
-        Ok(file) => file,
+        Ok(file) => file.into_temp_path(),
         Err(error) => {
             log::error!("Failed to stage thumbnail: {}", error);
             return false;
         }
     };
-    if !generate(staged.path()) {
+    // The reserved staging file already exists. A helper that exits without
+    // producing a frame must not publish that empty reservation as a thumbnail.
+    if !generate(&staged)
+        || !staged
+            .metadata()
+            .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+    {
         return false;
     }
     match staged.persist(output) {
@@ -292,7 +298,13 @@ pub fn generate_thumbnail_from_image(
         thumb.to_rgb8()
     };
     publish_thumbnail(output_path, |path| {
-        rgb.save_with_format(path, image::ImageFormat::WebP).is_ok()
+        match rgb.save_with_format(path, image::ImageFormat::WebP) {
+            Ok(()) => true,
+            Err(error) => {
+                log::error!("Failed to save thumbnail: {}", error);
+                false
+            }
+        }
     })
 }
 
@@ -819,6 +831,54 @@ mod tests {
 mod thumbnail_publication_tests {
     use super::*;
     use std::sync::{mpsc, Arc, Barrier};
+
+    #[test]
+    fn new_thumbnail_is_absent_until_encoding_finishes() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("thumb.webp");
+        let path = output.to_str().unwrap().to_owned();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            publish_thumbnail(&path, |staged| {
+                std::fs::write(staged, b"partial").unwrap();
+                ready_tx.send(()).unwrap();
+                resume_rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap();
+                std::fs::write(staged, b"complete").unwrap();
+                true
+            })
+        });
+        ready_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let visible_while_encoding = output.exists();
+        resume_tx.send(()).unwrap();
+        assert!(writer.join().unwrap());
+        assert!(!visible_while_encoding);
+        assert_eq!(std::fs::read(&output).unwrap(), b"complete");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn empty_helper_success_and_failed_publication_preserve_existing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("thumb.webp");
+        std::fs::write(&output, b"existing complete").unwrap();
+        assert!(!publish_thumbnail(output.to_str().unwrap(), |_| true));
+        assert_eq!(std::fs::read(&output).unwrap(), b"existing complete");
+
+        let blocked = dir.path().join("directory.webp");
+        std::fs::create_dir(&blocked).unwrap();
+        std::fs::write(blocked.join("keep"), b"unrelated").unwrap();
+        assert!(!publish_thumbnail(blocked.to_str().unwrap(), |staged| {
+            std::fs::write(staged, b"complete").unwrap();
+            true
+        }));
+        assert_eq!(std::fs::read(blocked.join("keep")).unwrap(), b"unrelated");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
 
     #[test]
     fn staged_bytes_are_hidden_and_failures_preserve_output() {
